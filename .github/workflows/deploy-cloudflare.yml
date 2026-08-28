@@ -40,19 +40,66 @@ jobs:
         run: flutter build web --release --dart-define=USE_MOCK_NFC=true
 
       - name: Install pinned Wrangler
-        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
         run: npm ci
 
       - name: Verify Wrangler version
-        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
         run: npx wrangler --version
 
-      - name: Deploy Worker
-        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
-        run: npx wrangler deploy
-
-      - name: Report missing Cloudflare connection
-        if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
+      - name: Ensure D1 database exists
+        shell: bash
         run: |
-          echo "Cloudflare deployment skipped. Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as GitHub Actions secrets."
-          exit 1
+          set -euo pipefail
+          DB_ID="$(npx wrangler d1 list --json | node -e '
+            let input = "";
+            process.stdin.on("data", (d) => input += d);
+            process.stdin.on("end", () => {
+              const items = JSON.parse(input);
+              const db = items.find((item) => item.name === "rimbakawal-db");
+              if (db) process.stdout.write(db.uuid || db.id || db.database_id || "");
+            });
+          ')"
+
+          if [ -z "$DB_ID" ]; then
+            echo "Creating D1 database rimbakawal-db in APAC..."
+            npx wrangler d1 create rimbakawal-db --location apac
+            DB_ID="$(npx wrangler d1 list --json | node -e '
+              let input = "";
+              process.stdin.on("data", (d) => input += d);
+              process.stdin.on("end", () => {
+                const items = JSON.parse(input);
+                const db = items.find((item) => item.name === "rimbakawal-db");
+                if (db) process.stdout.write(db.uuid || db.id || db.database_id || "");
+              });
+            ')"
+          fi
+
+          if [ -z "$DB_ID" ]; then
+            echo "Unable to resolve D1 database ID."
+            exit 1
+          fi
+
+          echo "D1_DATABASE_ID=$DB_ID" >> "$GITHUB_ENV"
+          echo "Using D1 database $DB_ID"
+
+      - name: Generate production Wrangler config
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          config.d1_databases = [
+            {
+              binding: 'DB',
+              database_name: 'rimbakawal-db',
+              database_id: process.env.D1_DATABASE_ID,
+              migrations_dir: 'migrations'
+            }
+          ];
+          fs.writeFileSync('wrangler.deploy.jsonc', JSON.stringify(config, null, 2));
+          NODE
+
+      - name: Apply D1 migrations and seed users
+        run: npx wrangler d1 migrations apply rimbakawal-db --remote --config wrangler.deploy.jsonc
+
+      - name: Deploy Worker and static assets
+        run: npx wrangler deploy --config wrangler.deploy.jsonc

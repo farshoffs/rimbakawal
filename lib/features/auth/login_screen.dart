@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/api/api_service.dart';
 import '../../core/nfc/nfc_service.dart';
-import '../patrol/patrol_screen.dart';
+import '../dashboard/dashboard_screen.dart';
 
 const _rimbaRed = Color(0xFFC0392B);
 const _rimbaBlue = Color(0xFF4834D4);
@@ -24,6 +25,9 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _identityCardController = TextEditingController();
+  final _api = ApiService.instance;
+  bool _submitting = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -42,18 +46,34 @@ class _LoginScreenState extends State<LoginScreen> {
     return null;
   }
 
-  void _continueToPatrol() {
+  Future<void> _login() async {
     FocusScope.of(context).unfocus();
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate() || _submitting) return;
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => PatrolScreen(
-          nfcService: widget.nfcService,
-          mockMode: widget.mockMode,
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+
+    try {
+      final user = await _api.login(_identityCardController.text.trim());
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => DashboardScreen(
+            user: user,
+            api: _api,
+            nfcService: widget.nfcService,
+            mockMode: widget.mockMode,
+          ),
         ),
-      ),
-    );
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   @override
@@ -65,10 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 32,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 440),
                   child: Form(
@@ -81,8 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         Text(
                           'RimbaKawal',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.displaySmall
-                              ?.copyWith(
+                          style: Theme.of(context).textTheme.displaySmall?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: -1,
@@ -92,8 +108,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         Text(
                           'Sistem Rondaan Pintar',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(color: const Color(0xFFAAA8B8)),
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: const Color(0xFFAAA8B8),
+                              ),
                         ),
                         const SizedBox(height: 40),
                         Container(
@@ -104,32 +121,21 @@ class _LoginScreenState extends State<LoginScreen> {
                             border: Border.all(
                               color: Colors.white.withValues(alpha: 0.08),
                             ),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Color(0x66000000),
-                                blurRadius: 32,
-                                offset: Offset(0, 18),
-                              ),
-                            ],
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               Text(
                                 'Log masuk',
-                                style: Theme.of(context).textTheme.headlineSmall
-                                    ?.copyWith(
+                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w700,
                                     ),
                               ),
                               const SizedBox(height: 8),
                               const Text(
-                                'Masukkan No. Kad Pengenalan untuk meneruskan rondaan.',
-                                style: TextStyle(
-                                  color: Color(0xFFAAA8B8),
-                                  height: 1.45,
-                                ),
+                                'Masukkan No. Kad Pengenalan yang berdaftar.',
+                                style: TextStyle(color: Color(0xFFAAA8B8), height: 1.45),
                               ),
                               const SizedBox(height: 24),
                               TextFormField(
@@ -143,16 +149,23 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ],
                                 decoration: const InputDecoration(
                                   labelText: 'No. Kad Pengenalan',
-                                  hintText: 'Contoh: 001122031234',
+                                  hintText: '12 digit tanpa sengkang',
                                   prefixIcon: Icon(Icons.badge_outlined),
                                 ),
                                 validator: _validateIdentityCard,
-                                onFieldSubmitted: (_) => _continueToPatrol(),
+                                onFieldSubmitted: (_) => _login(),
                               ),
+                              if (_error != null) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  _error!,
+                                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                ),
+                              ],
                               const SizedBox(height: 20),
                               _GradientButton(
-                                onPressed: _continueToPatrol,
-                                label: 'Teruskan',
+                                onPressed: _submitting ? null : _login,
+                                label: _submitting ? 'Mengesahkan…' : 'Teruskan',
                               ),
                             ],
                           ),
@@ -161,20 +174,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(
-                              Icons.lock_outline,
-                              color: Color(0xFF777687),
-                              size: 16,
-                            ),
+                            Icon(Icons.lock_outline, color: Color(0xFF777687), size: 16),
                             SizedBox(width: 8),
                             Flexible(
                               child: Text(
-                                'Akses terhad kepada anggota yang berdaftar',
+                                'Akses terhad kepada pengguna yang berdaftar',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Color(0xFF777687),
-                                  fontSize: 12,
-                                ),
+                                style: TextStyle(color: Color(0xFF777687), fontSize: 12),
                               ),
                             ),
                           ],
@@ -202,19 +208,8 @@ class _TemporaryLogo extends StatelessWidget {
       height: 104,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_rimbaRed, _rimbaBlue],
-        ),
+        gradient: const LinearGradient(colors: [_rimbaRed, _rimbaBlue]),
         borderRadius: BorderRadius.circular(30),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x554834D4),
-            blurRadius: 30,
-            offset: Offset(0, 12),
-          ),
-        ],
       ),
       child: Container(
         decoration: BoxDecoration(
@@ -239,7 +234,7 @@ class _TemporaryLogo extends StatelessWidget {
 class _GradientButton extends StatelessWidget {
   const _GradientButton({required this.onPressed, required this.label});
 
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final String label;
 
   @override
@@ -248,13 +243,6 @@ class _GradientButton extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: const LinearGradient(colors: [_rimbaRed, _rimbaBlue]),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x443E2BBE),
-            blurRadius: 18,
-            offset: Offset(0, 8),
-          ),
-        ],
       ),
       child: FilledButton(
         onPressed: onPressed,
@@ -262,14 +250,7 @@ class _GradientButton extends StatelessWidget {
           backgroundColor: Colors.transparent,
           shadowColor: Colors.transparent,
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(label),
-            const SizedBox(width: 8),
-            const Icon(Icons.arrow_forward_rounded, size: 20),
-          ],
-        ),
+        child: Text(label),
       ),
     );
   }
@@ -280,47 +261,13 @@ class _LoginBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
+    return const DecoratedBox(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [Color(0xFF080810), Color(0xFF111124), Color(0xFF120A0D)],
           stops: [0, 0.55, 1],
-        ),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: -150,
-            right: -120,
-            child: _Glow(color: _rimbaBlue.withValues(alpha: 0.20)),
-          ),
-          Positioned(
-            bottom: -180,
-            left: -140,
-            child: _Glow(color: _rimbaRed.withValues(alpha: 0.18)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Glow extends StatelessWidget {
-  const _Glow({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 360,
-      height: 360,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [color, color.withValues(alpha: 0)],
         ),
       ),
     );
