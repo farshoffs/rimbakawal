@@ -170,7 +170,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
                       )
                     : ListView.separated(
                         itemCount: _scans.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        separatorBuilder: (_, _) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           final scan = _scans[index];
                           return ListTile(
