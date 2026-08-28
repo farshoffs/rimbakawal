@@ -102,7 +102,6 @@ class _ReportScreenState extends State<ReportScreen> {
                     row['nfc_uid'] ?? '-',
                   ];
                 }).toList(),
-                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                 headerDecoration: const pw.BoxDecoration(
                   color: PdfColors.grey300,
                 ),
@@ -174,7 +173,10 @@ class _ReportScreenState extends State<ReportScreen> {
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Text(value, style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+            pw.Text(
+              value,
+              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+            ),
             pw.Text(label, style: const pw.TextStyle(fontSize: 8)),
           ],
         ),
@@ -187,7 +189,8 @@ class _ReportScreenState extends State<ReportScreen> {
     final parsed = DateTime.tryParse(value)?.toLocal();
     if (parsed == null) return value;
     String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(parsed.day)}/${two(parsed.month)}/${parsed.year} ${two(parsed.hour)}:${two(parsed.minute)}:${two(parsed.second)}';
+    return '${two(parsed.day)}/${two(parsed.month)}/${parsed.year} '
+        '${two(parsed.hour)}:${two(parsed.minute)}:${two(parsed.second)}';
   }
 
   String _fileDate(DateTime value) {
