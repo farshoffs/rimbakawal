@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_service.dart';
+import '../../core/nfc/nfc_service.dart';
 
 class DepartmentMaintenanceScreen extends StatefulWidget {
-  const DepartmentMaintenanceScreen({required this.api, super.key});
+  const DepartmentMaintenanceScreen({
+    required this.api,
+    required this.nfcService,
+    required this.mockMode,
+    super.key,
+  });
 
   final ApiService api;
+  final NfcService nfcService;
+  final bool mockMode;
 
   @override
   State<DepartmentMaintenanceScreen> createState() =>
@@ -15,6 +23,7 @@ class DepartmentMaintenanceScreen extends StatefulWidget {
 class _DepartmentMaintenanceScreenState
     extends State<DepartmentMaintenanceScreen> {
   late Future<List<DepartmentRecord>> _future;
+  int _refreshKey = 0;
 
   @override
   void initState() {
@@ -23,7 +32,10 @@ class _DepartmentMaintenanceScreenState
   }
 
   void _refresh() {
-    setState(() => _future = widget.api.getAdminDepartments());
+    setState(() {
+      _refreshKey++;
+      _future = widget.api.getAdminDepartments();
+    });
   }
 
   Future<void> _editDepartment([DepartmentRecord? department]) async {
@@ -37,26 +49,31 @@ class _DepartmentMaintenanceScreenState
     if (changed == true && mounted) _refresh();
   }
 
-  Future<void> _openCheckpoints(DepartmentRecord department) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => CheckpointMaintenanceScreen(
-          api: widget.api,
-          department: department,
-        ),
+  Future<void> _editCheckpoint(
+    DepartmentRecord department, [
+    CheckpointRecord? checkpoint,
+  ]) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _CheckpointDialog(
+        api: widget.api,
+        nfcService: widget.nfcService,
+        mockMode: widget.mockMode,
+        departmentId: department.id,
+        checkpoint: checkpoint,
       ),
     );
-    if (mounted) _refresh();
+    if (changed == true && mounted) _refresh();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Jabatan / Sekolah & NFC')),
+      appBar: AppBar(title: const Text('Jabatan & Checkpoint')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _editDepartment,
         icon: const Icon(Icons.add_business_rounded),
-        label: const Text('Tambah sekolah'),
+        label: const Text('Tambah Jabatan'),
       ),
       body: FutureBuilder<List<DepartmentRecord>>(
         future: _future,
@@ -72,66 +89,118 @@ class _DepartmentMaintenanceScreenState
               ),
             );
           }
-
           final departments = snapshot.data ?? const <DepartmentRecord>[];
-          return ListView(
+          if (departments.isEmpty) {
+            return const Center(child: Text('Belum ada Jabatan.'));
+          }
+          return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.info_outline_rounded),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Dalam RimbaKawal, Jabatan mewakili sekolah/lokasi operasi. '
-                          'Setiap sekolah mempunyai kadar sesi rondaan dan senarai checkpoint NFC sendiri.',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (departments.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(child: Text('Belum ada jabatan/sekolah.')),
-                )
-              else
-                ...departments.map(
-                  (department) => Card(
-                    child: ListTile(
-                      onTap: () => _openCheckpoints(department),
-                      leading: CircleAvatar(
-                        child: Icon(
-                          department.active
-                              ? Icons.school_rounded
-                              : Icons.school_outlined,
-                        ),
-                      ),
-                      title: Text(
-                        department.name,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      subtitle: Text(
-                        'Sesi: ${department.sessionIntervalMinutes} minit • '
-                        '${department.checkpointCount} checkpoint aktif'
-                        '${department.active ? '' : ' • TIDAK AKTIF'}',
-                      ),
-                      trailing: IconButton(
-                        tooltip: 'Tetapan sekolah',
-                        onPressed: () => _editDepartment(department),
-                        icon: const Icon(Icons.settings_rounded),
-                      ),
+            itemCount: departments.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              final department = departments[index];
+              return Card(
+                clipBehavior: Clip.antiAlias,
+                child: ExpansionTile(
+                  key: ValueKey('${department.id}-$_refreshKey'),
+                  leading: CircleAvatar(
+                    child: Icon(
+                      department.active
+                          ? Icons.account_tree_rounded
+                          : Icons.account_tree_outlined,
                     ),
                   ),
+                  title: Text(
+                    department.name,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  subtitle: Text(
+                    'Sesi setiap ${department.sessionIntervalMinutes} minit • '
+                    '${department.checkpointCount} checkpoint aktif'
+                    '${department.active ? '' : ' • TIDAK AKTIF'}',
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'Tetapan Jabatan',
+                    onPressed: () => _editDepartment(department),
+                    icon: const Icon(Icons.settings_rounded),
+                  ),
+                  children: [
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          FutureBuilder<List<CheckpointRecord>>(
+                            future: widget.api.getAdminCheckpoints(department.id),
+                            builder: (context, checkpointSnapshot) {
+                              if (checkpointSnapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              }
+                              if (checkpointSnapshot.hasError) {
+                                return Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Text(
+                                    checkpointSnapshot.error.toString(),
+                                  ),
+                                );
+                              }
+                              final checkpoints = checkpointSnapshot.data ??
+                                  const <CheckpointRecord>[];
+                              if (checkpoints.isEmpty) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: Text('Belum ada checkpoint NFC.'),
+                                );
+                              }
+                              return Column(
+                                children: checkpoints
+                                    .map(
+                                      (checkpoint) => ListTile(
+                                        contentPadding: EdgeInsets.zero,
+                                        onTap: () => _editCheckpoint(
+                                          department,
+                                          checkpoint,
+                                        ),
+                                        leading: CircleAvatar(
+                                          child: Text('${checkpoint.position}'),
+                                        ),
+                                        title: Text(
+                                          checkpoint.name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        subtitle: SelectableText(
+                                          '${checkpoint.nfcUid}'
+                                          '${checkpoint.active ? '' : ' • TIDAK AKTIF'}',
+                                        ),
+                                        trailing: const Icon(Icons.edit_rounded),
+                                      ),
+                                    )
+                                    .toList(),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: () => _editCheckpoint(department),
+                            icon: const Icon(Icons.add_rounded),
+                            label: const Text('Tambah Checkpoint'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-            ],
+              );
+            },
           );
         },
       ),
@@ -177,10 +246,9 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     final name = _nameController.text.trim();
     final interval = int.tryParse(_intervalController.text.trim());
     if (name.length < 2 || interval == null) {
-      setState(() => _error = 'Masukkan nama sekolah dan kadar sesi yang sah.');
+      setState(() => _error = 'Masukkan nama Jabatan dan kadar sesi yang sah.');
       return;
     }
-
     setState(() {
       _saving = true;
       _error = null;
@@ -216,7 +284,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.department == null ? 'Tambah sekolah' : 'Tetapan sekolah'),
+      title: Text(widget.department == null ? 'Tambah Jabatan' : 'Tetapan Jabatan'),
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
@@ -226,8 +294,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
               TextField(
                 controller: _nameController,
                 decoration: const InputDecoration(
-                  labelText: 'Nama Jabatan / Sekolah',
-                  prefixIcon: Icon(Icons.school_rounded),
+                  labelText: 'Nama Jabatan',
+                  prefixIcon: Icon(Icons.account_tree_rounded),
                 ),
               ),
               const SizedBox(height: 14),
@@ -244,7 +312,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                 const SizedBox(height: 8),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Jabatan / sekolah aktif'),
+                  title: const Text('Jabatan aktif'),
                   value: _active,
                   onChanged: (value) => setState(() => _active = value),
                 ),
@@ -274,107 +342,18 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
   }
 }
 
-class CheckpointMaintenanceScreen extends StatefulWidget {
-  const CheckpointMaintenanceScreen({
-    required this.api,
-    required this.department,
-    super.key,
-  });
-
-  final ApiService api;
-  final DepartmentRecord department;
-
-  @override
-  State<CheckpointMaintenanceScreen> createState() =>
-      _CheckpointMaintenanceScreenState();
-}
-
-class _CheckpointMaintenanceScreenState
-    extends State<CheckpointMaintenanceScreen> {
-  late Future<List<CheckpointRecord>> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _refresh();
-  }
-
-  void _refresh() {
-    setState(() {
-      _future = widget.api.getAdminCheckpoints(widget.department.id);
-    });
-  }
-
-  Future<void> _editCheckpoint([CheckpointRecord? checkpoint]) async {
-    final changed = await showDialog<bool>(
-      context: context,
-      builder: (context) => _CheckpointDialog(
-        api: widget.api,
-        departmentId: widget.department.id,
-        checkpoint: checkpoint,
-      ),
-    );
-    if (changed == true && mounted) _refresh();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.department.name)),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _editCheckpoint,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Tambah checkpoint'),
-      ),
-      body: FutureBuilder<List<CheckpointRecord>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text(snapshot.error.toString()));
-          }
-          final checkpoints = snapshot.data ?? const <CheckpointRecord>[];
-          if (checkpoints.isEmpty) {
-            return const Center(child: Text('Belum ada checkpoint NFC.'));
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            itemCount: checkpoints.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final checkpoint = checkpoints[index];
-              return Card(
-                child: ListTile(
-                  onTap: () => _editCheckpoint(checkpoint),
-                  leading: CircleAvatar(child: Text('${checkpoint.position}')),
-                  title: Text(
-                    checkpoint.name,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  subtitle: SelectableText(
-                    '${checkpoint.nfcUid}${checkpoint.active ? '' : ' • TIDAK AKTIF'}',
-                  ),
-                  trailing: const Icon(Icons.edit_rounded),
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
 class _CheckpointDialog extends StatefulWidget {
   const _CheckpointDialog({
     required this.api,
+    required this.nfcService,
+    required this.mockMode,
     required this.departmentId,
     this.checkpoint,
   });
 
   final ApiService api;
+  final NfcService nfcService;
+  final bool mockMode;
   final int departmentId;
   final CheckpointRecord? checkpoint;
 
@@ -388,6 +367,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
   late final TextEditingController _positionController;
   late bool _active;
   bool _saving = false;
+  bool _scanning = false;
   String? _error;
 
   @override
@@ -409,6 +389,26 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
     super.dispose();
   }
 
+  Future<void> _scanUid() async {
+    if (_scanning) return;
+    setState(() {
+      _scanning = true;
+      _error = null;
+    });
+    try {
+      final available = await widget.nfcService.isAvailable();
+      if (!available) throw StateError('NFC tidak tersedia pada peranti ini.');
+      final result = await widget.nfcService.scan();
+      if (!mounted) return;
+      _uidController.text = result.tagId.toUpperCase();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+  }
+
   Future<void> _save() async {
     final name = _nameController.text.trim();
     final uid = _uidController.text.trim().toUpperCase();
@@ -417,7 +417,6 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
       setState(() => _error = 'Lengkapkan nama, UID NFC dan susunan checkpoint.');
       return;
     }
-
     setState(() {
       _saving = true;
       _error = null;
@@ -456,9 +455,9 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.checkpoint == null ? 'Tambah checkpoint' : 'Edit checkpoint'),
+      title: Text(widget.checkpoint == null ? 'Tambah Checkpoint' : 'Edit Checkpoint'),
       content: SizedBox(
-        width: 420,
+        width: 440,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -471,15 +470,41 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
                 ),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _uidController,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'NFC UID',
-                  hintText: 'Contoh: 04:A1:B2:C3:D4:E5:F6',
-                  prefixIcon: Icon(Icons.nfc_rounded),
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _uidController,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        labelText: 'NFC UID',
+                        hintText: 'Scan atau masukkan UID',
+                        prefixIcon: Icon(Icons.nfc_rounded),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 56,
+                    child: FilledButton.tonalIcon(
+                      onPressed: _scanning ? null : _scanUid,
+                      icon: const Icon(Icons.nfc_rounded),
+                      label: Text(_scanning ? 'Scan…' : 'Scan'),
+                    ),
+                  ),
+                ],
               ),
+              if (widget.mockMode) ...[
+                const SizedBox(height: 6),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Web menggunakan Mock NFC untuk ujian setup.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               TextField(
                 controller: _positionController,
@@ -515,7 +540,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
           child: const Text('Batal'),
         ),
         FilledButton(
-          onPressed: _saving ? null : _save,
+          onPressed: _saving || _scanning ? null : _save,
           child: Text(_saving ? 'Menyimpan…' : 'Simpan'),
         ),
       ],
