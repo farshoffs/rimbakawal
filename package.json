@@ -1,0 +1,12 @@
+{
+  "name": "rimbakawal-cloudflare",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "deploy:dry-run": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "4.127.1"
+  }
+}
