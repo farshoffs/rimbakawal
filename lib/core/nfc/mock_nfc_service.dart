@@ -23,6 +23,7 @@ class MockNfcService implements NfcService {
     return NfcScanResult(
       tagId: tagId,
       scannedAt: DateTime.now(),
+      technology: 'NFC-A (mock)',
       ndefPayload: 'patrol://checkpoint/$tagId',
     );
   }
