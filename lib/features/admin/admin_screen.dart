@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/nfc/nfc_service.dart';
+import 'command_center_screen.dart';
 import 'department_maintenance_screen.dart';
 import 'report_screen.dart';
 import 'user_maintenance_screen.dart';
@@ -29,6 +30,16 @@ class AdminScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _AdminMenuCard(
+            icon: Icons.monitor_heart_rounded,
+            title: 'Command Center',
+            subtitle: 'Pantau patrol, late/missed session, SOS dan insiden secara live.',
+            onTap: () => _open(
+              context,
+              CommandCenterScreen(api: api),
+            ),
+          ),
+          const SizedBox(height: 10),
           _AdminMenuCard(
             icon: Icons.people_alt_rounded,
             title: 'Senarai Pengguna',
