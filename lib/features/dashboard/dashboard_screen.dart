@@ -228,6 +228,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       await widget.api.createSos(note: 'SOS dicetuskan dari dashboard');
       if (!mounted) return;
       await SystemSound.play(SystemSoundType.alert);
+      if (!mounted) return;
       await showGeneralDialog<void>(
         context: context,
         barrierDismissible: false,
