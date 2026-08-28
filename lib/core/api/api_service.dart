@@ -309,6 +309,49 @@ class ApiService {
         .toList();
   }
 
+  Future<AppUser> createAdminUser({
+    required String nama,
+    required String noKadPengenalan,
+    required String jawatan,
+    required int departmentId,
+  }) async {
+    final response = await http.post(
+      _uri('/api/admin/users'),
+      headers: _headers(jsonBody: true),
+      body: jsonEncode({
+        'nama': nama,
+        'noKadPengenalan': noKadPengenalan,
+        'jawatan': jawatan,
+        'departmentId': departmentId,
+      }),
+    );
+    final data = _decode(response);
+    return AppUser.fromJson(data['user'] as Map<String, dynamic>);
+  }
+
+  Future<Map<String, dynamic>> getAdminReport(
+    DateTime from,
+    DateTime to,
+  ) async {
+    final response = await http.get(
+      _uri('/api/admin/reports', {
+        'from': _dateKey(from),
+        'to': _dateKey(to),
+      }),
+      headers: _headers(),
+    );
+    return _decode(response);
+  }
+
+  Future<void> createSos({String? note}) async {
+    final response = await http.post(
+      _uri('/api/sos'),
+      headers: _headers(jsonBody: true),
+      body: jsonEncode({'note': note}),
+    );
+    _decode(response);
+  }
+
   Future<List<DepartmentRecord>> getAdminDepartments() async {
     final response = await http.get(
       _uri('/api/admin/departments'),
