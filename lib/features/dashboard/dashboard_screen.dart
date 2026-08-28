@@ -529,8 +529,9 @@ class _Avatar extends StatelessWidget {
     if (picture == null || picture.isEmpty) return null;
     if (picture.startsWith('data:image/')) {
       final comma = picture.indexOf(',');
-      if (comma > 0)
+      if (comma > 0) {
         return MemoryImage(base64Decode(picture.substring(comma + 1)));
+      }
     }
     return NetworkImage(picture);
   }

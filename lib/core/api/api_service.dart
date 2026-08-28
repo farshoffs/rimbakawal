@@ -626,8 +626,9 @@ class ApiService {
 
   Map<String, dynamic> _decode(http.Response response) {
     Map<String, dynamic> data = {};
-    if (response.body.isNotEmpty)
+    if (response.body.isNotEmpty) {
       data = jsonDecode(response.body) as Map<String, dynamic>;
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(
         data['error'] as String? ?? 'Permintaan gagal.',
