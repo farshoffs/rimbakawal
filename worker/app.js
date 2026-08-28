@@ -14,8 +14,25 @@ export default {
       if (url.pathname === '/api/admin/reports' && request.method === 'GET') {
         return adminReport(request, env, url);
       }
+      if (url.pathname === '/api/admin/command-center' && request.method === 'GET') {
+        return commandCenter(request, env);
+      }
       if (url.pathname === '/api/sos' && request.method === 'POST') {
         return createSos(request, env);
+      }
+      if (url.pathname === '/api/incidents' && request.method === 'POST') {
+        return createIncident(request, env);
+      }
+      if (url.pathname === '/api/patrol/config' && request.method === 'GET') {
+        return smartPatrolConfig(request, env);
+      }
+      if (url.pathname === '/api/scans' && request.method === 'POST') {
+        return createSmartScan(request, env);
+      }
+
+      const incidentMatch = url.pathname.match(/^\/api\/admin\/incidents\/(\d+)\/status$/);
+      if (incidentMatch && request.method === 'PUT') {
+        return updateIncidentStatus(request, env, Number(incidentMatch[1]));
       }
     } catch (error) {
       console.error(error);
@@ -66,6 +83,360 @@ async function createUser(request, env) {
   return json({ user: publicUser(user) }, 201);
 }
 
+async function smartPatrolConfig(request, env) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth.response;
+  if (!auth.user.department_id) {
+    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+  }
+
+  const department = await env.DB.prepare(
+    `SELECT id, name, session_interval_minutes, route_order_enforced
+     FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
+  ).bind(auth.user.department_id).first();
+  if (!department) return json({ error: 'Jabatan tidak aktif.' }, 409);
+
+  const result = await env.DB.prepare(
+    `SELECT id, name, position, job_instruction
+     FROM checkpoints
+     WHERE department_id = ? AND active = 1
+     ORDER BY position ASC, id ASC`,
+  ).bind(auth.user.department_id).all();
+  const checkpoints = result.results ?? [];
+
+  const interval = Number(department.session_interval_minutes || 120);
+  const now = new Date();
+  const day = malaysiaDayBounds(malaysiaDateKey(now));
+  const sessionIndex = currentSessionIndex(now, interval);
+  const sessionStart = day.startMs + sessionIndex * interval * 60000;
+  const sessionEnd = Math.min(day.endMs, sessionStart + interval * 60000);
+
+  const scanned = await env.DB.prepare(
+    `SELECT DISTINCT checkpoint_id FROM nfc_scans
+     WHERE user_id = ? AND scanned_at >= ? AND scanned_at < ? AND checkpoint_id IS NOT NULL`,
+  ).bind(auth.user.id, new Date(sessionStart).toISOString(), new Date(sessionEnd).toISOString()).all();
+  const scannedIds = new Set((scanned.results ?? []).map((row) => Number(row.checkpoint_id)));
+  const nextCheckpoint = checkpoints.find((row) => !scannedIds.has(Number(row.id))) ?? null;
+
+  return json({
+    department: {
+      id: Number(department.id),
+      name: department.name,
+      sessionIntervalMinutes: interval,
+      routeOrderEnforced: Boolean(department.route_order_enforced),
+    },
+    sessionIndex,
+    sessionStartAt: new Date(sessionStart).toISOString(),
+    sessionEndAt: new Date(sessionEnd).toISOString(),
+    checkpoints: checkpoints.map((row) => ({
+      id: Number(row.id),
+      name: row.name,
+      position: Number(row.position),
+      instruction: row.job_instruction || null,
+      completed: scannedIds.has(Number(row.id)),
+    })),
+    nextCheckpoint: nextCheckpoint ? {
+      id: Number(nextCheckpoint.id),
+      name: nextCheckpoint.name,
+      position: Number(nextCheckpoint.position),
+      instruction: nextCheckpoint.job_instruction || null,
+    } : null,
+  });
+}
+
+async function createSmartScan(request, env) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth.response;
+  if (!auth.user.department_id) {
+    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+  }
+
+  const body = await readJson(request);
+  const nfcUid = normalizeUid(body.nfcUid);
+  if (!nfcUid || nfcUid.length > 128) {
+    return json({ error: 'UID NFC tidak sah.' }, 400);
+  }
+
+  const department = await env.DB.prepare(
+    `SELECT id, session_interval_minutes, route_order_enforced
+     FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
+  ).bind(auth.user.department_id).first();
+  if (!department) return json({ error: 'Jabatan tidak aktif.' }, 409);
+
+  const checkpoint = await env.DB.prepare(
+    `SELECT id, name, position, job_instruction
+     FROM checkpoints
+     WHERE department_id = ? AND UPPER(nfc_uid) = UPPER(?) AND active = 1
+     LIMIT 1`,
+  ).bind(auth.user.department_id, nfcUid).first();
+  if (!checkpoint) {
+    return json({ error: 'NFC ini tidak berdaftar sebagai checkpoint untuk Jabatan anda.' }, 403);
+  }
+
+  const now = new Date();
+  const scannedAt = now.toISOString();
+  const interval = Number(department.session_interval_minutes || 120);
+  const day = malaysiaDayBounds(malaysiaDateKey(now));
+  const sessionIndex = currentSessionIndex(now, interval);
+  const sessionStart = day.startMs + sessionIndex * interval * 60000;
+  const sessionEnd = Math.min(day.endMs, sessionStart + interval * 60000);
+
+  const activeResult = await env.DB.prepare(
+    `SELECT id, name, position FROM checkpoints
+     WHERE department_id = ? AND active = 1
+     ORDER BY position ASC, id ASC`,
+  ).bind(auth.user.department_id).all();
+  const activeCheckpoints = activeResult.results ?? [];
+
+  const scannedResult = await env.DB.prepare(
+    `SELECT DISTINCT checkpoint_id FROM nfc_scans
+     WHERE user_id = ? AND scanned_at >= ? AND scanned_at < ? AND checkpoint_id IS NOT NULL`,
+  ).bind(auth.user.id, new Date(sessionStart).toISOString(), new Date(sessionEnd).toISOString()).all();
+  const scannedIds = new Set((scannedResult.results ?? []).map((row) => Number(row.checkpoint_id)));
+
+  if (scannedIds.has(Number(checkpoint.id))) {
+    return json({ error: `${checkpoint.name} telah direkodkan dalam sesi ini.` }, 409);
+  }
+
+  if (Boolean(department.route_order_enforced)) {
+    const expected = activeCheckpoints.find((row) => !scannedIds.has(Number(row.id)));
+    if (expected && Number(expected.id) !== Number(checkpoint.id)) {
+      return json({
+        error: `Susunan rondaan aktif. Checkpoint seterusnya ialah ${expected.name}.`,
+        expectedCheckpoint: {
+          id: Number(expected.id),
+          name: expected.name,
+          position: Number(expected.position),
+        },
+      }, 409);
+    }
+  }
+
+  const result = await env.DB.prepare(
+    `INSERT INTO nfc_scans (user_id, nfc_uid, scanned_at, checkpoint_id, session_index)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).bind(auth.user.id, nfcUid, scannedAt, checkpoint.id, sessionIndex).run();
+
+  const next = activeCheckpoints.find((row) =>
+    Number(row.id) !== Number(checkpoint.id) &&
+    !scannedIds.has(Number(row.id)) &&
+    Number(row.position) > Number(checkpoint.position)
+  ) ?? null;
+
+  return json({
+    scan: {
+      id: result.meta?.last_row_id ?? null,
+      nfc_uid: nfcUid,
+      scanned_at: scannedAt,
+      checkpoint_id: checkpoint.id,
+      checkpoint_name: checkpoint.name,
+      session_index: sessionIndex,
+    },
+    nextCheckpoint: next ? {
+      id: Number(next.id),
+      name: next.name,
+      position: Number(next.position),
+    } : null,
+    sessionComplete: scannedIds.size + 1 >= activeCheckpoints.length,
+  }, 201);
+}
+
+async function createIncident(request, env) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth.response;
+
+  const body = await readJson(request);
+  const checkpointId = Number(body.checkpointId ?? 0) || null;
+  const category = String(body.category ?? 'Lain-lain').trim().slice(0, 60);
+  const severity = String(body.severity ?? 'normal').trim().toLowerCase();
+  const note = String(body.note ?? '').trim().slice(0, 500);
+
+  if (!note) return json({ error: 'Masukkan catatan insiden.' }, 400);
+  if (!['normal', 'important', 'urgent'].includes(severity)) {
+    return json({ error: 'Tahap insiden tidak sah.' }, 400);
+  }
+
+  if (checkpointId) {
+    const checkpoint = await env.DB.prepare(
+      'SELECT id FROM checkpoints WHERE id = ? AND department_id = ? LIMIT 1',
+    ).bind(checkpointId, auth.user.department_id).first();
+    if (!checkpoint) return json({ error: 'Checkpoint tidak sah untuk Jabatan anda.' }, 400);
+  }
+
+  const createdAt = new Date().toISOString();
+  const result = await env.DB.prepare(
+    `INSERT INTO incident_reports
+      (user_id, department_id, checkpoint_id, category, severity, note, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'open', ?)`,
+  ).bind(
+    auth.user.id,
+    auth.user.department_id ?? null,
+    checkpointId,
+    category || 'Lain-lain',
+    severity,
+    note,
+    createdAt,
+  ).run();
+
+  return json({
+    incident: {
+      id: result.meta?.last_row_id ?? null,
+      category,
+      severity,
+      note,
+      status: 'open',
+      createdAt,
+    },
+  }, 201);
+}
+
+async function updateIncidentStatus(request, env, incidentId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  const body = await readJson(request);
+  const status = String(body.status ?? '').trim().toLowerCase();
+  if (!['open', 'acknowledged', 'resolved'].includes(status)) {
+    return json({ error: 'Status insiden tidak sah.' }, 400);
+  }
+
+  const existing = await env.DB.prepare('SELECT id FROM incident_reports WHERE id = ? LIMIT 1')
+    .bind(incidentId).first();
+  if (!existing) return json({ error: 'Insiden tidak ditemui.' }, 404);
+
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `UPDATE incident_reports
+     SET status = ?,
+         acknowledged_at = CASE WHEN ? = 'acknowledged' AND acknowledged_at IS NULL THEN ? ELSE acknowledged_at END,
+         resolved_at = CASE WHEN ? = 'resolved' THEN ? ELSE resolved_at END
+     WHERE id = ?`,
+  ).bind(status, status, now, status, now, incidentId).run();
+  return json({ ok: true, status });
+}
+
+async function commandCenter(request, env) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+
+  const now = new Date();
+  const today = malaysiaDateKey(now);
+  const bounds = malaysiaDayBounds(today);
+
+  const [usersResult, checkpointResult, scansResult, sosResult, incidentsResult] = await Promise.all([
+    env.DB.prepare(
+      `SELECT u.id, u.nama, u.department_id, COALESCE(d.name, u.jabatan) AS jabatan,
+              COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes
+       FROM users u
+       LEFT JOIN departments d ON d.id = u.department_id
+       WHERE u.active = 1 AND LOWER(u.jawatan) = 'patrol'
+       ORDER BY jabatan ASC, u.nama ASC`,
+    ).all(),
+    env.DB.prepare(
+      `SELECT department_id, COUNT(*) AS total
+       FROM checkpoints WHERE active = 1 GROUP BY department_id`,
+    ).all(),
+    env.DB.prepare(
+      `SELECT user_id, checkpoint_id, session_index, scanned_at
+       FROM nfc_scans
+       WHERE scanned_at >= ? AND scanned_at < ?
+       ORDER BY scanned_at ASC`,
+    ).bind(bounds.startIso, bounds.endIso).all(),
+    env.DB.prepare(
+      `SELECT e.id, e.triggered_at, e.note, u.nama, COALESCE(d.name, u.jabatan) AS jabatan
+       FROM sos_events e
+       JOIN users u ON u.id = e.user_id
+       LEFT JOIN departments d ON d.id = e.department_id
+       WHERE e.triggered_at >= ?
+       ORDER BY e.triggered_at DESC LIMIT 10`,
+    ).bind(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).all(),
+    env.DB.prepare(
+      `SELECT i.id, i.category, i.severity, i.note, i.status, i.created_at,
+              u.nama, COALESCE(d.name, u.jabatan) AS jabatan,
+              c.name AS checkpoint_name
+       FROM incident_reports i
+       JOIN users u ON u.id = i.user_id
+       LEFT JOIN departments d ON d.id = i.department_id
+       LEFT JOIN checkpoints c ON c.id = i.checkpoint_id
+       WHERE i.status <> 'resolved'
+       ORDER BY CASE i.severity WHEN 'urgent' THEN 0 WHEN 'important' THEN 1 ELSE 2 END,
+                i.created_at DESC
+       LIMIT 50`,
+    ).all(),
+  ]);
+
+  const checkpointCounts = new Map(
+    (checkpointResult.results ?? []).map((row) => [Number(row.department_id), Number(row.total)]),
+  );
+  const scans = scansResult.results ?? [];
+  const patrols = [];
+  let completeCount = 0;
+  let alertCount = 0;
+
+  for (const user of usersResult.results ?? []) {
+    const interval = Number(user.session_interval_minutes || 120);
+    const currentIndex = currentSessionIndex(now, interval);
+    const expected = checkpointCounts.get(Number(user.department_id)) ?? 0;
+    const currentScans = scans.filter((row) =>
+      Number(row.user_id) === Number(user.id) && Number(row.session_index) === currentIndex
+    );
+    const uniqueCurrent = new Set(currentScans.map((row) => Number(row.checkpoint_id)).filter((id) => id > 0));
+    const lastScan = scans.filter((row) => Number(row.user_id) === Number(user.id)).at(-1) ?? null;
+
+    let missedSessions = 0;
+    for (let index = 0; index < currentIndex; index += 1) {
+      const unique = new Set(scans
+        .filter((row) => Number(row.user_id) === Number(user.id) && Number(row.session_index) === index)
+        .map((row) => Number(row.checkpoint_id)).filter((id) => id > 0));
+      if (expected > 0 && unique.size < expected) missedSessions += 1;
+    }
+
+    const shifted = new Date(now.getTime() + MALAYSIA_OFFSET_MS);
+    const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+    const minutesIntoSession = minuteOfDay - currentIndex * interval;
+    const grace = Math.max(10, Math.min(30, Math.floor(interval / 4)));
+
+    let status = 'waiting';
+    if (expected === 0) status = 'no_checkpoints';
+    else if (uniqueCurrent.size >= expected) status = 'complete';
+    else if (missedSessions > 0) status = 'missed';
+    else if (minutesIntoSession >= grace && uniqueCurrent.size === 0) status = 'late';
+    else if (uniqueCurrent.size > 0) status = 'patrolling';
+
+    if (status === 'complete') completeCount += 1;
+    if (status === 'late' || status === 'missed') alertCount += 1;
+
+    patrols.push({
+      userId: Number(user.id),
+      nama: user.nama,
+      jabatan: user.jabatan,
+      status,
+      sessionIndex: currentIndex,
+      scannedCount: uniqueCurrent.size,
+      expectedCount: expected,
+      missedSessions,
+      lastScanAt: lastScan?.scanned_at ?? null,
+    });
+  }
+
+  const incidents = incidentsResult.results ?? [];
+  const urgentIncidents = incidents.filter((row) => row.severity === 'urgent').length;
+
+  return json({
+    generatedAt: now.toISOString(),
+    summary: {
+      patrolUsers: patrols.length,
+      complete: completeCount,
+      alerts: alertCount,
+      openIncidents: incidents.length,
+      urgentIncidents,
+      sos24h: (sosResult.results ?? []).length,
+    },
+    patrols,
+    incidents,
+    sosEvents: sosResult.results ?? [],
+  });
+}
+
 async function createSos(request, env) {
   const auth = await requireUser(request, env);
   if (auth.response) return auth.response;
@@ -104,7 +475,7 @@ async function adminReport(request, env, url) {
   const daySpan = Math.ceil((toBounds.endMs - fromBounds.startMs) / 86400000);
   if (daySpan > 31) return json({ error: 'Laporan maksimum ialah 31 hari setiap kali.' }, 400);
 
-  const [scanResult, sosResult, userResult] = await Promise.all([
+  const [scanResult, sosResult, userResult, incidentResult] = await Promise.all([
     env.DB.prepare(
       `SELECT s.id, s.scanned_at, s.nfc_uid, s.session_index,
               u.nama, u.no_kad_pengenalan, u.jawatan,
@@ -127,10 +498,21 @@ async function adminReport(request, env, url) {
        ORDER BY e.triggered_at ASC`,
     ).bind(fromBounds.startIso, toBounds.endIso).all(),
     env.DB.prepare('SELECT COUNT(*) AS total FROM users WHERE active = 1').first(),
+    env.DB.prepare(
+      `SELECT i.id, i.category, i.severity, i.note, i.status, i.created_at,
+              u.nama, COALESCE(d.name, u.jabatan) AS jabatan, c.name AS checkpoint_name
+       FROM incident_reports i
+       JOIN users u ON u.id = i.user_id
+       LEFT JOIN departments d ON d.id = i.department_id
+       LEFT JOIN checkpoints c ON c.id = i.checkpoint_id
+       WHERE i.created_at >= ? AND i.created_at < ?
+       ORDER BY i.created_at ASC`,
+    ).bind(fromBounds.startIso, toBounds.endIso).all(),
   ]);
 
   const scans = scanResult.results ?? [];
   const sosEvents = sosResult.results ?? [];
+  const incidents = incidentResult.results ?? [];
   return json({
     from,
     to,
@@ -139,9 +521,11 @@ async function adminReport(request, env, url) {
       activeUsers: Number(userResult?.total || 0),
       totalScans: scans.length,
       sosEvents: sosEvents.length,
+      incidents: incidents.length,
     },
     scans,
     sosEvents,
+    incidents,
   });
 }
 
@@ -207,6 +591,16 @@ function getSessionToken(request) {
     if (name === SESSION_COOKIE) return value.join('=');
   }
   return null;
+}
+
+function normalizeUid(value) {
+  return String(value ?? '').trim().toUpperCase().replace(/\s+/g, '');
+}
+
+function currentSessionIndex(value, interval) {
+  const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);
+  const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+  return Math.floor(minuteOfDay / Math.max(15, Math.min(1440, interval)));
 }
 
 async function readJson(request) {
