@@ -18,7 +18,33 @@ class _ReportScreenState extends State<ReportScreen> {
   DateTime _from = DateTime.now();
   DateTime _to = DateTime.now();
   bool _generating = false;
+  bool _loadingDepartments = true;
   String? _error;
+  List<DepartmentRecord> _departments = const [];
+  int? _departmentId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDepartments();
+  }
+
+  Future<void> _loadDepartments() async {
+    try {
+      final departments = await widget.api.getAdminDepartments();
+      if (!mounted) return;
+      setState(() {
+        _departments = departments.where((item) => item.active).toList();
+        _loadingDepartments = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _loadingDepartments = false;
+      });
+    }
+  }
 
   String _date(DateTime value) {
     String two(int v) => v.toString().padLeft(2, '0');
@@ -51,10 +77,15 @@ class _ReportScreenState extends State<ReportScreen> {
       _error = null;
     });
     try {
-      final data = await widget.api.getAdminReport(_from, _to);
+      final data = await widget.api.getAdminReport(
+        _from,
+        _to,
+        departmentId: _departmentId,
+      );
       final scans = data['scans'] as List<dynamic>? ?? const [];
       final sosEvents = data['sosEvents'] as List<dynamic>? ?? const [];
       final summary = data['summary'] as Map<String, dynamic>? ?? const {};
+      final selectedDepartment = data['department'] as Map<String, dynamic>?;
 
       final document = pw.Document();
       document.addPage(
@@ -64,19 +95,22 @@ class _ReportScreenState extends State<ReportScreen> {
           build: (context) => [
             pw.Text(
               'RimbaKawal — Laporan Rondaan',
-              style: pw.TextStyle(
-                fontSize: 20,
-                fontWeight: pw.FontWeight.bold,
-              ),
+              style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 6),
             pw.Text('Tempoh: ${_date(_from)} hingga ${_date(_to)}'),
+            pw.Text(
+              'Jabatan: ${selectedDepartment?['name'] ?? 'Semua Jabatan'}',
+            ),
             pw.SizedBox(height: 16),
             pw.Row(
               children: [
                 _stat('Pengguna aktif', '${summary['activeUsers'] ?? 0}'),
                 pw.SizedBox(width: 8),
-                _stat('Jumlah scan', '${summary['totalScans'] ?? scans.length}'),
+                _stat(
+                  'Jumlah scan',
+                  '${summary['totalScans'] ?? scans.length}',
+                ),
                 pw.SizedBox(width: 8),
                 _stat('SOS', '${summary['sosEvents'] ?? sosEvents.length}'),
               ],
@@ -91,7 +125,13 @@ class _ReportScreenState extends State<ReportScreen> {
               pw.Text('Tiada rekod scan dalam tempoh ini.')
             else
               pw.TableHelper.fromTextArray(
-                headers: const ['Masa', 'Pengguna', 'Jabatan', 'Checkpoint', 'UID'],
+                headers: const [
+                  'Masa',
+                  'Pengguna',
+                  'Jabatan',
+                  'Checkpoint',
+                  'UID',
+                ],
                 data: scans.map((item) {
                   final row = item as Map<String, dynamic>;
                   return [
@@ -213,15 +253,37 @@ class _ReportScreenState extends State<ReportScreen> {
                 children: [
                   Text(
                     'Laporan Rondaan PDF',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Pilih julat sehingga 31 hari. PDF merangkumi rekod checkpoint dan event SOS.',
+                    'Pilih Jabatan dan julat sehingga 31 hari. PDF merangkumi rekod checkpoint dan event SOS.',
                   ),
                   const SizedBox(height: 18),
+                  DropdownButtonFormField<int?>(
+                    initialValue: _departmentId,
+                    decoration: const InputDecoration(
+                      labelText: 'Kategori Jabatan',
+                      prefixIcon: Icon(Icons.account_tree_outlined),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Semua Jabatan'),
+                      ),
+                      ..._departments.map(
+                        (department) => DropdownMenuItem<int?>(
+                          value: department.id,
+                          child: Text(department.name),
+                        ),
+                      ),
+                    ],
+                    onChanged: _loadingDepartments
+                        ? null
+                        : (value) => setState(() => _departmentId = value),
+                  ),
+                  const SizedBox(height: 14),
                   Row(
                     children: [
                       Expanded(
@@ -245,12 +307,16 @@ class _ReportScreenState extends State<ReportScreen> {
                     const SizedBox(height: 12),
                     Text(
                       _error!,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 18),
                   FilledButton.icon(
-                    onPressed: _generating ? null : _generatePdf,
+                    onPressed: _generating || _loadingDepartments
+                        ? null
+                        : _generatePdf,
                     icon: const Icon(Icons.picture_as_pdf_rounded),
                     label: Text(_generating ? 'Menjana…' : 'Jana / Simpan PDF'),
                   ),

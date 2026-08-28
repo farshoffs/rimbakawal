@@ -22,6 +22,8 @@ class AppUser {
   final bool active;
 
   bool get isManagement => jawatan.toLowerCase() == 'management';
+  bool get isSupervisor => jawatan.toLowerCase() == 'supervisor';
+  bool get canMonitor => isManagement || isSupervisor;
 
   factory AppUser.fromJson(Map<String, dynamic> json) {
     return AppUser(

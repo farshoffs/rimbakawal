@@ -9,6 +9,7 @@ import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
 import '../../core/nfc/nfc_service.dart';
 import '../admin/admin_screen.dart';
+import '../admin/command_center_screen.dart';
 import '../auth/login_screen.dart';
 import '../history/clocking_history_screen.dart';
 import '../patrol/patrol_screen.dart';
@@ -90,7 +91,9 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   String _sessionKey(DateTime value) {
     final local = value.toLocal();
-    final interval = _sessionIntervalMinutes <= 0 ? 120 : _sessionIntervalMinutes;
+    final interval = _sessionIntervalMinutes <= 0
+        ? 120
+        : _sessionIntervalMinutes;
     final minuteOfDay = local.hour * 60 + local.minute;
     final index = minuteOfDay ~/ interval;
     String two(int v) => v.toString().padLeft(2, '0');
@@ -149,7 +152,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                       Text(
                         testMode ? 'UJIAN ALARM' : 'SESI RONDAAN BARU',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                        style: Theme.of(context).textTheme.headlineLarge
+                            ?.copyWith(
                               fontWeight: FontWeight.w900,
                               color: Colors.white,
                             ),
@@ -191,6 +195,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (startPatrol == true && mounted) {
         _open(
           PatrolScreen(
+            user: _user,
             nfcService: widget.nfcService,
             mockMode: widget.mockMode,
             api: widget.api,
@@ -242,13 +247,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.sos_rounded, size: 110, color: Colors.redAccent),
+                    const Icon(
+                      Icons.sos_rounded,
+                      size: 110,
+                      color: Colors.redAccent,
+                    ),
                     const SizedBox(height: 20),
                     Text(
                       'SOS DIREKODKAN',
-                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                      style: Theme.of(context).textTheme.headlineLarge
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 14),
                     const Text(
@@ -269,9 +277,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -396,9 +403,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                         children: [
                           Text(
                             _user.nama,
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w800),
                           ),
                           const SizedBox(height: 4),
                           Text('${_user.jawatan} • ${_user.jabatan}'),
@@ -427,10 +433,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                   childAspectRatio: 1.05,
                   children: [
                     _MenuCard(
-                      icon: Icons.nfc_rounded,
-                      title: 'Scan NFC',
+                      icon: Icons.directions_walk_rounded,
+                      title: 'Mula Rondaan',
                       onTap: () => _open(
                         PatrolScreen(
+                          user: _user,
                           nfcService: widget.nfcService,
                           mockMode: widget.mockMode,
                           api: widget.api,
@@ -439,10 +446,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                     _MenuCard(
                       icon: Icons.history_rounded,
-                      title: 'Clocking History',
-                      onTap: () => _open(
-                        ClockingHistoryScreen(api: widget.api),
-                      ),
+                      title: 'Sejarah Rondaan',
+                      onTap: () =>
+                          _open(ClockingHistoryScreen(api: widget.api)),
                     ),
                     _MenuCard(
                       icon: Icons.person_rounded,
@@ -454,6 +460,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                         icon: Icons.admin_panel_settings_rounded,
                         title: 'Admin',
                         onTap: _openAdmin,
+                      ),
+                    if (_user.isSupervisor)
+                      _MenuCard(
+                        icon: Icons.location_searching_rounded,
+                        title: 'Pemantauan',
+                        onTap: () =>
+                            _open(CommandCenterScreen(api: widget.api)),
                       ),
                   ],
                 );
@@ -467,7 +480,11 @@ class _DashboardScreenState extends State<DashboardScreen>
 }
 
 class _MenuCard extends StatelessWidget {
-  const _MenuCard({required this.icon, required this.title, required this.onTap});
+  const _MenuCard({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
   final IconData icon;
   final String title;
   final VoidCallback onTap;
@@ -482,12 +499,19 @@ class _MenuCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 42, color: Theme.of(context).colorScheme.secondary),
+              Icon(
+                icon,
+                size: 42,
+                color: Theme.of(context).colorScheme.secondary,
+              ),
               const SizedBox(height: 14),
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
               ),
             ],
           ),
@@ -505,10 +529,12 @@ class _Avatar extends StatelessWidget {
     if (picture == null || picture.isEmpty) return null;
     if (picture.startsWith('data:image/')) {
       final comma = picture.indexOf(',');
-      if (comma > 0) return MemoryImage(base64Decode(picture.substring(comma + 1)));
+      if (comma > 0)
+        return MemoryImage(base64Decode(picture.substring(comma + 1)));
     }
     return NetworkImage(picture);
   }
+
   @override
   Widget build(BuildContext context) {
     final image = _imageProvider(user.profilePicture);

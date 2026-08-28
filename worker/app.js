@@ -26,6 +26,15 @@ export default {
       if (url.pathname === '/api/patrol/config' && request.method === 'GET') {
         return smartPatrolConfig(request, env);
       }
+      if (url.pathname === '/api/patrol/start' && request.method === 'POST') {
+        return startPatrolSession(request, env);
+      }
+      if (url.pathname === '/api/patrol/location' && request.method === 'POST') {
+        return updatePatrolLocation(request, env);
+      }
+      if (url.pathname === '/api/patrol/end' && request.method === 'POST') {
+        return endPatrolSession(request, env);
+      }
       if (url.pathname === '/api/scans' && request.method === 'POST') {
         return createSmartScan(request, env);
       }
@@ -33,6 +42,10 @@ export default {
       const incidentMatch = url.pathname.match(/^\/api\/admin\/incidents\/(\d+)\/status$/);
       if (incidentMatch && request.method === 'PUT') {
         return updateIncidentStatus(request, env, Number(incidentMatch[1]));
+      }
+      const incidentImagesMatch = url.pathname.match(/^\/api\/admin\/incidents\/(\d+)\/images$/);
+      if (incidentImagesMatch && request.method === 'GET') {
+        return getIncidentImages(request, env, Number(incidentImagesMatch[1]));
       }
     } catch (error) {
       console.error(error);
@@ -57,8 +70,8 @@ async function createUser(request, env) {
   if (!/^\d{12}$/.test(identityCard)) {
     return json({ error: 'No. Kad Pengenalan mesti mengandungi 12 digit.' }, 400);
   }
-  if (!['Patrol', 'Management'].includes(jawatan)) {
-    return json({ error: 'Jawatan mesti Patrol atau Management.' }, 400);
+  if (!['Patrol', 'Supervisor', 'Management'].includes(jawatan)) {
+    return json({ error: 'Jawatan mesti Patrol, Supervisor atau Management.' }, 400);
   }
   if (!Number.isInteger(departmentId) || departmentId <= 0) {
     return json({ error: 'Pilih Jabatan pengguna.' }, 400);
@@ -81,6 +94,89 @@ async function createUser(request, env) {
 
   const user = await getUserById(env, result.meta?.last_row_id);
   return json({ user: publicUser(user) }, 201);
+}
+
+async function startPatrolSession(request, env) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth.response;
+  if (!auth.user.department_id) {
+    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+  }
+
+  const now = new Date();
+  const startedAt = now.toISOString();
+  const interval = Number(auth.user.session_interval_minutes || 120);
+  const sessionIndex = currentSessionIndex(now, interval);
+  await env.DB.prepare(
+    `UPDATE patrol_sessions
+     SET status = 'ended', ended_at = COALESCE(ended_at, ?)
+     WHERE user_id = ? AND status = 'active'`,
+  ).bind(startedAt, auth.user.id).run();
+
+  const result = await env.DB.prepare(
+    `INSERT INTO patrol_sessions
+      (user_id, department_id, session_index, started_at, status)
+     VALUES (?, ?, ?, ?, 'active')`,
+  ).bind(auth.user.id, auth.user.department_id, sessionIndex, startedAt).run();
+
+  return json({
+    patrolSession: {
+      id: Number(result.meta?.last_row_id),
+      sessionIndex,
+      startedAt,
+    },
+  }, 201);
+}
+
+async function updatePatrolLocation(request, env) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth.response;
+  const body = await readJson(request);
+  const patrolSessionId = Number(body.patrolSessionId);
+  const latitude = Number(body.latitude);
+  const longitude = Number(body.longitude);
+  const accuracy = Math.max(0, Number(body.accuracy || 0));
+  if (!Number.isInteger(patrolSessionId) || patrolSessionId <= 0 ||
+      !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+      !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    return json({ error: 'Data lokasi tidak sah.' }, 400);
+  }
+
+  const locationAt = new Date().toISOString();
+  const result = await env.DB.prepare(
+    `UPDATE patrol_sessions
+     SET last_latitude = ?, last_longitude = ?, last_accuracy = ?,
+         last_location_at = ?
+     WHERE id = ? AND user_id = ? AND status = 'active'`,
+  ).bind(
+    latitude,
+    longitude,
+    accuracy,
+    locationAt,
+    patrolSessionId,
+    auth.user.id,
+  ).run();
+  if (Number(result.meta?.changes || 0) === 0) {
+    return json({ error: 'Sesi Rondaan aktif tidak ditemui.' }, 404);
+  }
+  return json({ ok: true, locationAt });
+}
+
+async function endPatrolSession(request, env) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth.response;
+  const body = await readJson(request);
+  const patrolSessionId = Number(body.patrolSessionId);
+  if (!Number.isInteger(patrolSessionId) || patrolSessionId <= 0) {
+    return json({ error: 'Sesi Rondaan tidak sah.' }, 400);
+  }
+  const endedAt = new Date().toISOString();
+  await env.DB.prepare(
+    `UPDATE patrol_sessions
+     SET status = 'ended', ended_at = ?
+     WHERE id = ? AND user_id = ? AND status = 'active'`,
+  ).bind(endedAt, patrolSessionId, auth.user.id).run();
+  return json({ ok: true, endedAt });
 }
 
 async function smartPatrolConfig(request, env) {
@@ -250,10 +346,20 @@ async function createIncident(request, env) {
   const category = String(body.category ?? 'Lain-lain').trim().slice(0, 60);
   const severity = String(body.severity ?? 'normal').trim().toLowerCase();
   const note = String(body.note ?? '').trim().slice(0, 500);
+  const images = Array.isArray(body.images) ? body.images : [];
 
   if (!note) return json({ error: 'Masukkan catatan insiden.' }, 400);
   if (!['normal', 'important', 'urgent'].includes(severity)) {
     return json({ error: 'Tahap insiden tidak sah.' }, 400);
+  }
+  if (images.length > 4) {
+    return json({ error: 'Maksimum 4 gambar bagi setiap laporan.' }, 400);
+  }
+  const validImages = images.map((value) => String(value ?? '').trim());
+  if (validImages.some((value) =>
+    !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(value) || value.length > 500000
+  )) {
+    return json({ error: 'Format atau saiz gambar tidak sah.' }, 400);
   }
 
   if (checkpointId) {
@@ -278,20 +384,49 @@ async function createIncident(request, env) {
     createdAt,
   ).run();
 
+  const incidentId = Number(result.meta?.last_row_id);
+  if (validImages.length > 0) {
+    await env.DB.batch(validImages.map((image) => env.DB.prepare(
+      `INSERT INTO incident_images (incident_id, image_data, created_at)
+       VALUES (?, ?, ?)`,
+    ).bind(incidentId, image, createdAt)));
+  }
+
   return json({
     incident: {
-      id: result.meta?.last_row_id ?? null,
+      id: incidentId || null,
       category,
       severity,
       note,
       status: 'open',
       createdAt,
+      imageCount: validImages.length,
     },
   }, 201);
 }
 
+async function getIncidentImages(request, env, incidentId) {
+  const auth = await requireMonitor(request, env);
+  if (auth.response) return auth.response;
+  if (!Number.isInteger(incidentId) || incidentId <= 0) {
+    return json({ error: 'Insiden tidak sah.' }, 400);
+  }
+  const incident = await env.DB.prepare(
+    'SELECT id FROM incident_reports WHERE id = ? LIMIT 1',
+  ).bind(incidentId).first();
+  if (!incident) return json({ error: 'Insiden tidak ditemui.' }, 404);
+
+  const result = await env.DB.prepare(
+    `SELECT image_data
+     FROM incident_images WHERE incident_id = ? ORDER BY id ASC`,
+  ).bind(incidentId).all();
+  return json({
+    images: (result.results ?? []).map((row) => row.image_data),
+  });
+}
+
 async function updateIncidentStatus(request, env, incidentId) {
-  const auth = await requireManagement(request, env);
+  const auth = await requireMonitor(request, env);
   if (auth.response) return auth.response;
   const body = await readJson(request);
   const status = String(body.status ?? '').trim().toLowerCase();
@@ -315,20 +450,29 @@ async function updateIncidentStatus(request, env, incidentId) {
 }
 
 async function commandCenter(request, env) {
-  const auth = await requireManagement(request, env);
+  const auth = await requireMonitor(request, env);
   if (auth.response) return auth.response;
 
   const now = new Date();
   const today = malaysiaDateKey(now);
   const bounds = malaysiaDayBounds(today);
+  const liveSince = new Date(now.getTime() - 2 * 60 * 1000).toISOString();
 
-  const [usersResult, checkpointResult, scansResult, sosResult, incidentsResult] = await Promise.all([
+  const [
+    usersResult,
+    checkpointResult,
+    scansResult,
+    sosResult,
+    incidentsResult,
+    patrolSessionsResult,
+  ] = await Promise.all([
     env.DB.prepare(
       `SELECT u.id, u.nama, u.department_id, COALESCE(d.name, u.jabatan) AS jabatan,
+              u.profile_picture,
               COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes
        FROM users u
        LEFT JOIN departments d ON d.id = u.department_id
-       WHERE u.active = 1 AND LOWER(u.jawatan) = 'patrol'
+       WHERE u.active = 1 AND LOWER(u.jawatan) IN ('patrol', 'supervisor')
        ORDER BY jabatan ASC, u.nama ASC`,
     ).all(),
     env.DB.prepare(
@@ -352,7 +496,8 @@ async function commandCenter(request, env) {
     env.DB.prepare(
       `SELECT i.id, i.category, i.severity, i.note, i.status, i.created_at,
               u.nama, COALESCE(d.name, u.jabatan) AS jabatan,
-              c.name AS checkpoint_name
+              c.name AS checkpoint_name,
+              (SELECT COUNT(*) FROM incident_images ii WHERE ii.incident_id = i.id) AS image_count
        FROM incident_reports i
        JOIN users u ON u.id = i.user_id
        LEFT JOIN departments d ON d.id = i.department_id
@@ -362,12 +507,27 @@ async function commandCenter(request, env) {
                 i.created_at DESC
        LIMIT 50`,
     ).all(),
+    env.DB.prepare(
+      `SELECT ps.id, ps.user_id, ps.started_at, ps.last_latitude, ps.last_longitude,
+              ps.last_accuracy, ps.last_location_at
+       FROM patrol_sessions ps
+       JOIN (
+         SELECT user_id, MAX(id) AS latest_id
+         FROM patrol_sessions
+         WHERE status = 'active'
+           AND COALESCE(last_location_at, started_at) >= ?
+         GROUP BY user_id
+       ) latest ON latest.latest_id = ps.id`,
+    ).bind(liveSince).all(),
   ]);
 
   const checkpointCounts = new Map(
     (checkpointResult.results ?? []).map((row) => [Number(row.department_id), Number(row.total)]),
   );
   const scans = scansResult.results ?? [];
+  const activePatrols = new Map(
+    (patrolSessionsResult.results ?? []).map((row) => [Number(row.user_id), row]),
+  );
   const patrols = [];
   let completeCount = 0;
   let alertCount = 0;
@@ -381,6 +541,7 @@ async function commandCenter(request, env) {
     );
     const uniqueCurrent = new Set(currentScans.map((row) => Number(row.checkpoint_id)).filter((id) => id > 0));
     const lastScan = scans.filter((row) => Number(row.user_id) === Number(user.id)).at(-1) ?? null;
+    const activePatrol = activePatrols.get(Number(user.id)) ?? null;
 
     let missedSessions = 0;
     for (let index = 0; index < currentIndex; index += 1) {
@@ -398,6 +559,7 @@ async function commandCenter(request, env) {
     let status = 'waiting';
     if (expected === 0) status = 'no_checkpoints';
     else if (uniqueCurrent.size >= expected) status = 'complete';
+    else if (activePatrol) status = 'patrolling';
     else if (missedSessions > 0) status = 'missed';
     else if (minutesIntoSession >= grace && uniqueCurrent.size === 0) status = 'late';
     else if (uniqueCurrent.size > 0) status = 'patrolling';
@@ -409,12 +571,19 @@ async function commandCenter(request, env) {
       userId: Number(user.id),
       nama: user.nama,
       jabatan: user.jabatan,
+      profilePicture: user.profile_picture,
       status,
       sessionIndex: currentIndex,
       scannedCount: uniqueCurrent.size,
       expectedCount: expected,
       missedSessions,
       lastScanAt: lastScan?.scanned_at ?? null,
+      patrolSessionId: activePatrol ? Number(activePatrol.id) : null,
+      sessionStartedAt: activePatrol?.started_at ?? null,
+      latitude: activePatrol?.last_latitude == null ? null : Number(activePatrol.last_latitude),
+      longitude: activePatrol?.last_longitude == null ? null : Number(activePatrol.last_longitude),
+      accuracy: activePatrol?.last_accuracy == null ? null : Number(activePatrol.last_accuracy),
+      locationAt: activePatrol?.last_location_at ?? null,
     });
   }
 
@@ -465,8 +634,13 @@ async function adminReport(request, env, url) {
   const today = malaysiaDateKey(new Date());
   const from = url.searchParams.get('from') || today;
   const to = url.searchParams.get('to') || today;
+  const rawDepartmentId = url.searchParams.get('departmentId');
+  const departmentId = rawDepartmentId == null ? null : Number(rawDepartmentId);
   if (!isDateKey(from) || !isDateKey(to) || from > to) {
     return json({ error: 'Julat tarikh laporan tidak sah.' }, 400);
+  }
+  if (departmentId != null && (!Number.isInteger(departmentId) || departmentId <= 0)) {
+    return json({ error: 'Jabatan laporan tidak sah.' }, 400);
   }
 
   const fromBounds = malaysiaDayBounds(from);
@@ -475,9 +649,14 @@ async function adminReport(request, env, url) {
   const daySpan = Math.ceil((toBounds.endMs - fromBounds.startMs) / 86400000);
   if (daySpan > 31) return json({ error: 'Laporan maksimum ialah 31 hari setiap kali.' }, 400);
 
-  const [scanResult, sosResult, userResult, incidentResult] = await Promise.all([
-    env.DB.prepare(
-      `SELECT s.id, s.scanned_at, s.nfc_uid, s.session_index,
+  let department = null;
+  if (departmentId != null) {
+    department = await env.DB.prepare(
+      'SELECT id, name FROM departments WHERE id = ? LIMIT 1',
+    ).bind(departmentId).first();
+    if (!department) return json({ error: 'Jabatan tidak ditemui.' }, 404);
+  }
+  const scanSql = `SELECT s.id, s.scanned_at, s.nfc_uid, s.session_index,
               u.nama, u.no_kad_pengenalan, u.jawatan,
               COALESCE(d.name, u.jabatan) AS jabatan,
               COALESCE(c.name, 'Checkpoint') AS checkpoint_name
@@ -486,28 +665,39 @@ async function adminReport(request, env, url) {
        LEFT JOIN departments d ON d.id = u.department_id
        LEFT JOIN checkpoints c ON c.id = s.checkpoint_id
        WHERE s.scanned_at >= ? AND s.scanned_at < ?
-       ORDER BY s.scanned_at ASC`,
-    ).bind(fromBounds.startIso, toBounds.endIso).all(),
-    env.DB.prepare(
-      `SELECT e.id, e.triggered_at, e.note, u.nama,
+       ${departmentId == null ? '' : 'AND u.department_id = ?'}
+       ORDER BY s.scanned_at ASC`;
+  const sosSql = `SELECT e.id, e.triggered_at, e.note, u.nama,
               COALESCE(d.name, u.jabatan) AS jabatan
        FROM sos_events e
        JOIN users u ON u.id = e.user_id
        LEFT JOIN departments d ON d.id = e.department_id
        WHERE e.triggered_at >= ? AND e.triggered_at < ?
-       ORDER BY e.triggered_at ASC`,
-    ).bind(fromBounds.startIso, toBounds.endIso).all(),
-    env.DB.prepare('SELECT COUNT(*) AS total FROM users WHERE active = 1').first(),
-    env.DB.prepare(
-      `SELECT i.id, i.category, i.severity, i.note, i.status, i.created_at,
+       ${departmentId == null ? '' : 'AND e.department_id = ?'}
+       ORDER BY e.triggered_at ASC`;
+  const incidentSql = `SELECT i.id, i.category, i.severity, i.note, i.status, i.created_at,
               u.nama, COALESCE(d.name, u.jabatan) AS jabatan, c.name AS checkpoint_name
        FROM incident_reports i
        JOIN users u ON u.id = i.user_id
        LEFT JOIN departments d ON d.id = i.department_id
        LEFT JOIN checkpoints c ON c.id = i.checkpoint_id
        WHERE i.created_at >= ? AND i.created_at < ?
-       ORDER BY i.created_at ASC`,
-    ).bind(fromBounds.startIso, toBounds.endIso).all(),
+       ${departmentId == null ? '' : 'AND i.department_id = ?'}
+       ORDER BY i.created_at ASC`;
+  const dateBindings = departmentId == null
+    ? [fromBounds.startIso, toBounds.endIso]
+    : [fromBounds.startIso, toBounds.endIso, departmentId];
+  const [scanResult, sosResult, userResult, incidentResult] = await Promise.all([
+    env.DB.prepare(
+      scanSql,
+    ).bind(...dateBindings).all(),
+    env.DB.prepare(sosSql).bind(...dateBindings).all(),
+    departmentId == null
+      ? env.DB.prepare('SELECT COUNT(*) AS total FROM users WHERE active = 1').first()
+      : env.DB.prepare(
+        'SELECT COUNT(*) AS total FROM users WHERE active = 1 AND department_id = ?',
+      ).bind(departmentId).first(),
+    env.DB.prepare(incidentSql).bind(...dateBindings).all(),
   ]);
 
   const scans = scanResult.results ?? [];
@@ -516,6 +706,7 @@ async function adminReport(request, env, url) {
   return json({
     from,
     to,
+    department: department == null ? null : { id: Number(department.id), name: department.name },
     generatedAt: new Date().toISOString(),
     summary: {
       activeUsers: Number(userResult?.total || 0),
@@ -534,6 +725,16 @@ async function requireManagement(request, env) {
   if (auth.response) return auth;
   if (String(auth.user.jawatan).toLowerCase() !== 'management') {
     return { response: json({ error: 'Akses Admin hanya untuk Management.' }, 403) };
+  }
+  return auth;
+}
+
+async function requireMonitor(request, env) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth;
+  const role = String(auth.user.jawatan).toLowerCase();
+  if (role !== 'management' && role !== 'supervisor') {
+    return { response: json({ error: 'Akses pemantauan hanya untuk Admin atau Supervisor.' }, 403) };
   }
   return auth;
 }

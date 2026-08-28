@@ -7,11 +7,7 @@ import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({
-    required this.user,
-    required this.api,
-    super.key,
-  });
+  const ProfileScreen({required this.user, required this.api, super.key});
 
   final AppUser user;
   final ApiService api;
@@ -67,9 +63,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -147,9 +142,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _InfoTile(label: 'Nama', value: _user.nama),
           _InfoTile(label: 'No. Kad Pengenalan', value: _user.noKadPengenalan),
           _InfoTile(label: 'Jawatan', value: _user.jawatan),
-          _InfoTile(label: 'Jabatan / Sekolah', value: _user.jabatan),
+          _InfoTile(label: 'Jabatan', value: _user.jabatan),
           _InfoTile(
-            label: 'Kadar sesi rondaan',
+            label: 'Kadar Sesi Rondaan',
             value: 'Setiap ${_user.sessionIntervalMinutes} minit',
           ),
         ],

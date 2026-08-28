@@ -130,7 +130,7 @@ async function patrolConfig(request, env) {
   if (auth.response) return auth.response;
 
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada jabatan/sekolah.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
   }
 
   const checkpoints = await env.DB.prepare(
@@ -176,7 +176,7 @@ async function getScans(request, env, url) {
   if (auth.response) return auth.response;
 
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada jabatan/sekolah.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
   }
 
   const requestedDate = url.searchParams.get('date') || malaysiaDateKey(new Date());
@@ -195,14 +195,25 @@ async function getScans(request, env, url) {
   ).bind(auth.user.department_id).all();
   const checkpoints = checkpointResult.results ?? [];
 
+  const memberResult = await env.DB.prepare(
+    `SELECT id, nama, profile_picture
+     FROM users
+     WHERE department_id = ? AND active = 1
+       AND LOWER(jawatan) IN ('patrol', 'supervisor')
+     ORDER BY nama ASC`,
+  ).bind(auth.user.department_id).all();
+  const members = memberResult.results ?? [];
+
   const scanResult = await env.DB.prepare(
-    `SELECT s.id, s.nfc_uid, s.scanned_at, s.checkpoint_id, s.session_index,
-            c.name AS checkpoint_name
+    `SELECT s.id, s.user_id, s.nfc_uid, s.scanned_at, s.checkpoint_id,
+            s.session_index, c.name AS checkpoint_name,
+            u.nama AS user_name, u.profile_picture
      FROM nfc_scans s
+     JOIN users u ON u.id = s.user_id
      LEFT JOIN checkpoints c ON c.id = s.checkpoint_id
-     WHERE s.user_id = ? AND s.scanned_at >= ? AND s.scanned_at < ?
+     WHERE u.department_id = ? AND s.scanned_at >= ? AND s.scanned_at < ?
      ORDER BY s.scanned_at ASC, s.id ASC`,
-  ).bind(auth.user.id, bounds.startIso, bounds.endIso).all();
+  ).bind(auth.user.department_id, bounds.startIso, bounds.endIso).all();
 
   const scans = scanResult.results ?? [];
   const interval = Math.max(15, Math.min(1440, Number(auth.user.session_interval_minutes || 120)));
@@ -214,45 +225,49 @@ async function getScans(request, env, url) {
 
   if (!isFutureDay) {
     const sessionCount = Math.ceil(1440 / interval);
-    for (let index = 0; index < sessionCount; index += 1) {
-      const startMs = bounds.startMs + index * interval * 60000;
-      const endMs = Math.min(bounds.endMs, startMs + interval * 60000);
-      if (requestedDate === todayKey && startMs > nowMs) break;
+    for (const member of members) {
+      for (let index = 0; index < sessionCount; index += 1) {
+        const startMs = bounds.startMs + index * interval * 60000;
+        const endMs = Math.min(bounds.endMs, startMs + interval * 60000);
+        if (requestedDate === todayKey && startMs > nowMs) break;
 
-      const sessionScans = scans.filter((scan) => {
-        const time = Date.parse(scan.scanned_at);
-        return time >= startMs && time < endMs;
-      });
-      const scannedCheckpointIds = new Set(
-        sessionScans
-          .map((scan) => Number(scan.checkpoint_id || 0))
-          .filter((id) => id > 0),
-      );
-      const missing = checkpoints.filter((checkpoint) => !scannedCheckpointIds.has(Number(checkpoint.id)));
+        const sessionScans = scans.filter((scan) => {
+          const time = Date.parse(scan.scanned_at);
+          return Number(scan.user_id) === Number(member.id) &&
+            time >= startMs && time < endMs;
+        });
+        const scannedCheckpointIds = new Set(
+          sessionScans
+            .map((scan) => Number(scan.checkpoint_id || 0))
+            .filter((id) => id > 0),
+        );
+        const missing = checkpoints.filter(
+          (checkpoint) => !scannedCheckpointIds.has(Number(checkpoint.id)),
+        );
 
-      let status = 'in_progress';
-      if (checkpoints.length === 0) {
-        status = 'no_checkpoints';
-      } else if (missing.length === 0) {
-        status = 'complete';
-      } else if (isPastDay || endMs <= nowMs) {
-        status = 'missed';
+        let status = 'in_progress';
+        if (checkpoints.length === 0) status = 'no_checkpoints';
+        else if (missing.length === 0) status = 'complete';
+        else if (isPastDay || endMs <= nowMs) status = 'missed';
+
+        sessions.push({
+          userId: Number(member.id),
+          userName: member.nama,
+          profilePicture: member.profile_picture || null,
+          index,
+          startAt: new Date(startMs).toISOString(),
+          endAt: new Date(endMs).toISOString(),
+          status,
+          expectedCount: checkpoints.length,
+          scannedCount: scannedCheckpointIds.size,
+          missingCheckpoints: missing.map((checkpoint) => ({
+            id: checkpoint.id,
+            name: checkpoint.name,
+            position: checkpoint.position,
+          })),
+          scans: sessionScans.map(scanJson),
+        });
       }
-
-      sessions.push({
-        index,
-        startAt: new Date(startMs).toISOString(),
-        endAt: new Date(endMs).toISOString(),
-        status,
-        expectedCount: checkpoints.length,
-        scannedCount: scannedCheckpointIds.size,
-        missingCheckpoints: missing.map((checkpoint) => ({
-          id: checkpoint.id,
-          name: checkpoint.name,
-          position: checkpoint.position,
-        })),
-        scans: sessionScans.map(scanJson),
-      });
     }
   }
 
@@ -270,7 +285,7 @@ async function createScan(request, env) {
   if (auth.response) return auth.response;
 
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada jabatan/sekolah.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
   }
 
   const body = await readJson(request);
@@ -288,7 +303,7 @@ async function createScan(request, env) {
 
   if (!checkpoint) {
     return json({
-      error: 'NFC ini tidak berdaftar sebagai checkpoint untuk jabatan/sekolah anda.',
+      error: 'NFC ini tidak berdaftar sebagai checkpoint untuk Jabatan anda.',
     }, 403);
   }
 
@@ -355,7 +370,7 @@ async function createDepartment(request, env) {
   const duplicate = await env.DB.prepare('SELECT id FROM departments WHERE LOWER(name) = LOWER(?) LIMIT 1')
     .bind(name)
     .first();
-  if (duplicate) return json({ error: 'Jabatan/sekolah dengan nama ini sudah wujud.' }, 409);
+  if (duplicate) return json({ error: 'Jabatan dengan nama ini sudah wujud.' }, 409);
 
   const result = await env.DB.prepare(
     `INSERT INTO departments (name, session_interval_minutes, active, updated_at)
@@ -379,10 +394,10 @@ async function updateDepartment(request, env, departmentId) {
   const duplicate = await env.DB.prepare(
     'SELECT id FROM departments WHERE LOWER(name) = LOWER(?) AND id <> ? LIMIT 1',
   ).bind(name, departmentId).first();
-  if (duplicate) return json({ error: 'Jabatan/sekolah dengan nama ini sudah wujud.' }, 409);
+  if (duplicate) return json({ error: 'Jabatan dengan nama ini sudah wujud.' }, 409);
 
   const existing = await getDepartmentById(env, departmentId);
-  if (!existing) return json({ error: 'Jabatan/sekolah tidak ditemui.' }, 404);
+  if (!existing) return json({ error: 'Jabatan tidak ditemui.' }, 404);
 
   await env.DB.batch([
     env.DB.prepare(
@@ -403,7 +418,7 @@ async function adminCheckpoints(request, env, url) {
 
   const departmentId = Number(url.searchParams.get('departmentId'));
   if (!Number.isInteger(departmentId) || departmentId <= 0) {
-    return json({ error: 'Jabatan/sekolah tidak sah.' }, 400);
+    return json({ error: 'Jabatan tidak sah.' }, 400);
   }
 
   const result = await env.DB.prepare(
@@ -428,7 +443,7 @@ async function createCheckpoint(request, env) {
   if (validation) return json({ error: validation }, 400);
 
   const department = await getDepartmentById(env, departmentId);
-  if (!department) return json({ error: 'Jabatan/sekolah tidak ditemui.' }, 404);
+  if (!department) return json({ error: 'Jabatan tidak ditemui.' }, 404);
 
   const duplicate = await findCheckpointDuplicate(env, departmentId, name, nfcUid, 0);
   if (duplicate) return json({ error: duplicate }, 409);
@@ -477,7 +492,7 @@ async function updateUserDepartment(request, env, userId) {
   const departmentId = Number(body.departmentId);
   const department = await getDepartmentById(env, departmentId);
   if (!department || Number(department.active) !== 1) {
-    return json({ error: 'Jabatan/sekolah aktif tidak ditemui.' }, 404);
+    return json({ error: 'Jabatan aktif tidak ditemui.' }, 404);
   }
 
   const user = await getUserById(env, userId);
@@ -558,13 +573,13 @@ async function findCheckpointDuplicate(env, departmentId, name, nfcUid, exceptId
     `SELECT id FROM checkpoints
      WHERE department_id = ? AND LOWER(name) = LOWER(?) AND id <> ? LIMIT 1`,
   ).bind(departmentId, name, exceptId).first();
-  if (byName) return 'Nama checkpoint ini sudah digunakan dalam jabatan/sekolah tersebut.';
+  if (byName) return 'Nama checkpoint ini sudah digunakan dalam Jabatan tersebut.';
 
   const byUid = await env.DB.prepare(
     `SELECT id FROM checkpoints
      WHERE department_id = ? AND UPPER(nfc_uid) = UPPER(?) AND id <> ? LIMIT 1`,
   ).bind(departmentId, nfcUid, exceptId).first();
-  if (byUid) return 'UID NFC ini sudah didaftarkan dalam jabatan/sekolah tersebut.';
+  if (byUid) return 'UID NFC ini sudah didaftarkan dalam Jabatan tersebut.';
   return null;
 }
 
@@ -611,11 +626,14 @@ function scanJson(scan) {
     checkpoint_id: scan.checkpoint_id == null ? null : Number(scan.checkpoint_id),
     checkpoint_name: scan.checkpoint_name || null,
     session_index: scan.session_index == null ? null : Number(scan.session_index),
+    user_id: scan.user_id == null ? null : Number(scan.user_id),
+    user_name: scan.user_name || null,
+    profile_picture: scan.profile_picture || null,
   };
 }
 
 function validateDepartment(name, interval) {
-  if (name.length < 2 || name.length > 150) return 'Nama jabatan/sekolah mesti antara 2 hingga 150 aksara.';
+  if (name.length < 2 || name.length > 150) return 'Nama Jabatan mesti antara 2 hingga 150 aksara.';
   if (!Number.isInteger(interval) || interval < 15 || interval > 1440) {
     return 'Tempoh sesi mesti antara 15 hingga 1440 minit.';
   }
@@ -623,7 +641,7 @@ function validateDepartment(name, interval) {
 }
 
 function validateCheckpoint(departmentId, name, nfcUid, position) {
-  if (!Number.isInteger(departmentId) || departmentId <= 0) return 'Jabatan/sekolah tidak sah.';
+  if (!Number.isInteger(departmentId) || departmentId <= 0) return 'Jabatan tidak sah.';
   if (name.length < 1 || name.length > 100) return 'Nama checkpoint tidak sah.';
   if (!nfcUid || nfcUid.length > 128) return 'UID NFC tidak sah.';
   if (!Number.isInteger(position) || position < 1 || position > 999) return 'Susunan checkpoint mesti antara 1 hingga 999.';

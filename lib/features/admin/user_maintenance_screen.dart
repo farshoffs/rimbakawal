@@ -90,9 +90,8 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -119,7 +118,10 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text(snapshot.error.toString(), textAlign: TextAlign.center),
+                child: Text(
+                  snapshot.error.toString(),
+                  textAlign: TextAlign.center,
+                ),
               ),
             );
           }
@@ -270,6 +272,10 @@ class _AddUserDialogState extends State<_AddUserDialog> {
                 ),
                 items: const [
                   DropdownMenuItem(value: 'Patrol', child: Text('Patrol')),
+                  DropdownMenuItem(
+                    value: 'Supervisor',
+                    child: Text('Supervisor'),
+                  ),
                   DropdownMenuItem(
                     value: 'Management',
                     child: Text('Management'),

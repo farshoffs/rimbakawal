@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_service.dart';
@@ -62,7 +64,7 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Clocking History'),
+        title: const Text('Sejarah Rondaan'),
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -102,7 +104,10 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                             onSelected: (_) => _load(yesterday),
                           ),
                           ActionChip(
-                            avatar: const Icon(Icons.calendar_month_rounded, size: 18),
+                            avatar: const Icon(
+                              Icons.calendar_month_rounded,
+                              size: 18,
+                            ),
                             label: const Text('Pilih tarikh'),
                             onPressed: _pickDate,
                           ),
@@ -147,7 +152,7 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Text(
-                            '${history.department} • Sesi setiap ${history.sessionIntervalMinutes} minit',
+                            '${history.department} • Sesi Rondaan setiap ${history.sessionIntervalMinutes} minit • semua anggota Jabatan',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         );
@@ -174,14 +179,25 @@ class _SessionCard extends StatelessWidget {
   final HistorySession session;
   final String Function(DateTime) formatTime;
 
+  ImageProvider<Object>? _imageProvider(String? picture) {
+    if (picture == null || picture.isEmpty) return null;
+    if (picture.startsWith('data:image/')) {
+      final comma = picture.indexOf(',');
+      if (comma > 0) {
+        return MemoryImage(base64Decode(picture.substring(comma + 1)));
+      }
+    }
+    return NetworkImage(picture);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final statusColor = session.isMissed
         ? scheme.error
         : session.isComplete
-            ? Colors.greenAccent
-            : scheme.secondary;
+        ? Colors.greenAccent
+        : scheme.secondary;
     final statusLabel = switch (session.status) {
       'complete' => 'LENGKAP',
       'missed' => 'MISSED CHECKPOINT',
@@ -208,14 +224,37 @@ class _SessionCard extends StatelessWidget {
           children: [
             Row(
               children: [
+                CircleAvatar(
+                  backgroundImage: _imageProvider(session.profilePicture),
+                  child: _imageProvider(session.profilePicture) == null
+                      ? Text(
+                          session.userName.isEmpty ? '?' : session.userName[0],
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Sesi ${session.index + 1} • ${formatTime(session.startAt)} - ${formatTime(session.endAt)}',
+                    session.userName,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Sesi Rondaan ${session.index + 1} • ${formatTime(session.startAt)} - ${formatTime(session.endAt)}',
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(999),
@@ -261,7 +300,9 @@ class _SessionCard extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.nfc_rounded),
                   title: Text(scan.checkpointName ?? 'NFC tidak dipadankan'),
-                  subtitle: Text('${scan.nfcUid} • ${formatTime(scan.scannedAt)}'),
+                  subtitle: Text(
+                    '${scan.userName ?? session.userName} • ${scan.nfcUid} • ${formatTime(scan.scannedAt)}',
+                  ),
                 ),
               ),
             ],
