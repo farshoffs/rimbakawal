@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
+    "build": "bash scripts/cloudflare-build.sh",
     "deploy": "wrangler deploy",
     "deploy:dry-run": "wrangler deploy --dry-run"
   },
