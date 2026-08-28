@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_service.dart';
-import '../../core/nfc/nfc_scan_result.dart';
 import '../../core/nfc/nfc_service.dart';
 
 class PatrolScreen extends StatefulWidget {
@@ -21,9 +20,16 @@ class PatrolScreen extends StatefulWidget {
 }
 
 class _PatrolScreenState extends State<PatrolScreen> {
-  final List<NfcScanResult> _scans = [];
+  final List<NfcLog> _scans = [];
+  late Future<PatrolConfig> _configFuture;
   bool _scanning = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _configFuture = widget.api.getPatrolConfig();
+  }
 
   Future<void> _scanCheckpoint() async {
     if (_scanning) return;
@@ -37,17 +43,21 @@ class _PatrolScreenState extends State<PatrolScreen> {
       final available = await widget.nfcService.isAvailable();
       if (!available) {
         throw StateError(
-          'NFC is unavailable. Make sure this phone supports NFC and NFC is switched on.',
+          'NFC tidak tersedia. Pastikan telefon menyokong NFC dan NFC dihidupkan.',
         );
       }
 
-      final result = await widget.nfcService.scan();
-      await widget.api.storeNfcScan(result.tagId);
+      final raw = await widget.nfcService.scan();
+      final saved = await widget.api.storeNfcScan(raw.tagId);
       if (!mounted) return;
 
-      setState(() => _scans.insert(0, result));
+      setState(() => _scans.insert(0, saved));
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('NFC direkodkan: ${result.tagId}')),
+        SnackBar(
+          content: Text(
+            '${saved.checkpointName ?? 'Checkpoint'} berjaya direkodkan.',
+          ),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
@@ -80,7 +90,10 @@ class _PatrolScreenState extends State<PatrolScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Chip(
-              avatar: Icon(widget.mockMode ? Icons.science_outlined : Icons.nfc, size: 18),
+              avatar: Icon(
+                widget.mockMode ? Icons.science_outlined : Icons.nfc,
+                size: 18,
+              ),
               label: Text(widget.mockMode ? 'MOCK' : 'REAL NFC'),
             ),
           ),
@@ -92,6 +105,60 @@ class _PatrolScreenState extends State<PatrolScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              FutureBuilder<PatrolConfig>(
+                future: _configFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(snapshot.error.toString()),
+                      ),
+                    );
+                  }
+                  if (!snapshot.hasData) {
+                    return const Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    );
+                  }
+                  final config = snapshot.data!;
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            config.departmentName,
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Sesi setiap ${config.sessionIntervalMinutes} minit • '
+                            '${config.checkpointNames.length} checkpoint aktif',
+                          ),
+                          if (config.checkpointNames.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: config.checkpointNames
+                                  .map((name) => Chip(label: Text(name)))
+                                  .toList(),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
@@ -106,7 +173,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Setiap scan yang berjaya akan disimpan ke pangkalan data bersama masa dan UID NFC.',
+                        'Hanya NFC yang berdaftar dalam jabatan/sekolah anda akan diterima dan disimpan.',
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -127,12 +194,14 @@ class _PatrolScreenState extends State<PatrolScreen> {
                     padding: const EdgeInsets.all(12),
                     child: Text(
                       _error!,
-                      style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
                     ),
                   ),
                 ),
               ],
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               Text(
                 'Scan sesi ini (${_scans.length})',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -148,9 +217,9 @@ class _PatrolScreenState extends State<PatrolScreen> {
                           final scan = _scans[index];
                           return ListTile(
                             leading: const CircleAvatar(child: Icon(Icons.check)),
-                            title: SelectableText(scan.tagId),
-                            subtitle: Text(
-                              '${scan.technology}\n${_formatTime(scan.scannedAt)}',
+                            title: Text(scan.checkpointName ?? 'Checkpoint'),
+                            subtitle: SelectableText(
+                              '${scan.nfcUid}\n${_formatTime(scan.scannedAt)}',
                             ),
                             isThreeLine: true,
                           );

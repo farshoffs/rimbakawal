@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
@@ -9,7 +14,7 @@ import '../history/clocking_history_screen.dart';
 import '../patrol/patrol_screen.dart';
 import '../profile/profile_screen.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
     required this.user,
     required this.api,
@@ -23,22 +28,228 @@ class DashboardScreen extends StatelessWidget {
   final NfcService nfcService;
   final bool mockMode;
 
-  Future<void> _logout(BuildContext context) async {
-    await api.logout();
-    if (!context.mounted) return;
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen>
+    with WidgetsBindingObserver {
+  late AppUser _user;
+  late int _sessionIntervalMinutes;
+  final AudioPlayer _alarmPlayer = AudioPlayer();
+  Timer? _sessionTimer;
+  Timer? _configTimer;
+  String? _lastSessionKey;
+  bool _alarmShowing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _user = widget.user;
+    _sessionIntervalMinutes = widget.user.sessionIntervalMinutes;
+    _lastSessionKey = _sessionKey(DateTime.now());
+    _sessionTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _checkSessionBoundary(),
+    );
+    _configTimer = Timer.periodic(
+      const Duration(minutes: 5),
+      (_) => _refreshPatrolConfig(),
+    );
+    _refreshPatrolConfig();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshPatrolConfig();
+      _checkSessionBoundary();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _sessionTimer?.cancel();
+    _configTimer?.cancel();
+    _alarmPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshPatrolConfig() async {
+    try {
+      final config = await widget.api.getPatrolConfig();
+      if (!mounted) return;
+      if (_sessionIntervalMinutes != config.sessionIntervalMinutes) {
+        setState(() => _sessionIntervalMinutes = config.sessionIntervalMinutes);
+        _lastSessionKey = _sessionKey(DateTime.now());
+      }
+    } catch (_) {
+      // Keep the last known session setting when connectivity is unavailable.
+    }
+  }
+
+  String _sessionKey(DateTime value) {
+    final local = value.toLocal();
+    final interval = _sessionIntervalMinutes <= 0 ? 120 : _sessionIntervalMinutes;
+    final minuteOfDay = local.hour * 60 + local.minute;
+    final index = minuteOfDay ~/ interval;
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)}-$index-$interval';
+  }
+
+  void _checkSessionBoundary() {
+    if (_user.isManagement) return;
+    final current = _sessionKey(DateTime.now());
+    if (_lastSessionKey == null) {
+      _lastSessionKey = current;
+      return;
+    }
+    if (current == _lastSessionKey) return;
+    _lastSessionKey = current;
+    _showSessionAlarm();
+  }
+
+  Future<void> _showSessionAlarm() async {
+    if (!mounted || _alarmShowing) return;
+    _alarmShowing = true;
+
+    try {
+      try {
+        await _alarmPlayer.setReleaseMode(ReleaseMode.loop);
+        await _alarmPlayer.setVolume(1);
+        await _alarmPlayer.play(AssetSource('audio/patrol_alarm.wav'));
+      } catch (_) {
+        await SystemSound.play(SystemSoundType.alert);
+      }
+
+      if (!mounted) return;
+      final startPatrol = await showGeneralDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black,
+        transitionDuration: const Duration(milliseconds: 250),
+        pageBuilder: (context, _, _) => Scaffold(
+          backgroundColor: const Color(0xFF09090F),
+          body: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(28),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.notifications_active_rounded,
+                        size: 108,
+                        color: Color(0xFFC0392B),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'SESI RONDAAN BARU',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _user.jabatan,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'Sesi baharu telah bermula. Kadar rondaan sekolah ini ialah setiap '
+                        '$_sessionIntervalMinutes minit. Sila lengkapkan semua checkpoint.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 17, height: 1.5),
+                      ),
+                      const SizedBox(height: 32),
+                      FilledButton.icon(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        icon: const Icon(Icons.nfc_rounded),
+                        label: const Text('MULA RONDAAN'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Tutup alarm'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      if (startPatrol == true && mounted) {
+        _open(
+          PatrolScreen(
+            nfcService: widget.nfcService,
+            mockMode: widget.mockMode,
+            api: widget.api,
+          ),
+        );
+      }
+    } finally {
+      await _alarmPlayer.stop();
+      _alarmShowing = false;
+    }
+  }
+
+  Future<void> _logout() async {
+    await widget.api.logout();
+    if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(
         builder: (_) => LoginScreen(
-          nfcService: nfcService,
-          mockMode: mockMode,
+          nfcService: widget.nfcService,
+          mockMode: widget.mockMode,
         ),
       ),
       (_) => false,
     );
   }
 
-  void _open(BuildContext context, Widget screen) {
+  void _open(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+  }
+
+  Future<void> _openProfile() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProfileScreen(user: _user, api: widget.api),
+      ),
+    );
+    await _refreshCurrentUser();
+  }
+
+  Future<void> _openAdmin() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AdminScreen(api: widget.api),
+      ),
+    );
+    await _refreshCurrentUser();
+  }
+
+  Future<void> _refreshCurrentUser() async {
+    try {
+      final refreshed = await widget.api.getSession();
+      if (refreshed == null || !mounted) return;
+      setState(() {
+        _user = refreshed;
+        _sessionIntervalMinutes = refreshed.sessionIntervalMinutes;
+      });
+      _lastSessionKey = _sessionKey(DateTime.now());
+    } catch (_) {
+      // Keep current profile when refresh fails.
+    }
   }
 
   @override
@@ -49,7 +260,7 @@ class DashboardScreen extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'Log keluar',
-            onPressed: () => _logout(context),
+            onPressed: _logout,
             icon: const Icon(Icons.logout_rounded),
           ),
         ],
@@ -63,20 +274,25 @@ class DashboardScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(20),
                 child: Row(
                   children: [
-                    _Avatar(user: user, radius: 32),
+                    _Avatar(user: _user, radius: 32),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            user.nama,
+                            _user.nama,
                             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                   fontWeight: FontWeight.w800,
                                 ),
                           ),
                           const SizedBox(height: 4),
-                          Text('${user.jawatan} • ${user.jabatan}'),
+                          Text('${_user.jawatan} • ${_user.jabatan}'),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Sesi rondaan: setiap $_sessionIntervalMinutes minit',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         ],
                       ),
                     ),
@@ -100,11 +316,10 @@ class DashboardScreen extends StatelessWidget {
                       icon: Icons.nfc_rounded,
                       title: 'Scan NFC',
                       onTap: () => _open(
-                        context,
                         PatrolScreen(
-                          nfcService: nfcService,
-                          mockMode: mockMode,
-                          api: api,
+                          nfcService: widget.nfcService,
+                          mockMode: widget.mockMode,
+                          api: widget.api,
                         ),
                       ),
                     ),
@@ -112,26 +327,19 @@ class DashboardScreen extends StatelessWidget {
                       icon: Icons.history_rounded,
                       title: 'Clocking History',
                       onTap: () => _open(
-                        context,
-                        ClockingHistoryScreen(api: api),
+                        ClockingHistoryScreen(api: widget.api),
                       ),
                     ),
                     _MenuCard(
                       icon: Icons.person_rounded,
                       title: 'Profile',
-                      onTap: () => _open(
-                        context,
-                        ProfileScreen(user: user),
-                      ),
+                      onTap: _openProfile,
                     ),
-                    if (user.isManagement)
+                    if (_user.isManagement)
                       _MenuCard(
                         icon: Icons.admin_panel_settings_rounded,
                         title: 'Admin',
-                        onTap: () => _open(
-                          context,
-                          AdminScreen(api: api),
-                        ),
+                        onTap: _openAdmin,
                       ),
                   ],
                 );
@@ -162,7 +370,11 @@ class _MenuCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 42, color: Theme.of(context).colorScheme.secondary),
+              Icon(
+                icon,
+                size: 42,
+                color: Theme.of(context).colorScheme.secondary,
+              ),
               const SizedBox(height: 14),
               Text(
                 title,
@@ -183,13 +395,25 @@ class _Avatar extends StatelessWidget {
   final AppUser user;
   final double radius;
 
+  ImageProvider<Object>? _imageProvider(String? picture) {
+    if (picture == null || picture.isEmpty) return null;
+    if (picture.startsWith('data:image/')) {
+      final comma = picture.indexOf(',');
+      if (comma > 0) {
+        return MemoryImage(base64Decode(picture.substring(comma + 1)));
+      }
+    }
+    return NetworkImage(picture);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final picture = user.profilePicture;
-    if (picture != null && picture.isNotEmpty) {
-      return CircleAvatar(radius: radius, backgroundImage: NetworkImage(picture));
-    }
+    final image = _imageProvider(user.profilePicture);
     final initial = user.nama.isEmpty ? '?' : user.nama[0];
-    return CircleAvatar(radius: radius, child: Text(initial));
+    return CircleAvatar(
+      radius: radius,
+      backgroundImage: image,
+      child: image == null ? Text(initial) : null,
+    );
   }
 }
