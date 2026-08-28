@@ -85,9 +85,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         setState(() => _sessionIntervalMinutes = config.sessionIntervalMinutes);
         _lastSessionKey = _sessionKey(DateTime.now());
       }
-    } catch (_) {
-      // Keep the last known session setting when connectivity is unavailable.
-    }
+    } catch (_) {}
   }
 
   String _sessionKey(DateTime value) {
@@ -111,19 +109,21 @@ class _DashboardScreenState extends State<DashboardScreen>
     _showSessionAlarm();
   }
 
-  Future<void> _showSessionAlarm() async {
+  Future<void> _playAlarm() async {
+    try {
+      await _alarmPlayer.setReleaseMode(ReleaseMode.loop);
+      await _alarmPlayer.setVolume(1);
+      await _alarmPlayer.play(AssetSource('audio/patrol_alarm.wav'));
+    } catch (_) {
+      await SystemSound.play(SystemSoundType.alert);
+    }
+  }
+
+  Future<void> _showSessionAlarm({bool testMode = false}) async {
     if (!mounted || _alarmShowing) return;
     _alarmShowing = true;
-
     try {
-      try {
-        await _alarmPlayer.setReleaseMode(ReleaseMode.loop);
-        await _alarmPlayer.setVolume(1);
-        await _alarmPlayer.play(AssetSource('audio/patrol_alarm.wav'));
-      } catch (_) {
-        await SystemSound.play(SystemSoundType.alert);
-      }
-
+      await _playAlarm();
       if (!mounted) return;
       final startPatrol = await showGeneralDialog<bool>(
         context: context,
@@ -147,7 +147,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        'SESI RONDAAN BARU',
+                        testMode ? 'UJIAN ALARM' : 'SESI RONDAAN BARU',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                               fontWeight: FontWeight.w900,
@@ -162,17 +162,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                       const SizedBox(height: 18),
                       Text(
-                        'Sesi baharu telah bermula. Kadar rondaan sekolah ini ialah setiap '
-                        '$_sessionIntervalMinutes minit. Sila lengkapkan semua checkpoint.',
+                        testMode
+                            ? 'Ini ialah ujian paparan dan bunyi alarm RimbaKawal.'
+                            : 'Sesi baharu telah bermula. Kadar rondaan Jabatan ini ialah setiap $_sessionIntervalMinutes minit. Sila lengkapkan semua checkpoint.',
                         textAlign: TextAlign.center,
                         style: const TextStyle(fontSize: 17, height: 1.5),
                       ),
                       const SizedBox(height: 32),
-                      FilledButton.icon(
-                        onPressed: () => Navigator.of(context).pop(true),
-                        icon: const Icon(Icons.nfc_rounded),
-                        label: const Text('MULA RONDAAN'),
-                      ),
+                      if (!testMode)
+                        FilledButton.icon(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          icon: const Icon(Icons.nfc_rounded),
+                          label: const Text('MULA RONDAAN'),
+                        ),
                       const SizedBox(height: 12),
                       TextButton(
                         onPressed: () => Navigator.of(context).pop(false),
@@ -186,7 +188,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
       );
-
       if (startPatrol == true && mounted) {
         _open(
           PatrolScreen(
@@ -200,6 +201,111 @@ class _DashboardScreenState extends State<DashboardScreen>
       await _alarmPlayer.stop();
       _alarmShowing = false;
     }
+  }
+
+  Future<void> _triggerSos() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Aktifkan SOS?'),
+        content: const Text(
+          'SOS akan direkod dalam RimbaKawal dan dimasukkan ke laporan Admin. Ia tidak menghubungi talian kecemasan secara automatik.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('REKOD SOS'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.createSos(note: 'SOS dicetuskan dari dashboard');
+      if (!mounted) return;
+      await SystemSound.play(SystemSoundType.alert);
+      await showGeneralDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black,
+        pageBuilder: (context, _, _) => Scaffold(
+          backgroundColor: const Color(0xFF210608),
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.sos_rounded, size: 110, color: Colors.redAccent),
+                    const SizedBox(height: 20),
+                    Text(
+                      'SOS DIREKODKAN',
+                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Event ini telah direkod dalam RimbaKawal. Jika ini kecemasan sebenar, hubungi pihak bertanggungjawab atau perkhidmatan kecemasan secara terus.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Tutup'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
+  }
+
+  Future<void> _showQuickActions() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.alarm_rounded)),
+                title: const Text('Test Alarm'),
+                subtitle: const Text('Uji paparan penuh dan bunyi alarm.'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _showSessionAlarm(testMode: true);
+                },
+              ),
+              ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.sos_rounded)),
+                title: const Text('SOS'),
+                subtitle: const Text('Rekod event SOS ke sistem.'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _triggerSos();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _logout() async {
@@ -232,7 +338,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   Future<void> _openAdmin() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AdminScreen(api: widget.api),
+        builder: (_) => AdminScreen(
+          api: widget.api,
+          nfcService: widget.nfcService,
+          mockMode: widget.mockMode,
+        ),
       ),
     );
     await _refreshCurrentUser();
@@ -247,9 +357,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         _sessionIntervalMinutes = refreshed.sessionIntervalMinutes;
       });
       _lastSessionKey = _sessionKey(DateTime.now());
-    } catch (_) {
-      // Keep current profile when refresh fails.
-    }
+    } catch (_) {}
   }
 
   @override
@@ -258,6 +366,11 @@ class _DashboardScreenState extends State<DashboardScreen>
       appBar: AppBar(
         title: const Text('RimbaKawal'),
         actions: [
+          IconButton(
+            tooltip: 'Alarm / SOS',
+            onPressed: _showQuickActions,
+            icon: const Icon(Icons.crisis_alert_rounded),
+          ),
           IconButton(
             tooltip: 'Log keluar',
             onPressed: _logout,
@@ -354,11 +467,9 @@ class _DashboardScreenState extends State<DashboardScreen>
 
 class _MenuCard extends StatelessWidget {
   const _MenuCard({required this.icon, required this.title, required this.onTap});
-
   final IconData icon;
   final String title;
   final VoidCallback onTap;
-
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -370,11 +481,7 @@ class _MenuCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                size: 42,
-                color: Theme.of(context).colorScheme.secondary,
-              ),
+              Icon(icon, size: 42, color: Theme.of(context).colorScheme.secondary),
               const SizedBox(height: 14),
               Text(
                 title,
@@ -391,21 +498,16 @@ class _MenuCard extends StatelessWidget {
 
 class _Avatar extends StatelessWidget {
   const _Avatar({required this.user, required this.radius});
-
   final AppUser user;
   final double radius;
-
   ImageProvider<Object>? _imageProvider(String? picture) {
     if (picture == null || picture.isEmpty) return null;
     if (picture.startsWith('data:image/')) {
       final comma = picture.indexOf(',');
-      if (comma > 0) {
-        return MemoryImage(base64Decode(picture.substring(comma + 1)));
-      }
+      if (comma > 0) return MemoryImage(base64Decode(picture.substring(comma + 1)));
     }
     return NetworkImage(picture);
   }
-
   @override
   Widget build(BuildContext context) {
     final image = _imageProvider(user.profilePicture);
