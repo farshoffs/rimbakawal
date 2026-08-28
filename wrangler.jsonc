@@ -2,11 +2,19 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "rimbakawal",
   "main": "./worker/index.js",
-  "compatibility_date": "2026-08-28",
+  "compatibility_date": "2026-08-29",
   "workers_dev": true,
   "observability": {
     "enabled": true
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rimbakawal-db",
+      "database_id": "8529e0e9-faf7-4953-8fbd-aefb539df73b",
+      "migrations_dir": "migrations"
+    }
+  ],
   "assets": {
     "directory": "./build/web",
     "binding": "ASSETS",
