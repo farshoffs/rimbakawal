@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/nfc/nfc_service.dart';
+import 'attendance_history_screen.dart';
 import 'command_center_screen.dart';
 import 'department_maintenance_screen.dart';
 import 'live_patrol_map_screen.dart';
@@ -45,6 +46,13 @@ class AdminScreen extends StatelessWidget {
             subtitle:
                 'Pantau rondaan, sesi terlepas, SOS dan insiden secara langsung.',
             onTap: () => _open(context, CommandCenterScreen(api: api)),
+          ),
+          const SizedBox(height: 10),
+          _AdminMenuCard(
+            icon: Icons.fingerprint_rounded,
+            title: 'Sejarah Kehadiran',
+            subtitle: 'Semak punch masuk/keluar, geofence dan detail pengesahan wajah.',
+            onTap: () => _open(context, AttendanceHistoryScreen(api: api)),
           ),
           const SizedBox(height: 10),
           _AdminMenuCard(

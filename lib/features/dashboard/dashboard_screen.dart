@@ -14,6 +14,7 @@ import '../../core/offline/offline_sync_service.dart';
 import '../../core/notifications/notification_service.dart';
 import '../admin/admin_screen.dart';
 import '../admin/command_center_screen.dart';
+import '../attendance/attendance_screen.dart';
 import '../auth/login_screen.dart';
 import '../history/clocking_history_screen.dart';
 import '../patrol/patrol_screen.dart';
@@ -659,6 +660,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                       title: 'Mula Rondaan',
                       subtitle: 'Imbas checkpoint dan rekod lokasi',
                       onTap: _openPatrol,
+                    ),
+                    _MenuData(
+                      icon: Icons.fingerprint_rounded,
+                      title: 'Kehadiran',
+                      subtitle: 'Punch lokasi + pengesahan wajah',
+                      onTap: () => _open(AttendanceScreen(api: widget.api, user: _user)),
                     ),
                     _MenuData(
                       icon: Icons.history_rounded,

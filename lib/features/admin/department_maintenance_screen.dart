@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/nfc/nfc_service.dart';
@@ -117,7 +119,8 @@ class _DepartmentMaintenanceScreenState
                   subtitle: Text(
                     'Mula ${TimeOfDay(hour: department.sessionStartMinutes ~/ 60, minute: department.sessionStartMinutes % 60).format(context)} • '
                     'Sesi setiap ${department.sessionIntervalMinutes} minit • '
-                    '${department.checkpointCount} checkpoint aktif'
+                    '${department.checkpointCount} checkpoint aktif • '
+                    '${department.attendanceLatitude == null ? 'Kawasan kehadiran belum ditetapkan' : 'Kehadiran ${department.attendanceRadiusMeters}m'}'
                     '${department.active ? '' : ' • TIDAK AKTIF'}',
                   ),
                   trailing: IconButton(
@@ -222,8 +225,12 @@ class _DepartmentDialog extends StatefulWidget {
 class _DepartmentDialogState extends State<_DepartmentDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _intervalController;
+  late final TextEditingController _locationLabelController;
   late TimeOfDay _startTime;
   late bool _active;
+  double? _latitude;
+  double? _longitude;
+  double _radius = 150;
   bool _saving = false;
   String? _error;
 
@@ -231,27 +238,26 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.department?.name ?? '');
-    _intervalController = TextEditingController(
-      text: (widget.department?.sessionIntervalMinutes ?? 120).toString(),
-    );
+    _intervalController = TextEditingController(text: (widget.department?.sessionIntervalMinutes ?? 120).toString());
+    _locationLabelController = TextEditingController(text: widget.department?.attendanceLocationLabel ?? '');
     final startMinutes = widget.department?.sessionStartMinutes ?? 420;
     _startTime = TimeOfDay(hour: startMinutes ~/ 60, minute: startMinutes % 60);
     _active = widget.department?.active ?? true;
+    _latitude = widget.department?.attendanceLatitude;
+    _longitude = widget.department?.attendanceLongitude;
+    _radius = (widget.department?.attendanceRadiusMeters ?? 150).toDouble();
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _intervalController.dispose();
+    _locationLabelController.dispose();
     super.dispose();
   }
 
   Future<void> _pickStartTime() async {
-    final selected = await showTimePicker(
-      context: context,
-      initialTime: _startTime,
-      helpText: 'Jam mula sesi rondaan',
-    );
+    final selected = await showTimePicker(context: context, initialTime: _startTime, helpText: 'Jam mula sesi rondaan');
     if (selected != null && mounted) setState(() => _startTime = selected);
   }
 
@@ -263,10 +269,11 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
       setState(() => _error = 'Masukkan nama Jabatan dan kadar sesi yang sah.');
       return;
     }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    if (_latitude == null || _longitude == null) {
+      setState(() => _error = 'Tandakan pusat kawasan sekolah pada peta untuk fungsi kehadiran.');
+      return;
+    }
+    setState(() { _saving = true; _error = null; });
     try {
       final existing = widget.department;
       if (existing == null) {
@@ -274,6 +281,10 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
           name: name,
           sessionIntervalMinutes: interval,
           sessionStartMinutes: startMinutes,
+          attendanceLatitude: _latitude!,
+          attendanceLongitude: _longitude!,
+          attendanceRadiusMeters: _radius.round(),
+          attendanceLocationLabel: _locationLabelController.text.trim(),
         );
       } else {
         await widget.api.updateDepartment(
@@ -284,6 +295,10 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
             sessionStartMinutes: startMinutes,
             active: _active,
             checkpointCount: existing.checkpointCount,
+            attendanceLatitude: _latitude,
+            attendanceLongitude: _longitude,
+            attendanceRadiusMeters: _radius.round(),
+            attendanceLocationLabel: _locationLabelController.text.trim(),
           ),
         );
       }
@@ -299,30 +314,25 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final center = LatLng(_latitude ?? 5.69582, _longitude ?? 100.53720);
     return AlertDialog(
       title: Text(widget.department == null ? 'Tambah Jabatan' : 'Tetapan Jabatan'),
       content: SizedBox(
-        width: 420,
+        width: 620,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               TextField(
                 controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nama Jabatan',
-                  prefixIcon: Icon(Icons.account_tree_rounded),
-                ),
+                decoration: const InputDecoration(labelText: 'Nama Jabatan', prefixIcon: Icon(Icons.account_tree_rounded)),
               ),
               const SizedBox(height: 14),
               TextField(
                 controller: _intervalController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Tempoh satu sesi (minit)',
-                  helperText: 'Nilai asal: 120 minit (2 jam)',
-                  prefixIcon: Icon(Icons.timer_outlined),
-                ),
+                decoration: const InputDecoration(labelText: 'Tempoh satu sesi (minit)', helperText: 'Nilai asal: 120 minit (2 jam)', prefixIcon: Icon(Icons.timer_outlined)),
               ),
               const SizedBox(height: 14),
               ListTile(
@@ -330,40 +340,65 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                 leading: const Icon(Icons.schedule_rounded),
                 title: const Text('Jam mula rondaan'),
                 subtitle: Text('Sesi 1 bermula pada ${_startTime.format(context)}'),
-                trailing: FilledButton.tonal(
-                  onPressed: _pickStartTime,
-                  child: Text(_startTime.format(context)),
+                trailing: FilledButton.tonal(onPressed: _pickStartTime, child: Text(_startTime.format(context))),
+              ),
+              const SizedBox(height: 16),
+              Text('Kawasan Kehadiran', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              const Text('Tekan pada peta untuk menetapkan pusat sekolah. Bulatan menunjukkan radius yang dibenarkan untuk punch masuk/keluar.'),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: SizedBox(
+                  height: 290,
+                  child: FlutterMap(
+                    options: MapOptions(
+                      initialCenter: center,
+                      initialZoom: _latitude == null ? 15 : 17,
+                      onTap: (_, point) => setState(() { _latitude = point.latitude; _longitude = point.longitude; }),
+                    ),
+                    children: [
+                      TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'dev.rimbakawal.rimbakawal'),
+                      if (_latitude != null && _longitude != null)
+                        CircleLayer(circles: [CircleMarker(point: LatLng(_latitude!, _longitude!), radius: _radius, useRadiusInMeter: true, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.16), borderColor: Theme.of(context).colorScheme.primary, borderStrokeWidth: 2)]),
+                      if (_latitude != null && _longitude != null)
+                        MarkerLayer(markers: [Marker(point: LatLng(_latitude!, _longitude!), width: 48, height: 48, child: const Icon(Icons.school_rounded, size: 38))]),
+                    ],
+                  ),
                 ),
               ),
+              const SizedBox(height: 4),
+              const Text('© OpenStreetMap contributors', style: TextStyle(fontSize: 10)),
+              const SizedBox(height: 10),
+              Row(children: [
+                const Icon(Icons.radar_rounded),
+                const SizedBox(width: 8),
+                Expanded(child: Slider(value: _radius.clamp(30.0, 1000.0).toDouble(), min: 30, max: 1000, divisions: 97, label: '${_radius.round()}m', onChanged: (value) => setState(() => _radius = value))),
+                SizedBox(width: 72, child: Text('${_radius.round()} m', textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w900))),
+              ]),
+              TextField(
+                controller: _locationLabelController,
+                decoration: const InputDecoration(labelText: 'Label lokasi (pilihan)', hintText: 'Contoh: SMK Bandar Baru Sungai Lalang', prefixIcon: Icon(Icons.location_city_rounded)),
+              ),
+              if (_latitude != null && _longitude != null) ...[
+                const SizedBox(height: 8),
+                SelectableText('Pusat: ${_latitude!.toStringAsFixed(6)}, ${_longitude!.toStringAsFixed(6)}'),
+              ],
               if (widget.department != null) ...[
                 const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Jabatan aktif'),
-                  value: _active,
-                  onChanged: (value) => setState(() => _active = value),
-                ),
+                SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Jabatan aktif'), value: _active, onChanged: (value) => setState(() => _active = value)),
               ],
               if (_error != null) ...[
                 const SizedBox(height: 8),
-                Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
+                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ],
             ],
           ),
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
-          child: const Text('Batal'),
-        ),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: Text(_saving ? 'Menyimpan…' : 'Simpan'),
-        ),
+        TextButton(onPressed: _saving ? null : () => Navigator.of(context).pop(false), child: const Text('Batal')),
+        FilledButton(onPressed: _saving ? null : _save, child: Text(_saving ? 'Menyimpan…' : 'Simpan')),
       ],
     );
   }

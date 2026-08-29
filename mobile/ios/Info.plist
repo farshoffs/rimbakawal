@@ -50,11 +50,11 @@
 		<string>remote-notification</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>RimbaKawal menggunakan kamera untuk gambar laporan insiden.</string>
+	<string>RimbaKawal menggunakan kamera untuk gambar laporan insiden dan selfie pengesahan kehadiran.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>RimbaKawal menggunakan galeri untuk lampiran laporan insiden.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Lokasi dihantar kepada Admin dan Supervisor hanya semasa rondaan aktif.</string>
+	<string>RimbaKawal menggunakan lokasi semasa rondaan aktif dan semasa punch kehadiran dalam kawasan Jabatan.</string>
 	<key>NFCReaderUsageDescription</key>
 	<string>RimbaKawal menggunakan NFC untuk mengimbas checkpoint rondaan.</string>
 </dict>
