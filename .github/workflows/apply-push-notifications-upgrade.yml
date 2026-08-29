@@ -51,8 +51,9 @@ jobs:
       - name: Build Flutter web
         run: flutter build web --release --dart-define=USE_MOCK_NFC=true
 
-      - name: Commit validated upgrade
+      - name: Commit validated source upgrade
         run: |
+          git restore --source=HEAD -- .github/workflows/deploy-cloudflare.yml .github/workflows/build-mobile-production.yml
           git config user.name "RimbaKawal Automation"
           git config user.email "actions@users.noreply.github.com"
           git add .
