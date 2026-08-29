@@ -1,5 +1,5 @@
 name: rimbakawal
-version: 0.2.0+1
+version: 0.3.0+2
 publish_to: 'none'
 
 environment:
@@ -9,10 +9,13 @@ dependencies:
   flutter:
     sdk: flutter
   audioplayers: ^6.8.1
+  connectivity_plus: ^7.3.1
   cupertino_icons: ^1.0.8
+  flutter_map: ^8.3.2
+  flutter_secure_storage: ^11.0.0
+  geolocator: ^14.0.3
+  hive_ce_flutter: ^2.3.4
   http: ^1.5.0
-  geolocator: ^14.0.2
-  flutter_map: ^8.3.1
   image_picker: ^1.2.3
   latlong2: ^0.10.1
   nfc_manager: ^4.2.1
