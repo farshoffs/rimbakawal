@@ -775,8 +775,8 @@ class _PatrolScreenState extends State<PatrolScreen> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: SizedBox(
-        width: 270,
-        height: 62,
+        width: MediaQuery.sizeOf(context).width - 32,
+        height: 66,
         child: FloatingActionButton.extended(
           heroTag: 'scan-checkpoint-fab',
           onPressed: _scanning || _ending ? null : _scanCheckpoint,
@@ -785,19 +785,19 @@ class _PatrolScreenState extends State<PatrolScreen> {
           foregroundColor: const Color(0xFF181818),
           disabledElevation: 3,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(18),
             side: BorderSide(
               color: Colors.white.withValues(alpha: 0.22),
             ),
           ),
           icon: Icon(
             _scanning ? Icons.radar_rounded : Icons.nfc_rounded,
-            size: 28,
+            size: 30,
           ),
           label: Text(
             _scanning ? 'MENGIMBAS…' : 'IMBAS CHECKPOINT',
             style: const TextStyle(
-              fontSize: 16,
+              fontSize: 18,
               fontWeight: FontWeight.w900,
               letterSpacing: 0.3,
             ),
