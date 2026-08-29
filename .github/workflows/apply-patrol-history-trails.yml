@@ -1,0 +1,61 @@
+name: Apply Patrol History Trails
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/apply_patrol_history_trails.py
+      - .github/workflows/apply-patrol-history-trails.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patrol history upgrade
+        run: python3 scripts/apply_patrol_history_trails.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Validate Worker JavaScript
+        run: |
+          node --check worker/index.js
+          node --check worker/offline.js
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit validated patrol history upgrade
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            migrations/0011_patrol_session_history.sql \
+            worker/index.js \
+            worker/offline.js \
+            lib/core/api/api_service.dart \
+            lib/features/dashboard/dashboard_screen.dart \
+            lib/features/history/clocking_history_screen.dart
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git commit -m "Add archived patrol trails to history"
+          git push origin main
