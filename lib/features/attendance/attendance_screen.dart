@@ -2,7 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
+
+import 'web_selfie_capture_stub.dart' if (dart.library.html) 'web_selfie_capture_web.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
@@ -77,17 +80,24 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     });
     try {
       final position = await _currentPosition();
-      final image = await _picker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.front,
-        maxWidth: 720,
-        imageQuality: 65,
-      );
-      if (image == null) return;
-      final bytes = await image.readAsBytes();
-      final lower = image.path.toLowerCase();
-      final mime = lower.endsWith('.png') ? 'png' : 'jpeg';
-      final dataUrl = 'data:image/$mime;base64,${base64Encode(bytes)}';
+      if (!mounted) return;
+      final String? dataUrl;
+      if (kIsWeb) {
+        dataUrl = await captureWebSelfie(context);
+      } else {
+        final image = await _picker.pickImage(
+          source: ImageSource.camera,
+          preferredCameraDevice: CameraDevice.front,
+          maxWidth: 720,
+          imageQuality: 65,
+        );
+        if (image == null) return;
+        final bytes = await image.readAsBytes();
+        final lower = image.path.toLowerCase();
+        final mime = lower.endsWith('.png') ? 'png' : 'jpeg';
+        dataUrl = 'data:image/$mime;base64,${base64Encode(bytes)}';
+      }
+      if (dataUrl == null || dataUrl.isEmpty) return;
       final record = await widget.api.punchAttendance(
         latitude: position.latitude,
         longitude: position.longitude,
@@ -171,7 +181,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         Text(
                           status?.department.attendanceLatitude == null
                               ? 'Kawasan kehadiran belum ditetapkan oleh Admin.'
-                              : 'Geofence ${status!.department.attendanceRadiusMeters}m • selfie kamera hadapan diperlukan.',
+                              : 'Anda perlu berada dalam lingkungan ${status!.department.attendanceRadiusMeters}m dari kawasan yang ditetapkan dan ambil selfie.',
                         ),
                       ],
                     ),
@@ -192,12 +202,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     child: FilledButton.icon(
                       onPressed: _punching ? null : _punch,
                       icon: Icon(nextType == 'IN' ? Icons.login_rounded : Icons.logout_rounded),
-                      label: Text(_punching ? 'MENGESAHKAN…' : nextLabel),
+                      label: Text(_punching ? 'MENYIMPAN…' : nextLabel),
                     ),
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'Lokasi, ketepatan GPS dan selfie dihantar bersama rekod. Jika AI tidak dapat membuat padanan automatik, rekod tetap disimpan tetapi ditanda untuk semakan Admin.',
+                    'Lokasi semasa, ketepatan GPS dan selfie akan disimpan bersama rekod kehadiran. Jika selfie perlu diperiksa semula, Admin boleh membuat semakan daripada Sejarah Kehadiran.',
                     style: TextStyle(fontSize: 12, height: 1.4),
                   ),
                   const SizedBox(height: 24),
