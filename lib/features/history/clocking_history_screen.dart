@@ -38,7 +38,8 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
 
   Future<HistoryDay> _loadManagementInitial() async {
     final departments = await widget.api.getAdminDepartments();
-    final selected = _selectedDepartmentId ??
+    final selected =
+        _selectedDepartmentId ??
         (departments.isEmpty ? null : departments.first.id);
     if (mounted) {
       setState(() {
@@ -212,13 +213,12 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Pergerakan Rondaan',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w900,
-                                  ),
+                              'Sesi Rondaan',
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w900),
                             ),
                           ),
-                          Text('${history.patrolRuns.length} rekod'),
+                          Text('${history.patrolRuns.length} sesi'),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -227,44 +227,14 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                           child: Padding(
                             padding: EdgeInsets.all(18),
                             child: Text(
-                              'Tiada rekod mula rondaan atau trail GPS untuk tarikh ini.',
+                              'Tiada sesi yang dimulakan melalui Mula Rondaan untuk tarikh ini.',
                             ),
                           ),
                         )
                       else
                         ...history.patrolRuns.map(
-                          (run) => _PatrolRunCard(
-                            run: run,
-                            formatTime: _formatTime,
-                          ),
-                        ),
-                      const SizedBox(height: 18),
-                      Row(
-                        children: [
-                          const Icon(Icons.fact_check_outlined),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Sesi & Checkpoint',
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w900,
-                                ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      if (history.sessions.isEmpty)
-                        const Card(
-                          child: Padding(
-                            padding: EdgeInsets.all(18),
-                            child: Text('Tiada sesi rondaan untuk tarikh ini.'),
-                          ),
-                        )
-                      else
-                        ...history.sessions.map(
-                          (session) => _SessionCard(
-                            session: session,
-                            formatTime: _formatTime,
-                          ),
+                          (run) =>
+                              _PatrolRunCard(run: run, formatTime: _formatTime),
                         ),
                     ],
                   );
@@ -315,9 +285,11 @@ class _PatrolRunCard extends StatelessWidget {
         .map((point) => LatLng(point.latitude, point.longitude))
         .toList();
     if (points.isEmpty) return;
-    final latitude = points.map((point) => point.latitude).reduce((a, b) => a + b) /
+    final latitude =
+        points.map((point) => point.latitude).reduce((a, b) => a + b) /
         points.length;
-    final longitude = points.map((point) => point.longitude).reduce((a, b) => a + b) /
+    final longitude =
+        points.map((point) => point.longitude).reduce((a, b) => a + b) /
         points.length;
     final center = LatLng(latitude, longitude);
 
@@ -348,7 +320,8 @@ class _PatrolRunCard extends StatelessWidget {
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'dev.rimbakawal.app',
                     ),
                     if (points.length >= 2)
@@ -405,6 +378,18 @@ class _PatrolRunCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final image = _imageProvider(run.profilePicture);
+    final scheme = Theme.of(context).colorScheme;
+    final statusColor = run.isComplete
+        ? Colors.greenAccent
+        : run.isInProgress
+        ? scheme.secondary
+        : scheme.error;
+    final statusLabel = switch (run.status) {
+      'complete' => 'LENGKAP',
+      'in_progress' => 'SEDANG BERJALAN',
+      'no_checkpoints' => 'TIADA CHECKPOINT',
+      _ => 'TIDAK LENGKAP',
+    };
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: Padding(
@@ -433,6 +418,24 @@ class _PatrolRunCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 14),
@@ -450,16 +453,48 @@ class _PatrolRunCard extends StatelessWidget {
                       ? 'Tamat belum direkod'
                       : 'Tamat ${formatTime(run.endedAt!)}',
                 ),
-                _HistoryChip(
-                  icon: Icons.timer_outlined,
-                  text: _duration(),
-                ),
+                _HistoryChip(icon: Icons.timer_outlined, text: _duration()),
                 _HistoryChip(
                   icon: Icons.route_rounded,
                   text: '${run.trailPointCount} titik GPS',
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            Text(
+              '${run.scannedCount}/${run.expectedCount} checkpoint direkodkan dalam sesi ini',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            if (run.missingCheckpointNames.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Belum diimbas: ${run.missingCheckpointNames.join(', ')}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+            if (run.scans.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ...run.scans.map(
+                (scan) => ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.nfc_rounded),
+                  title: Text(
+                    scan.checkpointName ?? 'Checkpoint tidak dikenal pasti',
+                  ),
+                  subtitle: Text(
+                    '${scan.nfcUid} • ${formatTime(scan.scannedAt)}',
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: run.trail.isEmpty ? null : () => _showTrail(context),
@@ -480,20 +515,20 @@ class _HistoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 15),
-            const SizedBox(width: 5),
-            Text(text, style: const TextStyle(fontWeight: FontWeight.w700)),
-          ],
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15),
+        const SizedBox(width: 5),
+        Text(text, style: const TextStyle(fontWeight: FontWeight.w700)),
+      ],
+    ),
+  );
 }
 
 class _SessionCard extends StatelessWidget {
@@ -523,8 +558,8 @@ class _SessionCard extends StatelessWidget {
     final statusColor = session.isMissed
         ? scheme.error
         : session.isComplete
-            ? Colors.greenAccent
-            : scheme.secondary;
+        ? Colors.greenAccent
+        : scheme.secondary;
     final statusLabel = switch (session.status) {
       'complete' => 'LENGKAP',
       'missed' => 'CHECKPOINT TERLEPAS',
@@ -555,7 +590,9 @@ class _SessionCard extends StatelessWidget {
                 CircleAvatar(
                   backgroundImage: image,
                   child: image == null
-                      ? Text(session.userName.isEmpty ? '?' : session.userName[0])
+                      ? Text(
+                          session.userName.isEmpty ? '?' : session.userName[0],
+                        )
                       : null,
                 ),
                 const SizedBox(width: 10),
@@ -577,7 +614,10 @@ class _SessionCard extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(999),
@@ -594,7 +634,9 @@ class _SessionCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Text('${session.scannedCount}/${session.expectedCount} checkpoint direkodkan'),
+            Text(
+              '${session.scannedCount}/${session.expectedCount} checkpoint direkodkan',
+            ),
             if (session.missingCheckpointNames.isNotEmpty) ...[
               const SizedBox(height: 10),
               Container(
@@ -620,7 +662,9 @@ class _SessionCard extends StatelessWidget {
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.nfc_rounded),
-                  title: Text(scan.checkpointName ?? 'Checkpoint tidak dikenal pasti'),
+                  title: Text(
+                    scan.checkpointName ?? 'Checkpoint tidak dikenal pasti',
+                  ),
                   subtitle: Text(
                     '${scan.userName ?? session.userName} • ${scan.nfcUid} • ${formatTime(scan.scannedAt)}',
                   ),
