@@ -3,6 +3,9 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 replacements = {
     root / 'lib/features/admin/live_patrol_map_screen.dart': {
+        "'live' => 'LIVE',": "'live' => 'LANGSUNG',",
+        "'delayed' => 'DELAYED',": "'delayed' => 'TERTUNDA',",
+        "'stale' => 'STALE',": "'stale' => 'TIDAK TERKINI',",
         "_ => 'WAITING GPS',": "_ => 'MENUNGGU LOKASI',",
     },
     root / 'lib/features/admin/sos_management_screen.dart': {
@@ -13,13 +16,20 @@ replacements = {
 
 for path, values in replacements.items():
     text = path.read_text(encoding='utf-8')
-    original = text
+    changed = False
     for old, new in values.items():
-        if old not in text:
-            raise SystemExit(f'Frasa sasaran tidak ditemui dalam {path.relative_to(root)}: {old}')
-        text = text.replace(old, new)
-    path.write_text(text, encoding='utf-8')
-    print(f'Dikemas kini: {path.relative_to(root)}')
+        if old in text:
+            text = text.replace(old, new)
+            changed = True
+        elif new not in text:
+            raise SystemExit(
+                f'Frasa sasaran atau penggantinya tidak ditemui dalam {path.relative_to(root)}: {old}'
+            )
+    if changed:
+        path.write_text(text, encoding='utf-8')
+        print(f'Dikemas kini: {path.relative_to(root)}')
+    else:
+        print(f'Sudah dikemas kini: {path.relative_to(root)}')
 
 # Audit istilah Inggeris yang tidak sepatutnya terpapar sebagai label operasi.
 terms = [
@@ -29,6 +39,7 @@ terms = [
     'Scan checkpoint', 'SCANNING', 'SCAN NFC', 'MISSED CHECKPOINT',
     'Belum scan', 'Command Center', 'Status Guard', 'Incident Queue',
     'Operations Command Center', 'NO CHECKPOINT', "'WAITING'",
+    "=> 'LIVE'", "=> 'DELAYED'", "=> 'STALE'",
 ]
 remaining = []
 for path in (root / 'lib').rglob('*.dart'):
