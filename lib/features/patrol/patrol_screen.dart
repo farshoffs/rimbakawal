@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:torch_light/torch_light.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/api/api_service.dart';
@@ -46,6 +48,8 @@ class _PatrolScreenState extends State<PatrolScreen> {
   DateTime? _lastLocationSentAt;
   bool _scanning = false;
   bool _ending = false;
+  bool _torchOn = false;
+  bool _torchChanging = false;
   bool _liveStarting = true;
   String _locationStatus = 'Mencari lokasi…';
   String? _error;
@@ -68,6 +72,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
     _positionSub?.cancel();
     _locationHeartbeat?.cancel();
     unawaited(WakelockPlus.disable());
+    if (_torchOn && !kIsWeb) unawaited(TorchLight.disableTorch());
     if (!_ending) unawaited(widget.api.endLivePatrol(_clientSessionId));
     super.dispose();
   }
@@ -130,25 +135,23 @@ class _PatrolScreenState extends State<PatrolScreen> {
       );
       await _handlePosition(initial, force: true);
 
-      _positionSub = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 3,
-        ),
-      ).listen(
-        (position) => unawaited(_handlePosition(position)),
-        onError: (Object error) {
-          if (!mounted) return;
-          setState(() => _locationStatus = _cleanError(error));
-        },
-      );
-      _locationHeartbeat = Timer.periodic(
-        const Duration(seconds: 15),
-        (_) {
-          final position = _latestPosition;
-          if (position != null) unawaited(_handlePosition(position, force: true));
-        },
-      );
+      _positionSub =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 3,
+            ),
+          ).listen(
+            (position) => unawaited(_handlePosition(position)),
+            onError: (Object error) {
+              if (!mounted) return;
+              setState(() => _locationStatus = _cleanError(error));
+            },
+          );
+      _locationHeartbeat = Timer.periodic(const Duration(seconds: 15), (_) {
+        final position = _latestPosition;
+        if (position != null) unawaited(_handlePosition(position, force: true));
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -217,8 +220,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
     final bootstrap = _bootstrap ?? _store.cachedBootstrap();
     if (bootstrap == null) {
       setState(() {
-        _error =
-            'Konfigurasi rondaan belum pernah dimuat turun. Sambungkan peranti ke Internet sekali untuk menyediakan penggunaan luar talian.';
+        _error = 'Konfigurasi rondaan belum pernah dimuat turun. Sambungkan peranti ke Internet sekali untuk menyediakan penggunaan luar talian.';
       });
       return;
     }
@@ -242,9 +244,15 @@ class _PatrolScreenState extends State<PatrolScreen> {
         );
       }
 
-      final sessionIndex =
-          _sessionIndex(DateTime.now(), bootstrap.sessionIntervalMinutes, bootstrap.sessionStartMinutes);
-      final dayKey = _scheduleDayKey(DateTime.now(), bootstrap.sessionStartMinutes);
+      final sessionIndex = _sessionIndex(
+        DateTime.now(),
+        bootstrap.sessionIntervalMinutes,
+        bootstrap.sessionStartMinutes,
+      );
+      final dayKey = _scheduleDayKey(
+        DateTime.now(),
+        bootstrap.sessionStartMinutes,
+      );
       final localScans = _currentSessionScanEvents(
         sessionIndex: sessionIndex,
         dayKey: dayKey,
@@ -272,6 +280,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
         occurredAt: occurredAt,
         location: await _captureEventLocation(),
         payload: {
+          'clientSessionId': _clientSessionId,
           'nfcUid': uid,
           'checkpointId': checkpoint.id,
           'checkpointName': checkpoint.name,
@@ -323,11 +332,23 @@ class _PatrolScreenState extends State<PatrolScreen> {
                     initialValue: category,
                     decoration: const InputDecoration(labelText: 'Kategori'),
                     items: const [
-                      DropdownMenuItem(value: 'Keselamatan', child: Text('Keselamatan')),
-                      DropdownMenuItem(value: 'Kerosakan', child: Text('Kerosakan')),
-                      DropdownMenuItem(value: 'Kebersihan', child: Text('Kebersihan')),
+                      DropdownMenuItem(
+                        value: 'Keselamatan',
+                        child: Text('Keselamatan'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Kerosakan',
+                        child: Text('Kerosakan'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Kebersihan',
+                        child: Text('Kebersihan'),
+                      ),
                       DropdownMenuItem(value: 'Akses', child: Text('Akses')),
-                      DropdownMenuItem(value: 'Lain-lain', child: Text('Lain-lain')),
+                      DropdownMenuItem(
+                        value: 'Lain-lain',
+                        child: Text('Lain-lain'),
+                      ),
                     ],
                     onChanged: (value) {
                       if (value != null) setDialogState(() => category = value);
@@ -339,7 +360,10 @@ class _PatrolScreenState extends State<PatrolScreen> {
                     decoration: const InputDecoration(labelText: 'Keutamaan'),
                     items: const [
                       DropdownMenuItem(value: 'normal', child: Text('Biasa')),
-                      DropdownMenuItem(value: 'important', child: Text('Penting')),
+                      DropdownMenuItem(
+                        value: 'important',
+                        child: Text('Penting'),
+                      ),
                       DropdownMenuItem(value: 'urgent', child: Text('Segera')),
                     ],
                     onChanged: (value) {
@@ -495,7 +519,9 @@ class _PatrolScreenState extends State<PatrolScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Insiden telah disimpan pada peranti dan akan disegerakkan secara automatik.'),
+        content: Text(
+          'Insiden telah disimpan pada peranti dan akan disegerakkan secara automatik.',
+        ),
       ),
     );
   }
@@ -505,13 +531,56 @@ class _PatrolScreenState extends State<PatrolScreen> {
       userId: widget.user.id,
       type: 'welfare_check',
       location: await _captureEventLocation(),
-      payload: const {'status': 'ok', 'note': 'Pengawal mengesahkan keadaan selamat'},
+      payload: const {
+        'status': 'ok',
+        'note': 'Pengawal mengesahkan keadaan selamat',
+      },
     );
     unawaited(_sync.syncNow());
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Status “Saya OK” disimpan.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Status “Saya OK” disimpan.')));
+  }
+
+  Future<void> _toggleTorch() async {
+    if (_torchChanging) return;
+    setState(() => _torchChanging = true);
+    try {
+      if (kIsWeb) {
+        throw const ApiException(
+          'Lampu suluh hanya tersedia dalam aplikasi Android atau iOS.',
+        );
+      }
+      if (_torchOn) {
+        await TorchLight.disableTorch();
+      } else {
+        final available = await TorchLight.isTorchAvailable();
+        if (!available) {
+          throw const ApiException(
+            'Lampu suluh tidak tersedia pada peranti ini.',
+          );
+        }
+        await TorchLight.enableTorch();
+      }
+      if (mounted) setState(() => _torchOn = !_torchOn);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_cleanError(error))));
+    } finally {
+      if (mounted) setState(() => _torchChanging = false);
+    }
+  }
+
+  Future<void> _turnOffTorch() async {
+    if (!_torchOn || kIsWeb) return;
+    try {
+      await TorchLight.disableTorch();
+    } catch (_) {
+      // Best effort when leaving the patrol screen.
+    }
+    if (mounted) setState(() => _torchOn = false);
   }
 
   Future<void> _finishPatrol() async {
@@ -547,6 +616,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
     try {
       await widget.api.endLivePatrol(_clientSessionId);
     } catch (_) {}
+    await _turnOffTorch();
     await _positionSub?.cancel();
     _locationHeartbeat?.cancel();
     if (!mounted) return;
@@ -611,13 +681,13 @@ class _PatrolScreenState extends State<PatrolScreen> {
   List<OfflineEvent> _currentSessionScanEvents({
     required int sessionIndex,
     required String dayKey,
-  }) =>
-      _store.eventsForUser(widget.user.id, limit: 1000).where((event) {
+  }) => _store.eventsForUser(widget.user.id, limit: 1000).where((event) {
         return event.type == 'scan' &&
+            event.payload['clientSessionId'] == _clientSessionId &&
             event.payload['sessionIndex'] == sessionIndex &&
-            event.payload['dayKey'] == dayKey &&
-            !event.isFailed;
-      }).toList();
+        event.payload['dayKey'] == dayKey &&
+        !event.isFailed;
+  }).toList();
 
   CachedCheckpoint? _nextCheckpoint(OfflineBootstrap bootstrap) {
     final index = _sessionIndex(
@@ -626,13 +696,11 @@ class _PatrolScreenState extends State<PatrolScreen> {
       bootstrap.sessionStartMinutes,
     );
     final day = _scheduleDayKey(DateTime.now(), bootstrap.sessionStartMinutes);
-    final scannedIds = _currentSessionScanEvents(
-      sessionIndex: index,
-      dayKey: day,
-    )
-        .map((event) => (event.payload['checkpointId'] as num?)?.toInt())
-        .whereType<int>()
-        .toSet();
+    final scannedIds =
+        _currentSessionScanEvents(sessionIndex: index, dayKey: day)
+            .map((event) => (event.payload['checkpointId'] as num?)?.toInt())
+            .whereType<int>()
+            .toSet();
     return bootstrap.checkpoints
         .where((checkpoint) => !scannedIds.contains(checkpoint.id))
         .firstOrNull;
@@ -652,13 +720,21 @@ class _PatrolScreenState extends State<PatrolScreen> {
         .length;
   }
 
-  _SessionWindow _sessionWindow(DateTime value, int interval, int startMinutes) {
+  _SessionWindow _sessionWindow(
+    DateTime value,
+    int interval,
+    int startMinutes,
+  ) {
     final local = value.toLocal();
     final safeInterval = interval.clamp(15, 1440);
     final safeStart = startMinutes.clamp(0, 1439);
-    var anchor = DateTime(local.year, local.month, local.day)
-        .add(Duration(minutes: safeStart));
-    if (local.isBefore(anchor)) anchor = anchor.subtract(const Duration(days: 1));
+    var anchor = DateTime(
+      local.year,
+      local.month,
+      local.day,
+    ).add(Duration(minutes: safeStart));
+    if (local.isBefore(anchor))
+      anchor = anchor.subtract(const Duration(days: 1));
     final index = local.difference(anchor).inMinutes ~/ safeInterval;
     final start = anchor.add(Duration(minutes: index * safeInterval));
     final dayEnd = anchor.add(const Duration(days: 1));
@@ -673,9 +749,13 @@ class _PatrolScreenState extends State<PatrolScreen> {
   String _scheduleDayKey(DateTime value, int startMinutes) {
     final local = value.toLocal();
     final safeStart = startMinutes.clamp(0, 1439);
-    var anchor = DateTime(local.year, local.month, local.day)
-        .add(Duration(minutes: safeStart));
-    if (local.isBefore(anchor)) anchor = anchor.subtract(const Duration(days: 1));
+    var anchor = DateTime(
+      local.year,
+      local.month,
+      local.day,
+    ).add(Duration(minutes: safeStart));
+    if (local.isBefore(anchor))
+      anchor = anchor.subtract(const Duration(days: 1));
     String two(int value) => value.toString().padLeft(2, '0');
     return '${anchor.year}-${two(anchor.month)}-${two(anchor.day)}';
   }
@@ -725,7 +805,11 @@ class _PatrolScreenState extends State<PatrolScreen> {
     final next = bootstrap == null ? null : _nextCheckpoint(bootstrap);
     final activeSession = bootstrap == null
         ? null
-        : _sessionWindow(DateTime.now(), bootstrap.sessionIntervalMinutes, bootstrap.sessionStartMinutes);
+        : _sessionWindow(
+            DateTime.now(),
+            bootstrap.sessionIntervalMinutes,
+            bootstrap.sessionStartMinutes,
+          );
     final sessionLabel = activeSession == null
         ? 'Sesi Rondaan belum tersedia'
         : 'Sesi Rondaan ${activeSession.index + 1} • ${_hm(activeSession.start)} – ${_hm(activeSession.end)}';
@@ -737,7 +821,10 @@ class _PatrolScreenState extends State<PatrolScreen> {
               bootstrap.sessionIntervalMinutes,
               bootstrap.sessionStartMinutes,
             ),
-            dayKey: _scheduleDayKey(DateTime.now(), bootstrap.sessionStartMinutes),
+            dayKey: _scheduleDayKey(
+              DateTime.now(),
+              bootstrap.sessionStartMinutes,
+            ),
           );
 
     return Scaffold(
@@ -776,32 +863,58 @@ class _PatrolScreenState extends State<PatrolScreen> {
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: SizedBox(
         width: MediaQuery.sizeOf(context).width - 32,
-        height: 66,
-        child: FloatingActionButton.extended(
-          heroTag: 'scan-checkpoint-fab',
-          onPressed: _scanning || _ending ? null : _scanCheckpoint,
-          elevation: 10,
-          backgroundColor: const Color(0xFFFFD54F),
-          foregroundColor: const Color(0xFF181818),
-          disabledElevation: 3,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(
-              color: Colors.white.withValues(alpha: 0.22),
+        height: 126,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            FloatingActionButton.small(
+              heroTag: 'torch-fab',
+              tooltip: _torchOn ? 'Tutup lampu suluh' : 'Buka lampu suluh',
+              onPressed: _torchChanging || _ending ? null : _toggleTorch,
+              backgroundColor: _torchOn
+                  ? const Color(0xFFFFD54F)
+                  : const Color(0xFF4834D4),
+              foregroundColor: _torchOn
+                  ? const Color(0xFF181818)
+                  : Colors.white,
+              child: Icon(
+                _torchChanging
+                    ? Icons.hourglass_top_rounded
+                    : _torchOn
+                    ? Icons.flashlight_off_rounded
+                    : Icons.flashlight_on_rounded,
+              ),
             ),
-          ),
-          icon: Icon(
-            _scanning ? Icons.radar_rounded : Icons.nfc_rounded,
-            size: 30,
-          ),
-          label: Text(
-            _scanning ? 'MENGIMBAS…' : 'IMBAS CHECKPOINT',
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.3,
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              height: 66,
+              child: FloatingActionButton.extended(
+                heroTag: 'scan-checkpoint-fab',
+                onPressed: _scanning || _ending ? null : _scanCheckpoint,
+                elevation: 10,
+                backgroundColor: const Color(0xFFFFD54F),
+                foregroundColor: const Color(0xFF181818),
+                disabledElevation: 3,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.22)),
+                ),
+                icon: Icon(
+                  _scanning ? Icons.radar_rounded : Icons.nfc_rounded,
+                  size: 30,
+                ),
+                label: Text(
+                  _scanning ? 'MENGIMBAS…' : 'IMBAS CHECKPOINT',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
       body: SafeArea(
@@ -811,7 +924,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
             await _sync.syncNow();
           },
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 118),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 178),
             children: [
               _LiveHero(
                 user: widget.user,
@@ -830,7 +943,8 @@ class _PatrolScreenState extends State<PatrolScreen> {
                 total: total,
                 progress: progress,
                 next: next,
-                interval: bootstrap?.sessionIntervalMinutes ??
+                interval:
+                    bootstrap?.sessionIntervalMinutes ??
                     widget.user.sessionIntervalMinutes,
                 sessionLabel: sessionLabel,
               ),
@@ -856,9 +970,8 @@ class _PatrolScreenState extends State<PatrolScreen> {
                   Expanded(
                     child: Text(
                       'Rekod sesi',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                   ),
                   TextButton.icon(
@@ -887,7 +1000,8 @@ class _PatrolScreenState extends State<PatrolScreen> {
                           .where(
                             (item) =>
                                 item.id ==
-                                (event.payload['checkpointId'] as num?)?.toInt(),
+                                (event.payload['checkpointId'] as num?)
+                                    ?.toInt(),
                           )
                           .firstOrNull;
                       _reportIncident(checkpoint);
@@ -985,9 +1099,8 @@ class _LiveHero extends StatelessWidget {
                       user.nama,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 4),
                     Text(user.jabatan),
@@ -995,7 +1108,10 @@ class _LiveHero extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF00B894).withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(999),
@@ -1035,7 +1151,9 @@ class _LiveHero extends StatelessWidget {
                 color: Color(0xFF74B9FF),
               ),
               _MiniBadge(
-                icon: syncing ? Icons.sync_rounded : Icons.cloud_upload_outlined,
+                icon: syncing
+                    ? Icons.sync_rounded
+                    : Icons.cloud_upload_outlined,
                 text: syncing ? 'MENYEGERAK…' : '$pending MENUNGGU',
                 color: const Color(0xFFA29BFE),
               ),
@@ -1062,35 +1180,39 @@ class _LiveHero extends StatelessWidget {
 }
 
 class _MiniBadge extends StatelessWidget {
-  const _MiniBadge({required this.icon, required this.text, required this.color});
+  const _MiniBadge({
+    required this.icon,
+    required this.text,
+    required this.color,
+  });
   final IconData icon;
   final String text;
   final Color color;
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: color.withValues(alpha: 0.22)),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: color.withValues(alpha: 0.22)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 5),
+        Text(
+          text,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w900,
+            fontSize: 11,
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: color),
-            const SizedBox(width: 5),
-            Text(
-              text,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w900,
-                fontSize: 11,
-              ),
-            ),
-          ],
-        ),
-      );
+      ],
+    ),
+  );
 }
 
 class _RouteCard extends StatelessWidget {
@@ -1113,97 +1235,95 @@ class _RouteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    child: Padding(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          department,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w900,
-                              ),
-                        ),
-                        Text(
-                          sessionLabel,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFFA29BFE),
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text('Kadar: setiap $interval minit'),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    '$completed/$total',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  value: progress.clamp(0, 1),
-                  minHeight: 10,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6C5CE7).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Row(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const CircleAvatar(child: Icon(Icons.flag_circle_rounded)),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'SETERUSNYA',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.2,
-                            ),
-                          ),
-                          Text(
-                            next?.name ??
-                                (total == 0
-                                    ? 'Tiada checkpoint aktif'
-                                    : 'Semua checkpoint selesai'),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          if ((next?.instruction ?? '').isNotEmpty)
-                            Text(next!.instruction!),
-                        ],
+                    Text(
+                      department,
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                    Text(
+                      sessionLabel,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFFA29BFE),
                       ),
                     ),
+                    const SizedBox(height: 3),
+                    Text('Kadar: setiap $interval minit'),
                   ],
                 ),
               ),
+              Text(
+                '$completed/$total',
+                style: Theme.of(context).textTheme.headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w900),
+              ),
             ],
           ),
-        ),
-      );
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress.clamp(0, 1),
+              minHeight: 10,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6C5CE7).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              children: [
+                const CircleAvatar(child: Icon(Icons.flag_circle_rounded)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'SETERUSNYA',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      Text(
+                        next?.name ??
+                            (total == 0
+                                ? 'Tiada checkpoint aktif'
+                                : 'Semua checkpoint selesai'),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if ((next?.instruction ?? '').isNotEmpty)
+                        Text(next!.instruction!),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _TimelineEvent extends StatelessWidget {
@@ -1221,21 +1341,24 @@ class _TimelineEvent extends StatelessWidget {
     final color = event.isSynced
         ? const Color(0xFF55E6C1)
         : event.isFailed
-            ? const Color(0xFFFF7675)
-            : const Color(0xFFFFD166);
+        ? const Color(0xFFFF7675)
+        : const Color(0xFFFFD166);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Card(
         child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 8,
+          ),
           leading: CircleAvatar(
             backgroundColor: color.withValues(alpha: 0.14),
             child: Icon(
               event.isSynced
                   ? Icons.cloud_done_rounded
                   : event.isFailed
-                      ? Icons.cloud_off_rounded
-                      : Icons.phone_android_rounded,
+                  ? Icons.cloud_off_rounded
+                  : Icons.phone_android_rounded,
               color: color,
             ),
           ),
@@ -1246,7 +1369,11 @@ class _TimelineEvent extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
           subtitle: Text(
-            '${_formatEventTime(event.occurredAt)} • ${event.isSynced ? 'Disegerakkan' : event.isFailed ? 'Perlu semak' : 'Disimpan pada peranti'}',
+            '${_formatEventTime(event.occurredAt)} • ${event.isSynced
+                ? 'Disegerakkan'
+                : event.isFailed
+                ? 'Perlu semak'
+                : 'Disimpan pada peranti'}',
           ),
           trailing: IconButton(
             tooltip: 'Lapor insiden',
@@ -1270,24 +1397,24 @@ class _EmptyTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 18),
-          child: Column(
-            children: [
-              Icon(
-                Icons.route_outlined,
-                size: 44,
-                color: Theme.of(context).colorScheme.secondary,
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Belum ada checkpoint direkodkan dalam sesi ini.',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ],
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 18),
+      child: Column(
+        children: [
+          Icon(
+            Icons.route_outlined,
+            size: 44,
+            color: Theme.of(context).colorScheme.secondary,
           ),
-        ),
-      );
+          const SizedBox(height: 10),
+          const Text(
+            'Belum ada checkpoint direkodkan dalam sesi ini.',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _IncidentPhoto {

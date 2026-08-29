@@ -190,7 +190,21 @@ async function offlineSync(request, env) {
 async function syncScan(env, user, clientEventId, occurredAt, payload) {
   if (!user.department_id) throw new SyncError('Jabatan pengguna tidak ditetapkan.');
   const uid = normalizeUid(payload.nfcUid);
+  let clientSessionId = cleanId(payload.clientSessionId);
   if (!uid || uid.length > 128) throw new SyncError('UID NFC tidak sah.');
+
+  if (!clientSessionId) {
+    const matchingSession = await env.DB.prepare(
+      `SELECT client_session_id
+       FROM patrol_session_history
+       WHERE user_id = ?
+         AND started_at <= ?
+         AND (ended_at IS NULL OR ended_at >= ?)
+       ORDER BY started_at DESC
+       LIMIT 1`,
+    ).bind(user.id, occurredAt.toISOString(), occurredAt.toISOString()).first();
+    clientSessionId = cleanId(matchingSession?.client_session_id);
+  }
 
   const department = await env.DB.prepare(
     `SELECT id, session_interval_minutes, session_start_minutes, route_order_enforced
@@ -214,10 +228,15 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
   const startIso = new Date(startMs).toISOString();
   const endIso = new Date(endMs).toISOString();
 
-  const scannedResult = await env.DB.prepare(
-    `SELECT DISTINCT checkpoint_id FROM nfc_scans
-     WHERE user_id = ? AND scanned_at >= ? AND scanned_at < ? AND checkpoint_id IS NOT NULL`,
-  ).bind(user.id, startIso, endIso).all();
+  const scannedResult = clientSessionId
+    ? await env.DB.prepare(
+      `SELECT DISTINCT checkpoint_id FROM nfc_scans
+       WHERE user_id = ? AND client_session_id = ? AND checkpoint_id IS NOT NULL`,
+    ).bind(user.id, clientSessionId).all()
+    : await env.DB.prepare(
+      `SELECT DISTINCT checkpoint_id FROM nfc_scans
+       WHERE user_id = ? AND scanned_at >= ? AND scanned_at < ? AND checkpoint_id IS NOT NULL`,
+    ).bind(user.id, startIso, endIso).all();
   const scannedIds = new Set((scannedResult.results ?? []).map((row) => Number(row.checkpoint_id)));
   if (scannedIds.has(Number(checkpoint.id))) {
     throw new SyncError(`${checkpoint.name} sudah direkod dalam sesi ini.`);
@@ -236,14 +255,16 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
   }
 
   const insert = await env.DB.prepare(
-    `INSERT INTO nfc_scans (user_id, nfc_uid, scanned_at, checkpoint_id, session_index)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO nfc_scans
+      (user_id, nfc_uid, scanned_at, checkpoint_id, session_index, client_session_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   ).bind(
     user.id,
     uid,
     occurredAt.toISOString(),
     Number(checkpoint.id),
     sessionIndex,
+    clientSessionId || null,
   ).run();
 
   return {
@@ -252,6 +273,7 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
     checkpointId: Number(checkpoint.id),
     checkpointName: checkpoint.name,
     sessionIndex,
+    clientSessionId: clientSessionId || null,
   };
 }
 

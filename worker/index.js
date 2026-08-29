@@ -244,6 +244,7 @@ async function getScans(request, env, url) {
     ).bind(departmentId).all(),
     env.DB.prepare(
       `SELECT s.id, s.user_id, s.nfc_uid, s.scanned_at, s.checkpoint_id,
+              s.client_session_id,
               s.session_index, c.name AS checkpoint_name,
               u.nama AS user_name, u.profile_picture
        FROM nfc_scans s
@@ -290,25 +291,53 @@ async function getScans(request, env, url) {
     trails.set(key, list);
   }
 
-  const patrolRuns = (patrolResult.results ?? []).map((row) => {
+  const patrolRows = patrolResult.results ?? [];
+  const patrolRuns = patrolRows.map((row, rowIndex) => {
     const key = `${Number(row.user_id)}:${row.client_session_id}`;
     const allTrail = trails.get(key) ?? [];
     const trail = compactTrail(allTrail, 500);
     const startMs = Date.parse(row.started_at);
     const endedAt = row.ended_at || null;
     const endMs = endedAt ? Date.parse(endedAt) : null;
-    const runWindow = sessionWindow(new Date(startMs), interval, sessionStartMinutes);
+    const runScans = scans.filter((scan) => {
+      if (Number(scan.user_id) !== Number(row.user_id)) return false;
+      if (scan.client_session_id) {
+        return scan.client_session_id === row.client_session_id;
+      }
+      const scannedAt = Date.parse(scan.scanned_at);
+      return scannedAt >= startMs && (endMs == null || scannedAt <= endMs);
+    });
+    const scannedCheckpointIds = new Set(
+      runScans
+        .map((scan) => Number(scan.checkpoint_id || 0))
+        .filter((id) => id > 0),
+    );
+    const missing = checkpoints.filter(
+      (checkpoint) => !scannedCheckpointIds.has(Number(checkpoint.id)),
+    );
+    let status = endedAt ? 'incomplete' : 'in_progress';
+    if (checkpoints.length === 0) status = 'no_checkpoints';
+    else if (missing.length === 0) status = 'complete';
     return {
       userId: Number(row.user_id),
       userName: row.user_name,
       profilePicture: row.profile_picture || null,
       clientSessionId: row.client_session_id,
-      sessionIndex: runWindow.index,
+      sessionIndex: patrolRows.length - rowIndex - 1,
       startedAt: row.started_at,
       endedAt,
       durationSeconds: endMs == null ? null : Math.max(0, Math.floor((endMs - startMs) / 1000)),
       trailPointCount: allTrail.length,
       trail,
+      status,
+      expectedCount: checkpoints.length,
+      scannedCount: scannedCheckpointIds.size,
+      missingCheckpoints: missing.map((checkpoint) => ({
+        id: checkpoint.id,
+        name: checkpoint.name,
+        position: checkpoint.position,
+      })),
+      scans: runScans.map(scanJson),
     };
   });
 

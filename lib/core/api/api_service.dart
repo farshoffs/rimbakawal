@@ -44,26 +44,26 @@ class NfcLog {
   final String? profilePicture;
 
   factory NfcLog.fromJson(Map<String, dynamic> json) => NfcLog(
-        id: (json['id'] as num?)?.toInt(),
-        nfcUid: (json['nfc_uid'] ?? json['nfcUid']) as String,
-        scannedAt: DateTime.parse(
-          (json['scanned_at'] ?? json['scannedAt']) as String,
-        ),
-        checkpointId: (json['checkpoint_id'] ?? json['checkpointId']) is num
-            ? ((json['checkpoint_id'] ?? json['checkpointId']) as num).toInt()
-            : null,
-        checkpointName:
-            (json['checkpoint_name'] ?? json['checkpointName']) as String?,
-        sessionIndex: (json['session_index'] ?? json['sessionIndex']) is num
-            ? ((json['session_index'] ?? json['sessionIndex']) as num).toInt()
-            : null,
-        userId: (json['user_id'] ?? json['userId']) is num
-            ? ((json['user_id'] ?? json['userId']) as num).toInt()
-            : null,
-        userName: (json['user_name'] ?? json['userName']) as String?,
-        profilePicture:
-            (json['profile_picture'] ?? json['profilePicture']) as String?,
-      );
+    id: (json['id'] as num?)?.toInt(),
+    nfcUid: (json['nfc_uid'] ?? json['nfcUid']) as String,
+    scannedAt: DateTime.parse(
+      (json['scanned_at'] ?? json['scannedAt']) as String,
+    ),
+    checkpointId: (json['checkpoint_id'] ?? json['checkpointId']) is num
+        ? ((json['checkpoint_id'] ?? json['checkpointId']) as num).toInt()
+        : null,
+    checkpointName:
+        (json['checkpoint_name'] ?? json['checkpointName']) as String?,
+    sessionIndex: (json['session_index'] ?? json['sessionIndex']) is num
+        ? ((json['session_index'] ?? json['sessionIndex']) as num).toInt()
+        : null,
+    userId: (json['user_id'] ?? json['userId']) is num
+        ? ((json['user_id'] ?? json['userId']) as num).toInt()
+        : null,
+    userName: (json['user_name'] ?? json['userName']) as String?,
+    profilePicture:
+        (json['profile_picture'] ?? json['profilePicture']) as String?,
+  );
 }
 
 class PatrolCheckpoint {
@@ -123,12 +123,13 @@ class PatrolConfig {
       departmentName: department['name'] as String,
       sessionIntervalMinutes:
           (department['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,
-      routeOrderEnforced:
-          department['routeOrderEnforced'] as bool? ?? false,
+      routeOrderEnforced: department['routeOrderEnforced'] as bool? ?? false,
       checkpoints: rows
-          .map((item) => PatrolCheckpoint.fromJson(
-                Map<String, dynamic>.from(item as Map),
-              ))
+          .map(
+            (item) => PatrolCheckpoint.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ),
+          )
           .toList(),
       sessionIndex: (json['sessionIndex'] as num?)?.toInt() ?? 0,
       nextCheckpoint: next == null
@@ -168,6 +169,11 @@ class HistoryPatrolRun {
     required this.startedAt,
     required this.trailPointCount,
     required this.trail,
+    required this.status,
+    required this.expectedCount,
+    required this.scannedCount,
+    required this.missingCheckpointNames,
+    required this.scans,
     this.profilePicture,
     this.endedAt,
     this.durationSeconds,
@@ -182,9 +188,18 @@ class HistoryPatrolRun {
   final int? durationSeconds;
   final int trailPointCount;
   final List<HistoryTrailPoint> trail;
+  final String status;
+  final int expectedCount;
+  final int scannedCount;
+  final List<String> missingCheckpointNames;
+  final List<NfcLog> scans;
+  bool get isComplete => status == 'complete';
+  bool get isInProgress => status == 'in_progress';
 
   factory HistoryPatrolRun.fromJson(Map<String, dynamic> json) {
     final rows = json['trail'] as List<dynamic>? ?? const [];
+    final missing = json['missingCheckpoints'] as List<dynamic>? ?? const [];
+    final scans = json['scans'] as List<dynamic>? ?? const [];
     return HistoryPatrolRun(
       userId: (json['userId'] as num).toInt(),
       userName: json['userName'] as String? ?? 'Pengawal',
@@ -196,11 +211,28 @@ class HistoryPatrolRun {
           ? null
           : DateTime.parse(json['endedAt'] as String),
       durationSeconds: (json['durationSeconds'] as num?)?.toInt(),
-      trailPointCount: (json['trailPointCount'] as num?)?.toInt() ?? rows.length,
+      trailPointCount:
+          (json['trailPointCount'] as num?)?.toInt() ?? rows.length,
       trail: rows
-          .map((item) => HistoryTrailPoint.fromJson(
-                Map<String, dynamic>.from(item as Map),
-              ))
+          .map(
+            (item) => HistoryTrailPoint.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ),
+          )
+          .toList(),
+      status: json['status'] as String? ?? 'incomplete',
+      expectedCount: (json['expectedCount'] as num?)?.toInt() ?? 0,
+      scannedCount: (json['scannedCount'] as num?)?.toInt() ?? 0,
+      missingCheckpointNames: missing
+          .map(
+            (item) =>
+                (Map<String, dynamic>.from(item as Map))['name'] as String,
+          )
+          .toList(),
+      scans: scans
+          .map(
+            (item) => NfcLog.fromJson(Map<String, dynamic>.from(item as Map)),
+          )
           .toList(),
     );
   }
@@ -232,14 +264,17 @@ class HistoryDay {
       sessionIntervalMinutes:
           (json['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,
       patrolRuns: patrolRuns
-          .map((item) => HistoryPatrolRun.fromJson(
-                Map<String, dynamic>.from(item as Map),
-              ))
+          .map(
+            (item) => HistoryPatrolRun.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ),
+          )
           .toList(),
       sessions: sessions
-          .map((item) => HistorySession.fromJson(
-                Map<String, dynamic>.from(item as Map),
-              ))
+          .map(
+            (item) =>
+                HistorySession.fromJson(Map<String, dynamic>.from(item as Map)),
+          )
           .toList(),
     );
   }
@@ -285,13 +320,15 @@ class HistorySession {
       expectedCount: (json['expectedCount'] as num?)?.toInt() ?? 0,
       scannedCount: (json['scannedCount'] as num?)?.toInt() ?? 0,
       missingCheckpointNames: missing
-          .map((item) =>
-              (Map<String, dynamic>.from(item as Map))['name'] as String)
+          .map(
+            (item) =>
+                (Map<String, dynamic>.from(item as Map))['name'] as String,
+          )
           .toList(),
       scans: scans
-          .map((item) => NfcLog.fromJson(
-                Map<String, dynamic>.from(item as Map),
-              ))
+          .map(
+            (item) => NfcLog.fromJson(Map<String, dynamic>.from(item as Map)),
+          )
           .toList(),
       userId: (json['userId'] as num?)?.toInt() ?? 0,
       userName: json['userName'] as String? ?? 'Pengguna',
@@ -392,11 +429,11 @@ class LiveMapData {
   final List<Map<String, dynamic>> patrols;
 
   factory LiveMapData.fromJson(Map<String, dynamic> json) => LiveMapData(
-        generatedAt: DateTime.parse(json['generatedAt'] as String),
-        patrols: (json['patrols'] as List<dynamic>? ?? const [])
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList(),
-      );
+    generatedAt: DateTime.parse(json['generatedAt'] as String),
+    patrols: (json['patrols'] as List<dynamic>? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(),
+  );
 }
 
 class ApiService {
@@ -407,7 +444,8 @@ class ApiService {
   final OfflineStore _offline = OfflineStore.instance;
   String? _sessionToken;
 
-  bool get hasSessionToken => _sessionToken != null && _sessionToken!.isNotEmpty;
+  bool get hasSessionToken =>
+      _sessionToken != null && _sessionToken!.isNotEmpty;
 
   Future<void> init() async {
     _sessionToken = await _vault.readToken();
@@ -417,9 +455,9 @@ class ApiService {
       Uri.parse('$apiBaseUrl$path').replace(queryParameters: query);
 
   Map<String, String> _headers({bool jsonBody = false}) => {
-        if (jsonBody) 'Content-Type': 'application/json',
-        if (_sessionToken != null) 'Authorization': 'Bearer $_sessionToken',
-      };
+    if (jsonBody) 'Content-Type': 'application/json',
+    if (_sessionToken != null) 'Authorization': 'Bearer $_sessionToken',
+  };
 
   Future<AppUser> login(String identityCard) async {
     final response = await http.post(
@@ -553,7 +591,10 @@ class ApiService {
         .toList();
   }
 
-  Future<void> startLivePatrol(String clientSessionId, DateTime startedAt) async {
+  Future<void> startLivePatrol(
+    String clientSessionId,
+    DateTime startedAt,
+  ) async {
     _decode(
       await http.post(
         _uri('/api/live/start'),
@@ -597,19 +638,12 @@ class ApiService {
   }
 
   Future<LiveMapData> getLiveMap() async => LiveMapData.fromJson(
-        _decode(
-          await http.get(
-            _uri('/api/monitor/live-map'),
-            headers: _headers(),
-          ),
-        ),
-      );
+    _decode(await http.get(_uri('/api/monitor/live-map'), headers: _headers())),
+  );
 
   Future<PatrolConfig> getPatrolConfig() async => PatrolConfig.fromJson(
-        _decode(
-          await http.get(_uri('/api/patrol/config'), headers: _headers()),
-        ),
-      );
+    _decode(await http.get(_uri('/api/patrol/config'), headers: _headers())),
+  );
 
   Future<NfcLog> storeNfcScan(String uid) async {
     final data = _decode(
@@ -619,9 +653,7 @@ class ApiService {
         body: jsonEncode({'nfcUid': uid}),
       ),
     );
-    return NfcLog.fromJson(
-      Map<String, dynamic>.from(data['scan'] as Map),
-    );
+    return NfcLog.fromJson(Map<String, dynamic>.from(data['scan'] as Map));
   }
 
   Future<void> createIncident({
@@ -654,7 +686,8 @@ class ApiService {
         body: '{}',
       ),
     );
-    return (Map<String, dynamic>.from(data['patrolSession'] as Map)['id'] as num)
+    return (Map<String, dynamic>.from(data['patrolSession'] as Map)['id']
+            as num)
         .toInt();
   }
 
@@ -720,10 +753,7 @@ class ApiService {
     );
   }
 
-  Future<HistoryDay> getHistory(
-    DateTime date, {
-    int? departmentId,
-  }) async =>
+  Future<HistoryDay> getHistory(DateTime date, {int? departmentId}) async =>
       HistoryDay.fromJson(
         _decode(
           await http.get(
@@ -756,8 +786,7 @@ class ApiService {
       await http.get(_uri('/api/admin/users'), headers: _headers()),
     );
     return (data['users'] as List<dynamic>? ?? const [])
-        .map((item) =>
-            AppUser.fromJson(Map<String, dynamic>.from(item as Map)))
+        .map((item) => AppUser.fromJson(Map<String, dynamic>.from(item as Map)))
         .toList();
   }
 
@@ -779,26 +808,23 @@ class ApiService {
         }),
       ),
     );
-    return AppUser.fromJson(
-      Map<String, dynamic>.from(data['user'] as Map),
-    );
+    return AppUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
   }
 
   Future<Map<String, dynamic>> getAdminReport(
     DateTime from,
     DateTime to, {
     int? departmentId,
-  }) async =>
-      _decode(
-        await http.get(
-          _uri('/api/admin/reports', {
-            'from': _dateKey(from),
-            'to': _dateKey(to),
-            if (departmentId != null) 'departmentId': departmentId.toString(),
-          }),
-          headers: _headers(),
-        ),
-      );
+  }) async => _decode(
+    await http.get(
+      _uri('/api/admin/reports', {
+        'from': _dateKey(from),
+        'to': _dateKey(to),
+        if (departmentId != null) 'departmentId': departmentId.toString(),
+      }),
+      headers: _headers(),
+    ),
+  );
 
   Future<void> createSos({String? note}) async {
     _decode(
@@ -815,9 +841,10 @@ class ApiService {
       await http.get(_uri('/api/admin/departments'), headers: _headers()),
     );
     return (data['departments'] as List<dynamic>? ?? const [])
-        .map((item) => DepartmentRecord.fromJson(
-              Map<String, dynamic>.from(item as Map),
-            ))
+        .map(
+          (item) =>
+              DepartmentRecord.fromJson(Map<String, dynamic>.from(item as Map)),
+        )
         .toList();
   }
 
@@ -870,9 +897,10 @@ class ApiService {
       ),
     );
     return (data['checkpoints'] as List<dynamic>? ?? const [])
-        .map((item) => CheckpointRecord.fromJson(
-              Map<String, dynamic>.from(item as Map),
-            ))
+        .map(
+          (item) =>
+              CheckpointRecord.fromJson(Map<String, dynamic>.from(item as Map)),
+        )
         .toList();
   }
 
@@ -951,9 +979,7 @@ class ApiService {
         body: jsonEncode({'departmentId': departmentId}),
       ),
     );
-    return AppUser.fromJson(
-      Map<String, dynamic>.from(data['user'] as Map),
-    );
+    return AppUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
   }
 
   String _dateKey(DateTime value) {
