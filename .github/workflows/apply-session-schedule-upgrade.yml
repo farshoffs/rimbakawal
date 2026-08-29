@@ -1,0 +1,385 @@
+name: Apply Patrol Schedule Upgrade
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-session-schedule-upgrade.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply schedule-aware patrol upgrade
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(path):
+              return Path(path).read_text()
+
+          def write(path, text):
+              Path(path).write_text(text)
+
+          def once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: expected 1 match, got {count}')
+              return text.replace(old, new, 1)
+
+          # --- Migration: department-specific patrol session start time.
+          Path('migrations/0009_department_session_start.sql').write_text('''ALTER TABLE departments ADD COLUMN session_start_minutes INTEGER NOT NULL DEFAULT 0 CHECK (session_start_minutes BETWEEN 0 AND 1439);\n''')
+
+          # --- Offline bootstrap model.
+          p = 'lib/core/offline/offline_models.dart'
+          t = read(p)
+          t = once(t,
+              '    required this.sessionIntervalMinutes,\n    required this.routeOrderEnforced,',
+              '    required this.sessionIntervalMinutes,\n    this.sessionStartMinutes = 0,\n    required this.routeOrderEnforced,',
+              'offline ctor')
+          t = once(t,
+              '  final int sessionIntervalMinutes;\n  final bool routeOrderEnforced;',
+              '  final int sessionIntervalMinutes;\n  final int sessionStartMinutes;\n  final bool routeOrderEnforced;',
+              'offline field')
+          t = once(t,
+              "          'sessionIntervalMinutes': sessionIntervalMinutes,\n          'routeOrderEnforced': routeOrderEnforced,",
+              "          'sessionIntervalMinutes': sessionIntervalMinutes,\n          'sessionStartMinutes': sessionStartMinutes,\n          'routeOrderEnforced': routeOrderEnforced,",
+              'offline json')
+          t = once(t,
+              "      sessionIntervalMinutes:\n          (department['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,\n      routeOrderEnforced:",
+              "      sessionIntervalMinutes:\n          (department['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,\n      sessionStartMinutes:\n          (department['sessionStartMinutes'] as num?)?.toInt() ?? 0,\n      routeOrderEnforced:",
+              'offline parse')
+          write(p, t)
+
+          # --- API DepartmentRecord + CRUD payload.
+          p = 'lib/core/api/api_service.dart'
+          t = read(p)
+          t = once(t,
+              '    required this.sessionIntervalMinutes,\n    required this.active,',
+              '    required this.sessionIntervalMinutes,\n    this.sessionStartMinutes = 0,\n    required this.active,',
+              'dept ctor')
+          t = once(t,
+              '  final int sessionIntervalMinutes;\n  final bool active;',
+              '  final int sessionIntervalMinutes;\n  final int sessionStartMinutes;\n  final bool active;',
+              'dept field')
+          t = once(t,
+              "        sessionIntervalMinutes:\n            (json['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,\n        active:",
+              "        sessionIntervalMinutes:\n            (json['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,\n        sessionStartMinutes:\n            (json['sessionStartMinutes'] as num?)?.toInt() ?? 0,\n        active:",
+              'dept parse')
+          t = once(t,
+              '  Future<DepartmentRecord> createDepartment({\n    required String name,\n    required int sessionIntervalMinutes,\n  }) async {',
+              '  Future<DepartmentRecord> createDepartment({\n    required String name,\n    required int sessionIntervalMinutes,\n    int sessionStartMinutes = 420,\n  }) async {',
+              'create dept signature')
+          t = once(t,
+              "          'name': name,\n          'sessionIntervalMinutes': sessionIntervalMinutes,\n        }),",
+              "          'name': name,\n          'sessionIntervalMinutes': sessionIntervalMinutes,\n          'sessionStartMinutes': sessionStartMinutes,\n        }),",
+              'create dept payload')
+          t = once(t,
+              "          'sessionIntervalMinutes': department.sessionIntervalMinutes,\n          'active': department.active,",
+              "          'sessionIntervalMinutes': department.sessionIntervalMinutes,\n          'sessionStartMinutes': department.sessionStartMinutes,\n          'active': department.active,",
+              'update dept payload')
+          write(p, t)
+
+          # --- Admin department UI: visible start time + picker.
+          p = 'lib/features/admin/department_maintenance_screen.dart'
+          t = read(p)
+          t = once(t,
+              "                    'Sesi setiap ${department.sessionIntervalMinutes} minit • '\n                    '${department.checkpointCount} checkpoint aktif'",
+              "                    'Mula ${TimeOfDay(hour: department.sessionStartMinutes ~/ 60, minute: department.sessionStartMinutes % 60).format(context)} • '\n                    'Sesi setiap ${department.sessionIntervalMinutes} minit • '\n                    '${department.checkpointCount} checkpoint aktif'",
+              'dept subtitle')
+          t = once(t,
+              '  late final TextEditingController _intervalController;\n  late bool _active;',
+              '  late final TextEditingController _intervalController;\n  late TimeOfDay _startTime;\n  late bool _active;',
+              'start time field')
+          t = once(t,
+              '    _intervalController = TextEditingController(\n      text: (widget.department?.sessionIntervalMinutes ?? 120).toString(),\n    );\n    _active = widget.department?.active ?? true;',
+              '    _intervalController = TextEditingController(\n      text: (widget.department?.sessionIntervalMinutes ?? 120).toString(),\n    );\n    final startMinutes = widget.department?.sessionStartMinutes ?? 420;\n    _startTime = TimeOfDay(hour: startMinutes ~/ 60, minute: startMinutes % 60);\n    _active = widget.department?.active ?? true;',
+              'start time init')
+          marker = '  Future<void> _save() async {\n'
+          picker = '''  Future<void> _pickStartTime() async {\n    final selected = await showTimePicker(\n      context: context,\n      initialTime: _startTime,\n      helpText: 'Jam mula sesi rondaan',\n    );\n    if (selected != null && mounted) setState(() => _startTime = selected);\n  }\n\n'''
+          if marker not in t: raise RuntimeError('save marker missing')
+          t = t.replace(marker, picker + marker, 1)
+          t = once(t,
+              '    final interval = int.tryParse(_intervalController.text.trim());\n    if (name.length < 2 || interval == null) {',
+              '    final interval = int.tryParse(_intervalController.text.trim());\n    final startMinutes = _startTime.hour * 60 + _startTime.minute;\n    if (name.length < 2 || interval == null) {',
+              'save start minutes')
+          t = once(t,
+              '          name: name,\n          sessionIntervalMinutes: interval,\n        );',
+              '          name: name,\n          sessionIntervalMinutes: interval,\n          sessionStartMinutes: startMinutes,\n        );',
+              'create start payload ui')
+          t = once(t,
+              '            sessionIntervalMinutes: interval,\n            active: _active,',
+              '            sessionIntervalMinutes: interval,\n            sessionStartMinutes: startMinutes,\n            active: _active,',
+              'update start payload ui')
+          t = once(t,
+              "              TextField(\n                controller: _intervalController,\n                keyboardType: TextInputType.number,\n                decoration: const InputDecoration(\n                  labelText: 'Tempoh satu sesi (minit)',\n                  helperText: 'Default: 120 minit (2 jam)',\n                  prefixIcon: Icon(Icons.timer_outlined),\n                ),\n              ),\n              if (widget.department != null) ...[",
+              "              TextField(\n                controller: _intervalController,\n                keyboardType: TextInputType.number,\n                decoration: const InputDecoration(\n                  labelText: 'Tempoh satu sesi (minit)',\n                  helperText: 'Default: 120 minit (2 jam)',\n                  prefixIcon: Icon(Icons.timer_outlined),\n                ),\n              ),\n              const SizedBox(height: 14),\n              ListTile(\n                contentPadding: const EdgeInsets.symmetric(horizontal: 4),\n                leading: const Icon(Icons.schedule_rounded),\n                title: const Text('Jam mula rondaan'),\n                subtitle: Text('Sesi 1 bermula pada ${_startTime.format(context)}'),\n                trailing: FilledButton.tonal(\n                  onPressed: _pickStartTime,\n                  child: Text(_startTime.format(context)),\n                ),\n              ),\n              if (widget.department != null) ...[",
+              'time picker ui')
+          write(p, t)
+
+          # --- Worker index: department CRUD, history, auth metadata, schedule helpers.
+          p = 'worker/index.js'
+          t = read(p)
+          t = t.replace('COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes',
+                        'COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,\n                 COALESCE(d.session_start_minutes, 0) AS session_start_minutes')
+          t = t.replace('`SELECT d.id, d.name, d.session_interval_minutes, d.active,',
+                        '`SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,')
+          t = once(t,
+              '      sessionIntervalMinutes: Number(auth.user.session_interval_minutes || 120),\n    },',
+              '      sessionIntervalMinutes: Number(auth.user.session_interval_minutes || 120),\n      sessionStartMinutes: Number(auth.user.session_start_minutes || 0),\n    },',
+              'patrol config start')
+          t = once(t,
+              '  const bounds = malaysiaDayBounds(requestedDate);\n  if (!bounds) return json({ error: \'Tarikh tidak sah.\' }, 400);',
+              "  const calendarBounds = malaysiaDayBounds(requestedDate);\n  if (!calendarBounds) return json({ error: 'Tarikh tidak sah.' }, 400);\n  const sessionStartMinutes = Math.max(0, Math.min(1439, Number(auth.user.session_start_minutes || 0)));\n  const bounds = {\n    startMs: calendarBounds.startMs + sessionStartMinutes * 60000,\n    endMs: calendarBounds.startMs + sessionStartMinutes * 60000 + 86400000,\n  };\n  bounds.startIso = new Date(bounds.startMs).toISOString();\n  bounds.endIso = new Date(bounds.endMs).toISOString();",
+              'history bounds')
+          t = once(t,
+              '  const todayKey = malaysiaDateKey(new Date());',
+              '  const todayKey = scheduleDateKey(new Date(), sessionStartMinutes);',
+              'history today key')
+          t = once(t,
+              '    sessionIntervalMinutes: interval,\n    checkpoints,',
+              '    sessionIntervalMinutes: interval,\n    sessionStartMinutes,\n    checkpoints,',
+              'history response start')
+          t = once(t,
+              '  const malaysiaNow = new Date(Date.now() + MALAYSIA_OFFSET_MS);\n  const minuteOfDay = malaysiaNow.getUTCHours() * 60 + malaysiaNow.getUTCMinutes();\n  const sessionIndex = Math.floor(minuteOfDay / interval);',
+              '  const sessionIndex = currentSessionIndex(new Date(), interval, auth.user.session_start_minutes);',
+              'direct scan index')
+          t = once(t,
+              '`SELECT d.id, d.name, d.session_interval_minutes, d.active,',
+              '`SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,',
+              'admin dept select')
+          t = once(t,
+              '  const interval = Number(body.sessionIntervalMinutes ?? 120);\n  const validation = validateDepartment(name, interval);',
+              '  const interval = Number(body.sessionIntervalMinutes ?? 120);\n  const startMinutes = Number(body.sessionStartMinutes ?? 420);\n  const validation = validateDepartment(name, interval, startMinutes);',
+              'create validation')
+          t = once(t,
+              '`INSERT INTO departments (name, session_interval_minutes, active, updated_at)\n     VALUES (?, ?, 1, CURRENT_TIMESTAMP)`,\n  ).bind(name, interval).run();',
+              '`INSERT INTO departments (name, session_interval_minutes, session_start_minutes, active, updated_at)\n     VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)`,\n  ).bind(name, interval, startMinutes).run();',
+              'create dept sql')
+          t = once(t,
+              '  const interval = Number(body.sessionIntervalMinutes ?? 120);\n  const active = body.active === false ? 0 : 1;\n  const validation = validateDepartment(name, interval);',
+              '  const interval = Number(body.sessionIntervalMinutes ?? 120);\n  const startMinutes = Number(body.sessionStartMinutes ?? 0);\n  const active = body.active === false ? 0 : 1;\n  const validation = validateDepartment(name, interval, startMinutes);',
+              'update validation')
+          t = once(t,
+              '       SET name = ?, session_interval_minutes = ?, active = ?, updated_at = CURRENT_TIMESTAMP\n       WHERE id = ?`,\n    ).bind(name, interval, active, departmentId),',
+              '       SET name = ?, session_interval_minutes = ?, session_start_minutes = ?, active = ?, updated_at = CURRENT_TIMESTAMP\n       WHERE id = ?`,\n    ).bind(name, interval, startMinutes, active, departmentId),',
+              'update dept sql')
+          t = once(t,
+              '    sessionIntervalMinutes: Number(user.session_interval_minutes || 120),\n    active:',
+              '    sessionIntervalMinutes: Number(user.session_interval_minutes || 120),\n    sessionStartMinutes: Number(user.session_start_minutes || 0),\n    active:',
+              'public user start')
+          t = once(t,
+              '    sessionIntervalMinutes: Number(row.session_interval_minutes || 120),\n    active:',
+              '    sessionIntervalMinutes: Number(row.session_interval_minutes || 120),\n    sessionStartMinutes: Number(row.session_start_minutes || 0),\n    active:',
+              'department json start')
+          t = once(t,
+              'function validateDepartment(name, interval) {\n  if (name.length < 2 || name.length > 150) return \'Nama Jabatan mesti antara 2 hingga 150 aksara.\';\n  if (!Number.isInteger(interval) || interval < 15 || interval > 1440) {\n    return \'Tempoh sesi mesti antara 15 hingga 1440 minit.\';\n  }\n  return null;\n}',
+              "function validateDepartment(name, interval, startMinutes) {\n  if (name.length < 2 || name.length > 150) return 'Nama Jabatan mesti antara 2 hingga 150 aksara.';\n  if (!Number.isInteger(interval) || interval < 15 || interval > 1440) {\n    return 'Tempoh sesi mesti antara 15 hingga 1440 minit.';\n  }\n  if (!Number.isInteger(startMinutes) || startMinutes < 0 || startMinutes > 1439) {\n    return 'Jam mula rondaan tidak sah.';\n  }\n  return null;\n}",
+              'validate dept')
+          helper_marker = 'function malaysiaDateKey(date) {\n'
+          helpers = '''function scheduleDayWindow(value, startMinutes = 0) {\n  const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);\n  const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();\n  const safeStart = Math.max(0, Math.min(1439, Number(startMinutes || 0)));\n  const localMidnightUtc = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());\n  let startMs = localMidnightUtc - MALAYSIA_OFFSET_MS + safeStart * 60000;\n  if (minuteOfDay < safeStart) startMs -= 86400000;\n  return { startMs, endMs: startMs + 86400000 };\n}\n\nfunction currentSessionIndex(value, interval, startMinutes = 0) {\n  const day = scheduleDayWindow(value, startMinutes);\n  const safeInterval = Math.max(15, Math.min(1440, Number(interval || 120)));\n  return Math.floor((value.getTime() - day.startMs) / 60000 / safeInterval);\n}\n\nfunction scheduleDateKey(value, startMinutes = 0) {\n  const day = scheduleDayWindow(value, startMinutes);\n  return malaysiaDateKey(new Date(day.startMs + MALAYSIA_OFFSET_MS));\n}\n\n'''
+          if helper_marker not in t: raise RuntimeError('index helper marker missing')
+          t = t.replace(helper_marker, helpers + helper_marker, 1)
+          write(p, t)
+
+          # --- Smart Worker schedule calculations.
+          p = 'worker/app.js'
+          t = read(p)
+          t = t.replace('COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes',
+                        'COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,\n            COALESCE(d.session_start_minutes, 0) AS session_start_minutes')
+          t = t.replace('SELECT id, name, session_interval_minutes, route_order_enforced',
+                        'SELECT id, name, session_interval_minutes, session_start_minutes, route_order_enforced')
+          t = t.replace('SELECT id, session_interval_minutes, route_order_enforced',
+                        'SELECT id, session_interval_minutes, session_start_minutes, route_order_enforced')
+          t = t.replace('currentSessionIndex(now, interval)',
+                        'currentSessionIndex(now, interval, auth.user.session_start_minutes)', 1)
+          old_block = '''  const interval = Number(department.session_interval_minutes || 120);\n  const now = new Date();\n  const day = malaysiaDayBounds(malaysiaDateKey(now));\n  const sessionIndex = currentSessionIndex(now, interval);\n  const sessionStart = day.startMs + sessionIndex * interval * 60000;\n  const sessionEnd = Math.min(day.endMs, sessionStart + interval * 60000);'''
+          new_block = '''  const interval = Number(department.session_interval_minutes || 120);\n  const now = new Date();\n  const window = sessionWindow(now, interval, department.session_start_minutes);\n  const sessionIndex = window.index;\n  const sessionStart = window.startMs;\n  const sessionEnd = window.endMs;'''
+          if t.count(old_block) != 2: raise RuntimeError(f'app session blocks expected 2 got {t.count(old_block)}')
+          t = t.replace(old_block, new_block)
+          t = t.replace('      sessionIntervalMinutes: interval,\n      routeOrderEnforced:',
+                        '      sessionIntervalMinutes: interval,\n      sessionStartMinutes: Number(department.session_start_minutes || 0),\n      routeOrderEnforced:', 1)
+          t = once(t,
+              '              COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes\n       FROM users u',
+              '              COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,\n              COALESCE(d.session_start_minutes, 0) AS session_start_minutes\n       FROM users u',
+              'command user start')
+          t = once(t,
+              '  const today = malaysiaDateKey(now);\n  const bounds = malaysiaDayBounds(today);',
+              "  const bounds = {\n    startIso: new Date(now.getTime() - 86400000).toISOString(),\n    endIso: new Date(now.getTime() + 60000).toISOString(),\n  };",
+              'command bounds')
+          t = once(t,
+              '''    const interval = Number(user.session_interval_minutes || 120);\n    const currentIndex = currentSessionIndex(now, interval);\n    const expected = checkpointCounts.get(Number(user.department_id)) ?? 0;\n    const currentScans = scans.filter((row) =>\n      Number(row.user_id) === Number(user.id) && Number(row.session_index) === currentIndex\n    );\n    const uniqueCurrent = new Set(currentScans.map((row) => Number(row.checkpoint_id)).filter((id) => id > 0));\n    const lastScan = scans.filter((row) => Number(row.user_id) === Number(user.id)).at(-1) ?? null;''',
+              '''    const interval = Number(user.session_interval_minutes || 120);\n    const sessionStartMinutes = Number(user.session_start_minutes || 0);\n    const currentWindow = sessionWindow(now, interval, sessionStartMinutes);\n    const currentIndex = currentWindow.index;\n    const scheduleDay = scheduleDayWindow(now, sessionStartMinutes);\n    const expected = checkpointCounts.get(Number(user.department_id)) ?? 0;\n    const userDayScans = scans.filter((row) => {\n      const time = Date.parse(row.scanned_at);\n      return Number(row.user_id) === Number(user.id) && time >= scheduleDay.startMs && time < scheduleDay.endMs;\n    });\n    const currentScans = userDayScans.filter((row) => {\n      const time = Date.parse(row.scanned_at);\n      return time >= currentWindow.startMs && time < currentWindow.endMs;\n    });\n    const uniqueCurrent = new Set(currentScans.map((row) => Number(row.checkpoint_id)).filter((id) => id > 0));\n    const lastScan = userDayScans.at(-1) ?? null;''',
+              'command current scans')
+          t = t.replace('const unique = new Set(scans\n        .filter((row) => Number(row.user_id) === Number(user.id) && Number(row.session_index) === index)',
+                        'const unique = new Set(userDayScans\n        .filter((row) => Number(row.session_index) === index)')
+          t = once(t,
+              '''    const shifted = new Date(now.getTime() + MALAYSIA_OFFSET_MS);\n    const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();\n    const minutesIntoSession = minuteOfDay - currentIndex * interval;''',
+              '    const minutesIntoSession = Math.max(0, Math.floor((now.getTime() - currentWindow.startMs) / 60000));',
+              'minutes into session')
+          t = once(t,
+              '    sessionIntervalMinutes: Number(user.session_interval_minutes || 120),\n  };',
+              '    sessionIntervalMinutes: Number(user.session_interval_minutes || 120),\n    sessionStartMinutes: Number(user.session_start_minutes || 0),\n  };',
+              'app public user start')
+          t = once(t,
+              '''function currentSessionIndex(value, interval) {\n  const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);\n  const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();\n  return Math.floor(minuteOfDay / Math.max(15, Math.min(1440, interval)));\n}''',
+              '''function scheduleDayWindow(value, startMinutes = 0) {\n  const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);\n  const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();\n  const safeStart = Math.max(0, Math.min(1439, Number(startMinutes || 0)));\n  const localMidnightUtc = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());\n  let startMs = localMidnightUtc - MALAYSIA_OFFSET_MS + safeStart * 60000;\n  if (minuteOfDay < safeStart) startMs -= 86400000;\n  return { startMs, endMs: startMs + 86400000 };\n}\n\nfunction sessionWindow(value, interval, startMinutes = 0) {\n  const day = scheduleDayWindow(value, startMinutes);\n  const safeInterval = Math.max(15, Math.min(1440, Number(interval || 120)));\n  const index = Math.floor((value.getTime() - day.startMs) / 60000 / safeInterval);\n  const startMs = day.startMs + index * safeInterval * 60000;\n  return { index, startMs, endMs: Math.min(day.endMs, startMs + safeInterval * 60000) };\n}\n\nfunction currentSessionIndex(value, interval, startMinutes = 0) {\n  return sessionWindow(value, interval, startMinutes).index;\n}''',
+              'app schedule helpers')
+          write(p, t)
+
+          # --- Offline Worker schedule calculations.
+          p = 'worker/offline.js'
+          t = read(p)
+          t = t.replace('COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes',
+                        'COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,\n            COALESCE(d.session_start_minutes, 0) AS session_start_minutes')
+          t = once(t,
+              'SELECT id, name, session_interval_minutes, route_order_enforced',
+              'SELECT id, name, session_interval_minutes, session_start_minutes, route_order_enforced',
+              'offline bootstrap select')
+          t = once(t,
+              '      sessionIntervalMinutes: Number(department.session_interval_minutes || 120),\n      routeOrderEnforced:',
+              '      sessionIntervalMinutes: Number(department.session_interval_minutes || 120),\n      sessionStartMinutes: Number(department.session_start_minutes || 0),\n      routeOrderEnforced:',
+              'offline bootstrap response')
+          t = once(t,
+              'SELECT id, session_interval_minutes, route_order_enforced',
+              'SELECT id, session_interval_minutes, session_start_minutes, route_order_enforced',
+              'offline scan select')
+          t = once(t,
+              '''  const interval = Number(department.session_interval_minutes || 120);\n  const day = malaysiaDayBounds(malaysiaDateKey(occurredAt));\n  const sessionIndex = currentSessionIndex(occurredAt, interval);\n  const startMs = day.startMs + sessionIndex * interval * 60000;\n  const endMs = Math.min(day.endMs, startMs + interval * 60000);''',
+              '''  const interval = Number(department.session_interval_minutes || 120);\n  const window = sessionWindow(occurredAt, interval, department.session_start_minutes);\n  const sessionIndex = window.index;\n  const startMs = window.startMs;\n  const endMs = window.endMs;''',
+              'offline scan window')
+          t = once(t,
+              '    sessionIntervalMinutes: Number(user.session_interval_minutes || 120),\n  };',
+              '    sessionIntervalMinutes: Number(user.session_interval_minutes || 120),\n    sessionStartMinutes: Number(user.session_start_minutes || 0),\n  };',
+              'offline public user start')
+          t = once(t,
+              '''function currentSessionIndex(value, interval) {\n  const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);\n  const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();\n  return Math.floor(minuteOfDay / Math.max(15, Math.min(1440, Number(interval || 120))));\n}''',
+              '''function scheduleDayWindow(value, startMinutes = 0) {\n  const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);\n  const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();\n  const safeStart = Math.max(0, Math.min(1439, Number(startMinutes || 0)));\n  const localMidnightUtc = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());\n  let startMs = localMidnightUtc - MALAYSIA_OFFSET_MS + safeStart * 60000;\n  if (minuteOfDay < safeStart) startMs -= 86400000;\n  return { startMs, endMs: startMs + 86400000 };\n}\n\nfunction sessionWindow(value, interval, startMinutes = 0) {\n  const day = scheduleDayWindow(value, startMinutes);\n  const safeInterval = Math.max(15, Math.min(1440, Number(interval || 120)));\n  const index = Math.floor((value.getTime() - day.startMs) / 60000 / safeInterval);\n  const startMs = day.startMs + index * safeInterval * 60000;\n  return { index, startMs, endMs: Math.min(day.endMs, startMs + safeInterval * 60000) };\n}\n\nfunction currentSessionIndex(value, interval, startMinutes = 0) {\n  return sessionWindow(value, interval, startMinutes).index;\n}''',
+              'offline helpers')
+          write(p, t)
+
+          # --- Patrol screen: schedule label and large bottom end button.
+          p = 'lib/features/patrol/patrol_screen.dart'
+          t = read(p)
+          t = re.sub(r'_sessionIndex\(\s*DateTime\.now\(\),\s*bootstrap\.sessionIntervalMinutes,\s*\)',
+                     '_sessionIndex(DateTime.now(), bootstrap.sessionIntervalMinutes, bootstrap.sessionStartMinutes)', t)
+          t = t.replace('_dayKey(DateTime.now())', '_scheduleDayKey(DateTime.now(), bootstrap.sessionStartMinutes)')
+          t = once(t,
+              '''  int _sessionIndex(DateTime value, int interval) {\n    final local = value.toLocal();\n    final safeInterval = interval.clamp(15, 1440);\n    return (local.hour * 60 + local.minute) ~/ safeInterval;\n  }\n\n  String _dayKey(DateTime value) {\n    final local = value.toLocal();\n    String two(int value) => value.toString().padLeft(2, '0');\n    return '${local.year}-${two(local.month)}-${two(local.day)}';\n  }''',
+              '''  _SessionWindow _sessionWindow(DateTime value, int interval, int startMinutes) {\n    final local = value.toLocal();\n    final safeInterval = interval.clamp(15, 1440);\n    final safeStart = startMinutes.clamp(0, 1439);\n    var anchor = DateTime(local.year, local.month, local.day)\n        .add(Duration(minutes: safeStart));\n    if (local.isBefore(anchor)) anchor = anchor.subtract(const Duration(days: 1));\n    final index = local.difference(anchor).inMinutes ~/ safeInterval;\n    final start = anchor.add(Duration(minutes: index * safeInterval));\n    final dayEnd = anchor.add(const Duration(days: 1));\n    final rawEnd = start.add(Duration(minutes: safeInterval));\n    final end = rawEnd.isAfter(dayEnd) ? dayEnd : rawEnd;\n    return _SessionWindow(index: index, start: start, end: end, anchor: anchor);\n  }\n\n  int _sessionIndex(DateTime value, int interval, int startMinutes) =>\n      _sessionWindow(value, interval, startMinutes).index;\n\n  String _scheduleDayKey(DateTime value, int startMinutes) {\n    final local = value.toLocal();\n    final safeStart = startMinutes.clamp(0, 1439);\n    var anchor = DateTime(local.year, local.month, local.day)\n        .add(Duration(minutes: safeStart));\n    if (local.isBefore(anchor)) anchor = anchor.subtract(const Duration(days: 1));\n    String two(int value) => value.toString().padLeft(2, '0');\n    return '${anchor.year}-${two(anchor.month)}-${two(anchor.day)}';\n  }\n\n  String _hm(DateTime value) {\n    final local = value.toLocal();\n    String two(int value) => value.toString().padLeft(2, '0');\n    return '${two(local.hour)}:${two(local.minute)}';\n  }''',
+              'patrol session helpers')
+          t = once(t,
+              '    final next = bootstrap == null ? null : _nextCheckpoint(bootstrap);\n    final sessionEvents = bootstrap == null',
+              "    final next = bootstrap == null ? null : _nextCheckpoint(bootstrap);\n    final activeSession = bootstrap == null\n        ? null\n        : _sessionWindow(DateTime.now(), bootstrap.sessionIntervalMinutes, bootstrap.sessionStartMinutes);\n    final sessionLabel = activeSession == null\n        ? 'Sesi Rondaan belum tersedia'\n        : 'Sesi Rondaan ${activeSession.index + 1} • ${_hm(activeSession.start)} – ${_hm(activeSession.end)}';\n    final sessionEvents = bootstrap == null",
+              'patrol active session')
+          end_icon = '''          IconButton(\n            tooltip: 'Tamat rondaan',\n            onPressed: _ending ? null : _finishPatrol,\n            icon: const Icon(Icons.stop_circle_outlined),\n          ),\n'''
+          if end_icon not in t: raise RuntimeError('end icon missing')
+          t = t.replace(end_icon, '', 1)
+          t = once(t,
+              '      ),\n      body: SafeArea(',
+              '''      ),\n      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,\n      floatingActionButton: SizedBox(\n        width: MediaQuery.sizeOf(context).width - 32,\n        height: 66,\n        child: FloatingActionButton.extended(\n          heroTag: 'tamat-rondaan',\n          onPressed: _ending ? null : _finishPatrol,\n          backgroundColor: const Color(0xFFC0392B),\n          foregroundColor: Colors.white,\n          icon: const Icon(Icons.stop_circle_rounded, size: 30),\n          label: Text(\n            _ending ? 'MENAMATKAN RONDAAN…' : 'TAMAT RONDAAN',\n            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),\n          ),\n        ),\n      ),\n      body: SafeArea(''',
+              'patrol big end button')
+          t = once(t,
+              '            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),',
+              '            padding: const EdgeInsets.fromLTRB(16, 8, 16, 122),',
+              'patrol bottom padding')
+          t = once(t,
+              '                interval: bootstrap?.sessionIntervalMinutes ??\n                    widget.user.sessionIntervalMinutes,\n              ),',
+              '                interval: bootstrap?.sessionIntervalMinutes ??\n                    widget.user.sessionIntervalMinutes,\n                sessionLabel: sessionLabel,\n              ),',
+              'route card call label')
+          t = once(t,
+              '    required this.interval,\n  });',
+              '    required this.interval,\n    required this.sessionLabel,\n  });',
+              'route ctor label')
+          t = once(t,
+              '  final int interval;\n\n  @override',
+              '  final int interval;\n  final String sessionLabel;\n\n  @override',
+              'route field label')
+          t = once(t,
+              "                        Text('Sesi setiap $interval minit'),",
+              "                        Text(sessionLabel, style: const TextStyle(fontWeight: FontWeight.w800)),\n                        const SizedBox(height: 3),\n                        Text('Kadar: setiap $interval minit'),",
+              'route display label')
+          # Add simple immutable session window type before first child widget class.
+          marker = 'class _LiveHero extends StatelessWidget {'
+          cls = '''class _SessionWindow {\n  const _SessionWindow({\n    required this.index,\n    required this.start,\n    required this.end,\n    required this.anchor,\n  });\n\n  final int index;\n  final DateTime start;\n  final DateTime end;\n  final DateTime anchor;\n}\n\n'''
+          if marker not in t: raise RuntimeError('session class marker missing')
+          t = t.replace(marker, cls + marker, 1)
+          write(p, t)
+
+          # --- Main dashboard session alarm anchored to department start time.
+          p = 'lib/features/dashboard/dashboard_screen.dart'
+          t = read(p)
+          t = once(t,
+              '  late int _sessionIntervalMinutes;\n  Timer? _sessionTimer;',
+              '  late int _sessionIntervalMinutes;\n  late int _sessionStartMinutes;\n  Timer? _sessionTimer;',
+              'dashboard start field')
+          t = once(t,
+              '    _sessionIntervalMinutes = widget.user.sessionIntervalMinutes;\n    _lastSessionKey = _sessionKey(DateTime.now());',
+              '    _sessionIntervalMinutes = widget.user.sessionIntervalMinutes;\n    _sessionStartMinutes = _store.cachedBootstrap()?.sessionStartMinutes ?? 0;\n    _lastSessionKey = _sessionKey(DateTime.now());',
+              'dashboard start init')
+          t = once(t,
+              '''      if (_sessionIntervalMinutes != bootstrap.sessionIntervalMinutes) {\n        setState(() => _sessionIntervalMinutes = bootstrap.sessionIntervalMinutes);\n        _lastSessionKey = _sessionKey(DateTime.now());\n      }''',
+              '''      if (_sessionIntervalMinutes != bootstrap.sessionIntervalMinutes ||\n          _sessionStartMinutes != bootstrap.sessionStartMinutes) {\n        setState(() {\n          _sessionIntervalMinutes = bootstrap.sessionIntervalMinutes;\n          _sessionStartMinutes = bootstrap.sessionStartMinutes;\n        });\n        _lastSessionKey = _sessionKey(DateTime.now());\n      }''',
+              'dashboard refresh')
+          t = once(t,
+              '''      if (cached != null &&\n          _sessionIntervalMinutes != cached.sessionIntervalMinutes &&\n          mounted) {\n        setState(() => _sessionIntervalMinutes = cached.sessionIntervalMinutes);\n      }''',
+              '''      if (cached != null && mounted &&\n          (_sessionIntervalMinutes != cached.sessionIntervalMinutes ||\n              _sessionStartMinutes != cached.sessionStartMinutes)) {\n        setState(() {\n          _sessionIntervalMinutes = cached.sessionIntervalMinutes;\n          _sessionStartMinutes = cached.sessionStartMinutes;\n        });\n      }''',
+              'dashboard cached refresh')
+          t = once(t,
+              '''  String _sessionKey(DateTime value) {\n    final local = value.toLocal();\n    final interval = _sessionIntervalMinutes <= 0 ? 120 : _sessionIntervalMinutes;\n    final index = (local.hour * 60 + local.minute) ~/ interval;\n    String two(int v) => v.toString().padLeft(2, '0');\n    return '${local.year}-${two(local.month)}-${two(local.day)}-$index-$interval';\n  }''',
+              '''  String _sessionKey(DateTime value) {\n    final local = value.toLocal();\n    final interval = _sessionIntervalMinutes.clamp(15, 1440);\n    final startMinutes = _sessionStartMinutes.clamp(0, 1439);\n    final minuteOfDay = local.hour * 60 + local.minute;\n    final relativeMinutes = (minuteOfDay - startMinutes + 1440) % 1440;\n    final index = relativeMinutes ~/ interval;\n    final scheduleDay = minuteOfDay < startMinutes\n        ? local.subtract(const Duration(days: 1))\n        : local;\n    String two(int v) => v.toString().padLeft(2, '0');\n    return '${scheduleDay.year}-${two(scheduleDay.month)}-${two(scheduleDay.day)}-$index-$interval-$startMinutes';\n  }''',
+              'dashboard session key')
+          write(p, t)
+
+          # Sanity checks: schedule field must be wired across every layer.
+          for path in [
+              'lib/core/offline/offline_models.dart',
+              'lib/core/api/api_service.dart',
+              'lib/features/admin/department_maintenance_screen.dart',
+              'lib/features/patrol/patrol_screen.dart',
+              'lib/features/dashboard/dashboard_screen.dart',
+              'worker/index.js', 'worker/app.js', 'worker/offline.js']:
+              data = read(path)
+              if 'sessionStartMinutes' not in data and 'session_start_minutes' not in data:
+                  raise RuntimeError(f'session start missing from {path}')
+          PY
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check worker/index.js
+          node --check worker/app.js
+          node --check worker/offline.js
+
+      - name: Validate Flutter
+        run: |
+          flutter pub get
+          flutter analyze
+
+      - name: Commit upgrade
+        shell: bash
+        run: |
+          git config user.name 'RimbaKawal Automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add migrations/0009_department_session_start.sql \
+                  lib/core/offline/offline_models.dart \
+                  lib/core/api/api_service.dart \
+                  lib/features/admin/department_maintenance_screen.dart \
+                  lib/features/patrol/patrol_screen.dart \
+                  lib/features/dashboard/dashboard_screen.dart \
+                  worker/index.js worker/app.js worker/offline.js
+          git commit -m 'Improve patrol controls and department session schedules'
+          git push origin main
