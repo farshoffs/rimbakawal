@@ -1,0 +1,91 @@
+name: Build RimbaKawal Mobile Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: rimbakawal-mobile-production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  API_BASE_URL: https://rimbakawal.fscapitalmanagement.workers.dev
+
+jobs:
+  android-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Prepare Android project
+        run: bash scripts/prepare-mobile.sh "$RUNNER_TEMP/rimbakawal-mobile"
+
+      - name: Build production APK
+        working-directory: ${{ runner.temp }}/rimbakawal-mobile
+        run: >-
+          flutter build apk --release
+          --dart-define=USE_MOCK_NFC=false
+          --dart-define=API_BASE_URL=${{ env.API_BASE_URL }}
+
+      - name: Build production app bundle
+        working-directory: ${{ runner.temp }}/rimbakawal-mobile
+        run: >-
+          flutter build appbundle --release
+          --dart-define=USE_MOCK_NFC=false
+          --dart-define=API_BASE_URL=${{ env.API_BASE_URL }}
+
+      - name: Upload Android release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: RimbaKawal-Android-Production
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/rimbakawal-mobile/build/app/outputs/flutter-apk/app-release.apk
+            ${{ runner.temp }}/rimbakawal-mobile/build/app/outputs/bundle/release/app-release.aab
+
+  ios-release-unsigned:
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Prepare iOS project
+        run: bash scripts/prepare-mobile.sh "$RUNNER_TEMP/rimbakawal-mobile"
+
+      - name: Build production iOS app without signing
+        working-directory: ${{ runner.temp }}/rimbakawal-mobile
+        run: >-
+          flutter build ios --release --no-codesign
+          --dart-define=USE_MOCK_NFC=false
+          --dart-define=API_BASE_URL=${{ env.API_BASE_URL }}
+
+      - name: Package unsigned iOS app
+        working-directory: ${{ runner.temp }}/rimbakawal-mobile/build/ios/iphoneos
+        run: zip -qry "$RUNNER_TEMP/RimbaKawal-iOS-Production-Unsigned.zip" Runner.app
+
+      - name: Upload iOS release file
+        uses: actions/upload-artifact@v4
+        with:
+          name: RimbaKawal-iOS-Production-Unsigned
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/RimbaKawal-iOS-Production-Unsigned.zip

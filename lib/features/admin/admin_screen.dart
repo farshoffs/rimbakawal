@@ -4,6 +4,7 @@ import '../../core/api/api_service.dart';
 import '../../core/nfc/nfc_service.dart';
 import 'command_center_screen.dart';
 import 'department_maintenance_screen.dart';
+import 'live_patrol_map_screen.dart';
 import 'report_screen.dart';
 import 'user_maintenance_screen.dart';
 
@@ -31,29 +32,32 @@ class AdminScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           _AdminMenuCard(
+            icon: Icons.map_rounded,
+            title: 'Peta Rondaan Langsung',
+            subtitle: 'Lihat kedudukan semasa peronda yang sedang meronda.',
+            onTap: () => _open(context, LivePatrolMapScreen(api: api)),
+          ),
+          const SizedBox(height: 10),
+          _AdminMenuCard(
             icon: Icons.monitor_heart_rounded,
             title: 'Command Center',
-            subtitle: 'Pantau patrol, late/missed session, SOS dan insiden secara live.',
-            onTap: () => _open(
-              context,
-              CommandCenterScreen(api: api),
-            ),
+            subtitle:
+                'Pantau patrol, late/missed session, SOS dan insiden secara live.',
+            onTap: () => _open(context, CommandCenterScreen(api: api)),
           ),
           const SizedBox(height: 10),
           _AdminMenuCard(
             icon: Icons.people_alt_rounded,
             title: 'Senarai Pengguna',
             subtitle: 'Tambah pengguna dan tetapkan Jabatan.',
-            onTap: () => _open(
-              context,
-              UserMaintenanceScreen(api: api),
-            ),
+            onTap: () => _open(context, UserMaintenanceScreen(api: api)),
           ),
           const SizedBox(height: 10),
           _AdminMenuCard(
             icon: Icons.account_tree_rounded,
             title: 'Jabatan & Checkpoint',
-            subtitle: 'Selenggara Jabatan, kadar sesi dan NFC checkpoint dalam satu skrin.',
+            subtitle:
+                'Selenggara Jabatan, kadar sesi dan NFC checkpoint dalam satu skrin.',
             onTap: () => _open(
               context,
               DepartmentMaintenanceScreen(
@@ -68,10 +72,7 @@ class AdminScreen extends StatelessWidget {
             icon: Icons.picture_as_pdf_rounded,
             title: 'Laporan',
             subtitle: 'Jana dan simpan laporan rondaan dalam PDF.',
-            onTap: () => _open(
-              context,
-              ReportScreen(api: api),
-            ),
+            onTap: () => _open(context, ReportScreen(api: api)),
           ),
         ],
       ),
