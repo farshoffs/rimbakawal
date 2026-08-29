@@ -1,0 +1,302 @@
+name: Apply Attendance Reviewed Status
+
+on:
+  push:
+    branches:
+      - feature/attendance-reviewed-button
+
+permissions:
+  contents: write
+
+jobs:
+  patch-validate-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/attendance-reviewed-button
+          fetch-depth: 0
+
+      - name: Apply attendance review status
+        shell: bash
+        run: |
+          cat > migrations/0014_attendance_reviewed.sql <<'SQL'
+          ALTER TABLE attendance_records ADD COLUMN reviewed_at TEXT;
+          ALTER TABLE attendance_records ADD COLUMN reviewed_by INTEGER;
+          CREATE INDEX IF NOT EXISTS idx_attendance_records_reviewed
+            ON attendance_records(work_date, reviewed_at);
+          SQL
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'Pattern not found in {path}: {old[:160]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          # Worker: add Management-only endpoint to mark an attendance record reviewed.
+          p = Path('worker/attendance.js')
+          text = p.read_text()
+          marker = """      if (url.pathname === '/api/admin/attendance' && request.method === 'GET') {
+        return adminAttendance(request, env, url);
+      }
+"""
+          route = """      const attendanceReviewMatch = url.pathname.match(/^\\/api\\/admin\\/attendance\\/(\\d+)\\/review$/);
+      if (attendanceReviewMatch && request.method === 'POST') {
+        return reviewAttendance(request, env, Number(attendanceReviewMatch[1]));
+      }
+"""
+          if marker not in text: raise SystemExit('attendance admin route marker missing')
+          text = text.replace(marker, marker + route, 1)
+
+          fn_marker = "async function adminAttendance(request, env, url) {\n"
+          fn = """async function reviewAttendance(request, env, attendanceId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  if (!Number.isInteger(attendanceId) || attendanceId <= 0) {
+    return json({ error: 'Rekod kehadiran tidak sah.' }, 400);
+  }
+  const existing = await env.DB.prepare(
+    'SELECT id, reviewed_at FROM attendance_records WHERE id = ? LIMIT 1',
+  ).bind(attendanceId).first();
+  if (!existing) return json({ error: 'Rekod kehadiran tidak ditemui.' }, 404);
+  if (!existing.reviewed_at) {
+    await env.DB.prepare(
+      'UPDATE attendance_records SET reviewed_at = ?, reviewed_by = ? WHERE id = ?',
+    ).bind(new Date().toISOString(), auth.user.id, attendanceId).run();
+  }
+  const row = await env.DB.prepare(
+    `SELECT a.*, u.nama, u.jawatan, u.profile_picture,
+            COALESCE(d.name, u.jabatan) AS department_name,
+            reviewer.nama AS reviewed_by_name
+     FROM attendance_records a
+     JOIN users u ON u.id = a.user_id
+     LEFT JOIN departments d ON d.id = a.department_id
+     LEFT JOIN users reviewer ON reviewer.id = a.reviewed_by
+     WHERE a.id = ? LIMIT 1`,
+  ).bind(attendanceId).first();
+  return json({ record: adminAttendanceJson(row) });
+}
+
+"""
+          if fn_marker not in text: raise SystemExit('adminAttendance function marker missing')
+          text = text.replace(fn_marker, fn + fn_marker, 1)
+
+          old_query = """    `SELECT a.*, u.nama, u.jawatan, u.profile_picture,
+            COALESCE(d.name, u.jabatan) AS department_name
+     FROM attendance_records a
+     JOIN users u ON u.id = a.user_id
+     LEFT JOIN departments d ON d.id = a.department_id
+"""
+          new_query = """    `SELECT a.*, u.nama, u.jawatan, u.profile_picture,
+            COALESCE(d.name, u.jabatan) AS department_name,
+            reviewer.nama AS reviewed_by_name
+     FROM attendance_records a
+     JOIN users u ON u.id = a.user_id
+     LEFT JOIN departments d ON d.id = a.department_id
+     LEFT JOIN users reviewer ON reviewer.id = a.reviewed_by
+"""
+          if old_query not in text: raise SystemExit('admin attendance query marker missing')
+          text = text.replace(old_query, new_query, 1)
+
+          text = text.replace(
+            "WHERE work_date = ? ${scope} AND face_status = 'review_required'`,
+            "WHERE work_date = ? ${scope} AND face_status = 'review_required' AND reviewed_at IS NULL",
+            1,
+          )
+
+          old_json = """    selfieData: row.selfie_data,
+  };
+}
+"""
+          new_json = """    selfieData: row.selfie_data,
+    reviewedAt: row.reviewed_at || null,
+    reviewedBy: row.reviewed_by == null ? null : Number(row.reviewed_by),
+    reviewedByName: row.reviewed_by_name || null,
+  };
+}
+"""
+          if old_json not in text: raise SystemExit('adminAttendanceJson marker missing')
+          text = text.replace(old_json, new_json, 1)
+          p.write_text(text)
+
+          # API model + review action.
+          p = Path('lib/core/api/api_service.dart')
+          text = p.read_text()
+          text = text.replace(
+            "    this.selfieData,\n  });",
+            "    this.selfieData,\n    this.reviewedAt,\n    this.reviewedBy,\n    this.reviewedByName,\n  });",
+            1,
+          )
+          text = text.replace(
+            "  final String? selfieData;\n\n  factory AttendanceRecord.fromJson",
+            "  final String? selfieData;\n  final DateTime? reviewedAt;\n  final int? reviewedBy;\n  final String? reviewedByName;\n  bool get isReviewed => reviewedAt != null;\n\n  factory AttendanceRecord.fromJson",
+            1,
+          )
+          text = text.replace(
+            "        selfieData: json['selfieData'] as String?,\n      );",
+            "        selfieData: json['selfieData'] as String?,\n        reviewedAt: json['reviewedAt'] == null ? null : DateTime.parse(json['reviewedAt'] as String),\n        reviewedBy: (json['reviewedBy'] as num?)?.toInt(),\n        reviewedByName: json['reviewedByName'] as String?,\n      );",
+            1,
+          )
+          marker = """  Future<AttendanceAdminData> getAdminAttendance(DateTime date, {int? departmentId}) async {
+"""
+          idx = text.find(marker)
+          if idx < 0: raise SystemExit('getAdminAttendance marker missing')
+          end_marker = "\n  Future<"
+          end = text.find(end_marker, idx + len(marker))
+          if end < 0: raise SystemExit('next API method marker missing')
+          method = """
+  Future<AttendanceRecord> reviewAttendanceRecord(int id) async {
+    final data = _decode(
+      await http.post(
+        _uri('/api/admin/attendance/$id/review'),
+        headers: _headers(jsonBody: true),
+        body: '{}',
+      ),
+    );
+    return AttendanceRecord.fromJson(
+      Map<String, dynamic>.from(data['record'] as Map),
+    );
+  }
+"""
+          text = text[:end] + method + text[end:]
+          p.write_text(text)
+
+          # Admin detail: persistent Disemak button and status display.
+          p = Path('lib/features/admin/attendance_history_screen.dart')
+          text = p.read_text()
+          start = text.index('  Future<void> _showDetail(AttendanceRecord record) async {')
+          end = text.index('\n  @override\n  Widget build', start)
+          replacement = """  Future<void> _showDetail(AttendanceRecord record) async {
+    var current = record;
+    var savingReview = false;
+    final profile = _image(record.profilePicture);
+    final selfie = _image(record.selfieData);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('Detail Kehadiran', style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                      ),
+                      IconButton(onPressed: () => Navigator.pop(dialogContext), icon: const Icon(Icons.close_rounded)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text('${current.userName ?? 'Pengguna'} • ${current.department ?? '-'}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text('${current.punchType == 'IN' ? 'MASUK' : 'KELUAR'} • ${_time(current.punchedAt)} • ${current.distanceMeters.toStringAsFixed(0)}m dari pusat'),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(child: _PhotoPanel(title: 'Gambar Profil', image: profile)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _PhotoPanel(title: 'Selfie Punch', image: selfie)),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _InfoChip(icon: Icons.face_retouching_natural_rounded, text: 'Status: ${current.faceStatus}'),
+                      _InfoChip(icon: Icons.analytics_rounded, text: 'Skor: ${current.faceScore?.round() ?? '-'}%'),
+                      _InfoChip(icon: Icons.gps_fixed_rounded, text: 'GPS ±${current.accuracyMeters?.toStringAsFixed(0) ?? '-'}m'),
+                      _InfoChip(icon: Icons.location_on_rounded, text: '${current.latitude.toStringAsFixed(6)}, ${current.longitude.toStringAsFixed(6)}'),
+                      if (current.isReviewed)
+                        _InfoChip(icon: Icons.verified_rounded, text: 'Disemak${current.reviewedByName == null ? '' : ' oleh ${current.reviewedByName}'}'),
+                    ],
+                  ),
+                  if (current.faceReason != null && current.faceReason!.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Text('Catatan pengecaman: ${current.faceReason}'),
+                  ],
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: current.isReviewed || savingReview
+                        ? null
+                        : () async {
+                            setDialogState(() => savingReview = true);
+                            try {
+                              final updated = await widget.api.reviewAttendanceRecord(current.id);
+                              if (!dialogContext.mounted) return;
+                              setDialogState(() {
+                                current = updated;
+                                savingReview = false;
+                              });
+                              _refresh();
+                            } catch (error) {
+                              if (!dialogContext.mounted) return;
+                              setDialogState(() => savingReview = false);
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                SnackBar(content: Text(error.toString())),
+                              );
+                            }
+                          },
+                    icon: Icon(current.isReviewed ? Icons.verified_rounded : Icons.task_alt_rounded),
+                    label: Text(
+                      current.isReviewed
+                          ? 'TELAH DISEMAK'
+                          : savingReview
+                              ? 'MENYIMPAN…'
+                              : 'DISEMAK',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+"""
+          text = text[:start] + replacement + text[end:]
+          p.write_text(text)
+          PY
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter
+        run: flutter analyze
+
+      - name: Build web
+        run: flutter build web --release
+
+      - name: Validate Worker JavaScript
+        run: node --check worker/attendance.js
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit validated fixes
+        shell: bash
+        run: |
+          git config user.name "farshoffs"
+          git config user.email "farshoffs@gmail.com"
+          git add migrations/0014_attendance_reviewed.sql worker/attendance.js lib/core/api/api_service.dart lib/features/admin/attendance_history_screen.dart
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git commit -m "Add attendance reviewed status"
+          git push origin feature/attendance-reviewed-button
