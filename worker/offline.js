@@ -1,4 +1,5 @@
 import appWorker from './app.js';
+import { sendPushToDepartment } from './push.js';
 
 const SESSION_COOKIE = 'rk_session';
 const MALAYSIA_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -296,6 +297,19 @@ async function syncIncident(env, user, clientEventId, occurredAt, payload) {
     ).bind(incidentId, value, occurredAt.toISOString()).run();
   }
 
+  try {
+    await sendPushToDepartment(env, user.department_id, {
+      title: severity === 'urgent' ? 'INSIDEN URGENT' : severity === 'important' ? 'Insiden Penting' : 'Insiden Baru',
+      body: `${user.nama} • ${category}: ${note.slice(0, 180)}`,
+      kind: severity === 'urgent' ? 'incident_urgent' : 'incident',
+      data: { incidentId, severity, category },
+      roles: ['management', 'supervisor'],
+      excludeUserId: user.id,
+    });
+  } catch (error) {
+    console.error('Incident push failed', error);
+  }
+
   return { serverId: incidentId, clientEventId };
 }
 
@@ -310,7 +324,19 @@ async function syncSos(env, user, clientEventId, occurredAt, payload) {
     occurredAt.toISOString(),
     note || null,
   ).run();
-  return { serverId: Number(insert.meta?.last_row_id || 0), clientEventId };
+  const sosId = Number(insert.meta?.last_row_id || 0);
+  try {
+    await sendPushToDepartment(env, user.department_id, {
+      title: 'SOS RimbaKawal',
+      body: `${user.nama} mencetuskan SOS${note ? ` • ${note}` : ''}`.slice(0, 240),
+      kind: 'sos',
+      data: { sosId },
+      excludeUserId: user.id,
+    });
+  } catch (error) {
+    console.error('SOS push failed', error);
+  }
+  return { serverId: sosId, clientEventId };
 }
 
 async function syncPatrolActivity(env, user, clientEventId, occurredAt, type, payload) {
@@ -350,7 +376,22 @@ async function syncWelfareCheck(env, user, clientEventId, occurredAt, payload) {
     note || null,
     occurredAt.toISOString(),
   ).run();
-  return { serverId: Number(insert.meta?.last_row_id || 0), clientEventId };
+  const welfareId = Number(insert.meta?.last_row_id || 0);
+  if (status === 'needs_attention') {
+    try {
+      await sendPushToDepartment(env, user.department_id, {
+        title: 'Welfare Perlu Perhatian',
+        body: `${user.nama} memerlukan perhatian${note ? ` • ${note}` : ''}`.slice(0, 240),
+        kind: 'welfare_attention',
+        data: { welfareId },
+        roles: ['management', 'supervisor'],
+        excludeUserId: user.id,
+      });
+    } catch (error) {
+      console.error('Welfare push failed', error);
+    }
+  }
+  return { serverId: welfareId, clientEventId };
 }
 
 async function liveStart(request, env) {

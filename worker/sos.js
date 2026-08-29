@@ -1,4 +1,5 @@
 import offlineWorker from './offline.js';
+import { dispatchSessionStartNotifications, pushConfigured, registerPushDevice, sendPushToUser, unregisterPushDevice } from './push.js';
 
 const SESSION_COOKIE = 'rk_session';
 
@@ -6,6 +7,25 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
+      if (url.pathname === '/api/push/register' && request.method === 'POST') {
+        const auth = await requireUser(request, env);
+        if (auth.response) return auth.response;
+        try {
+          return json(await registerPushDevice(env, auth.user, await readJson(request)));
+        } catch (error) {
+          return json({ error: error instanceof Error ? error.message : 'Pendaftaran push gagal.' }, 400);
+        }
+      }
+      if (url.pathname === '/api/push/unregister' && request.method === 'POST') {
+        const auth = await requireUser(request, env);
+        if (auth.response) return auth.response;
+        return json(await unregisterPushDevice(env, auth.user, await readJson(request)));
+      }
+      if (url.pathname === '/api/push/status' && request.method === 'GET') {
+        const auth = await requireUser(request, env);
+        if (auth.response) return auth.response;
+        return json({ configured: pushConfigured(env) });
+      }
       if (url.pathname === '/api/sos/alerts' && request.method === 'GET') {
         return getSosAlerts(request, env);
       }
@@ -32,6 +52,9 @@ export default {
     }
 
     return offlineWorker.fetch(request, env, ctx);
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(dispatchSessionStartNotifications(env, new Date(event.scheduledTime)));
   },
 };
 
@@ -131,7 +154,7 @@ async function resolveSos(request, env, sosId) {
   }
 
   const current = await env.DB.prepare(
-    `SELECT id, status, resolved_at, resolution_note
+    `SELECT id, user_id, status, resolved_at, resolution_note
      FROM sos_events
      WHERE id = ? AND department_id = ?
      LIMIT 1`,
@@ -170,6 +193,17 @@ async function resolveSos(request, env, sosId) {
      ON CONFLICT(sos_event_id, user_id) DO UPDATE SET
        acknowledged_at = excluded.acknowledged_at`,
   ).bind(sosId, auth.user.id, resolvedAt).run();
+
+  try {
+    await sendPushToUser(env, Number(current.user_id), {
+      title: 'SOS Telah Diselesaikan',
+      body: `SOS anda telah ditandakan selesai oleh ${auth.user.nama}.`,
+      kind: 'sos_resolved',
+      data: { sosId },
+    });
+  } catch (error) {
+    console.error('SOS resolution push failed', error);
+  }
 
   return json({
     ok: true,

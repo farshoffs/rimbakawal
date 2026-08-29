@@ -1,4 +1,5 @@
 import baseWorker from './index.js';
+import { sendPushToDepartment } from './push.js';
 
 const SESSION_COOKIE = 'rk_session';
 const MALAYSIA_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -393,6 +394,19 @@ async function createIncident(request, env) {
     ).bind(incidentId, image, createdAt)));
   }
 
+  try {
+    await sendPushToDepartment(env, auth.user.department_id, {
+      title: severity === 'urgent' ? 'INSIDEN URGENT' : severity === 'important' ? 'Insiden Penting' : 'Insiden Baru',
+      body: `${auth.user.nama} • ${category}: ${note.slice(0, 180)}`,
+      kind: severity === 'urgent' ? 'incident_urgent' : 'incident',
+      data: { incidentId, severity, category },
+      roles: ['management', 'supervisor'],
+      excludeUserId: auth.user.id,
+    });
+  } catch (error) {
+    console.error('Incident push failed', error);
+  }
+
   return json({
     incident: {
       id: incidentId || null,
@@ -627,6 +641,19 @@ async function createSos(request, env) {
     `INSERT INTO sos_events (user_id, department_id, triggered_at, note)
      VALUES (?, ?, ?, ?)`,
   ).bind(auth.user.id, auth.user.department_id ?? null, triggeredAt, note || null).run();
+
+  const pushedSosId = Number(result.meta?.last_row_id || 0);
+  try {
+    await sendPushToDepartment(env, auth.user.department_id, {
+      title: 'SOS RimbaKawal',
+      body: `${auth.user.nama} mencetuskan SOS${note ? ` • ${note}` : ''}`.slice(0, 240),
+      kind: 'sos',
+      data: { sosId: pushedSosId },
+      excludeUserId: auth.user.id,
+    });
+  } catch (error) {
+    console.error('SOS push failed', error);
+  }
 
   return json({
     event: {

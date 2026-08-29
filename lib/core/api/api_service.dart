@@ -404,6 +404,29 @@ class ApiService {
     }
   }
 
+  Future<void> registerPushDevice({
+    required String token,
+    required String platform,
+  }) async {
+    _decode(
+      await http.post(
+        _uri('/api/push/register'),
+        headers: _headers(jsonBody: true),
+        body: jsonEncode({'token': token, 'platform': platform}),
+      ),
+    );
+  }
+
+  Future<void> unregisterPushDevice(String token) async {
+    _decode(
+      await http.post(
+        _uri('/api/push/unregister'),
+        headers: _headers(jsonBody: true),
+        body: jsonEncode({'token': token}),
+      ),
+    );
+  }
+
   Future<OfflineBootstrap> getOfflineBootstrap() async {
     final data = _decode(
       await http.get(_uri('/api/offline/bootstrap'), headers: _headers()),

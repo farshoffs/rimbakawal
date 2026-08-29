@@ -1,5 +1,5 @@
 name: rimbakawal
-version: 0.3.1+3
+version: 0.4.0+4
 publish_to: 'none'
 
 environment:
@@ -11,6 +11,8 @@ dependencies:
   audioplayers: ^6.8.1
   connectivity_plus: ^7.3.1
   cupertino_icons: ^1.0.8
+  firebase_core: ^4.14.0
+  firebase_messaging: ^16.6.0
   flutter_map: ^8.3.2
   flutter_secure_storage: ^10.3.1
   geolocator: ^14.0.3

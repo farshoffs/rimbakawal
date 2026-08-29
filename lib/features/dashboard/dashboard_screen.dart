@@ -11,6 +11,7 @@ import '../../core/api/app_user.dart';
 import '../../core/nfc/nfc_service.dart';
 import '../../core/offline/offline_store.dart';
 import '../../core/offline/offline_sync_service.dart';
+import '../../core/notifications/notification_service.dart';
 import '../admin/admin_screen.dart';
 import '../admin/command_center_screen.dart';
 import '../auth/login_screen.dart';
@@ -69,6 +70,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       (_) => unawaited(_refreshPatrolConfig()),
     );
     unawaited(_refreshPatrolConfig());
+    unawaited(NotificationService.instance.bindUser(_user));
     unawaited(_sync.syncNow());
   }
 
@@ -372,9 +374,34 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  Future<void> _enableNotifications() async {
+    final service = NotificationService.instance;
+    if (!service.configured) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Push notification belum dikonfigurasi pada server aplikasi.'),
+        ),
+      );
+      return;
+    }
+    final enabled = await service.requestPermissionAndRegister(_user);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          enabled
+              ? 'Push notification RimbaKawal telah diaktifkan.'
+              : 'Kebenaran notification belum diberikan pada peranti/browser ini.',
+        ),
+      ),
+    );
+  }
+
   Future<void> _logout() async {
     // Best-effort automatic flush before removing the cloud session.
     await _sync.syncNow();
+    await NotificationService.instance.unregisterCurrentDevice();
     await widget.api.logout();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -431,6 +458,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         _user = refreshed;
         _sessionIntervalMinutes = refreshed.sessionIntervalMinutes;
       });
+      unawaited(NotificationService.instance.bindUser(refreshed));
       _lastSessionKey = _sessionKey(DateTime.now());
     } catch (_) {
       // Offline mode keeps the locally cached identity and configuration.
@@ -470,6 +498,11 @@ class _DashboardScreenState extends State<DashboardScreen>
       appBar: AppBar(
         title: const Text('RimbaKawal'),
         actions: [
+          IconButton(
+            tooltip: 'Aktifkan push notification',
+            onPressed: _enableNotifications,
+            icon: const Icon(Icons.notifications_active_rounded),
+          ),
           IconButton(
             tooltip: 'Alarm / SOS',
             onPressed: _showQuickActions,

@@ -5,6 +5,8 @@ import 'core/api/app_user.dart';
 import 'core/nfc/mock_nfc_service.dart';
 import 'core/nfc/nfc_service.dart';
 import 'core/nfc/real_nfc_service.dart';
+import 'core/notifications/notification_alert_gate.dart';
+import 'core/notifications/notification_service.dart';
 import 'core/offline/offline_store.dart';
 import 'core/offline/offline_sync_service.dart';
 import 'features/auth/login_screen.dart';
@@ -25,6 +27,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await OfflineStore.instance.init();
   await ApiService.instance.init();
+  await NotificationService.instance.init();
   await OfflineSyncService.instance.start();
   runApp(const RimbaKawalApp());
 }
@@ -161,13 +164,15 @@ class _AuthGateState extends State<_AuthGate> {
           return LoginScreen(nfcService: _nfcService, mockMode: useMockNfc);
         }
 
-        return SosAlertGate(
-          user: user,
-          child: DashboardScreen(
+        return NotificationAlertGate(
+          child: SosAlertGate(
             user: user,
-            api: _api,
-            nfcService: _nfcService,
-            mockMode: useMockNfc,
+            child: DashboardScreen(
+              user: user,
+              api: _api,
+              nfcService: _nfcService,
+              mockMode: useMockNfc,
+            ),
           ),
         );
       },
