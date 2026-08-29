@@ -303,11 +303,12 @@ t = t.replace(
     "SELECT id, session_interval_minutes, route_order_enforced",
     "SELECT id, session_interval_minutes, session_start_minutes, route_order_enforced",
 )
-t = once(
-    t,
+if "currentSessionIndex(now, interval)" not in t:
+    raise RuntimeError("start patrol session index marker missing")
+t = t.replace(
     "currentSessionIndex(now, interval)",
     "currentSessionIndex(now, interval, auth.user.session_start_minutes)",
-    "start patrol session index",
+    1,
 )
 old_block = """  const interval = Number(department.session_interval_minutes || 120);
   const now = new Date();
