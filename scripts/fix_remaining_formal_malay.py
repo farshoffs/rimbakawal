@@ -34,12 +34,14 @@ for path in source_files:
 
 
 text = patrol_path.read_text(encoding='utf-8')
-text = replace_required(
-    text,
-    "import 'package:image_picker/image_picker.dart';\n",
-    "import 'package:image_picker/image_picker.dart';\nimport 'package:wakelock_plus/wakelock_plus.dart';\n",
-    'import wakelock_plus',
-)
+wakelock_import = "import 'package:wakelock_plus/wakelock_plus.dart';"
+if wakelock_import not in text:
+    text = replace_required(
+        text,
+        "import 'package:image_picker/image_picker.dart';\n",
+        "import 'package:image_picker/image_picker.dart';\nimport 'package:wakelock_plus/wakelock_plus.dart';\n",
+        'import wakelock_plus',
+    )
 text = replace_required(
     text,
     'class _PatrolScreenState extends State<PatrolScreen>\n    with SingleTickerProviderStateMixin {',
@@ -155,8 +157,10 @@ patrol = patrol_path.read_text(encoding='utf-8')
 for forbidden in ('_pulseController', 'SingleTickerProviderStateMixin', 'AnimatedBuilder('):
     if forbidden in patrol:
         raise SystemExit(f'Animasi lama masih ditemui pada patrol_screen.dart: {forbidden}')
+if patrol.count(wakelock_import) != 1:
+    raise SystemExit('Import wakelock_plus mesti tepat satu kali pada patrol_screen.dart')
 for required in (
-    "import 'package:wakelock_plus/wakelock_plus.dart';",
+    wakelock_import,
     'WakelockPlus.enable()',
     'WakelockPlus.disable()',
     "'IMBAS CHECKPOINT'",
