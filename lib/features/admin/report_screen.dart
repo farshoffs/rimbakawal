@@ -299,14 +299,14 @@ class _ReportScreenState extends State<ReportScreen> {
             tableRows.add(
               pw.TableRow(
                 children: [
-                  _cell(slot == 0 ? '$day' : '', align: pw.Alignment.center, height: 13.5),
-                  _cell('${String.fromCharCode(97 + slot)}. ${guard?.name ?? ''}', height: 13.5),
-                  _cell('', height: 13.5),
-                  _cell('', align: pw.Alignment.center, height: 13.5),
-                  _cell(guard?.inTime == null ? '' : _time(guard!.inTime!), align: pw.Alignment.center, height: 13.5),
-                  _cell(guard?.outTime == null ? '' : _time(guard!.outTime!), align: pw.Alignment.center, height: 13.5),
-                  _cell('', height: 13.5),
-                  _cell('', height: 13.5),
+                  _cell(slot == 0 ? '$day' : '', align: pw.Alignment.center, height: 10.6),
+                  _cell('${String.fromCharCode(97 + slot)}. ${guard?.name ?? ''}', height: 10.6),
+                  _cell('', height: 10.6),
+                  _cell('', align: pw.Alignment.center, height: 10.6),
+                  _cell(guard?.inTime == null ? '' : _time(guard!.inTime!), align: pw.Alignment.center, height: 10.6),
+                  _cell(guard?.outTime == null ? '' : _time(guard!.outTime!), align: pw.Alignment.center, height: 10.6),
+                  _cell('', height: 10.6),
+                  _cell('', height: 10.6),
                 ],
               ),
             );
