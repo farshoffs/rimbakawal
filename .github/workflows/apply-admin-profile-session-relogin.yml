@@ -1,0 +1,61 @@
+name: Apply Admin Profile and Session Relogin
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply_admin_profile_session_relogin.py
+      - .github/workflows/apply-admin-profile-session-relogin.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply admin profile and session relogin patch
+        run: python3 scripts/apply_admin_profile_session_relogin.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter
+        run: flutter analyze
+
+      - name: Validate Worker JavaScript
+        run: |
+          node --check worker/index.js
+          node --check worker/app.js
+          node --check worker/offline.js
+          node --check worker/push.js
+          node --check worker/sos.js
+
+      - name: Show changes
+        run: git diff --stat && git diff --check
+
+      - name: Commit validated changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib worker
+          git commit -m "Add admin profile editing and per-session relogin"
+          git push origin HEAD:main
