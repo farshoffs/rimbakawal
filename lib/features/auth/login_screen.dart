@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../core/api/api_service.dart';
 import '../../core/nfc/nfc_service.dart';
 import '../dashboard/dashboard_screen.dart';
+import '../sos/sos_alert_gate.dart';
 
 const _rimbaRed = Color(0xFFC0392B);
 const _rimbaBlue = Color(0xFF4834D4);
@@ -60,11 +61,14 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => DashboardScreen(
+          builder: (_) => SosAlertGate(
             user: user,
-            api: _api,
-            nfcService: widget.nfcService,
-            mockMode: widget.mockMode,
+            child: DashboardScreen(
+              user: user,
+              api: _api,
+              nfcService: widget.nfcService,
+              mockMode: widget.mockMode,
+            ),
           ),
         ),
       );

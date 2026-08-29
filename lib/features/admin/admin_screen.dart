@@ -6,6 +6,7 @@ import 'command_center_screen.dart';
 import 'department_maintenance_screen.dart';
 import 'live_patrol_map_screen.dart';
 import 'report_screen.dart';
+import 'sos_management_screen.dart';
 import 'user_maintenance_screen.dart';
 
 class AdminScreen extends StatelessWidget {
@@ -44,6 +45,14 @@ class AdminScreen extends StatelessWidget {
             subtitle:
                 'Pantau patrol, late/missed session, SOS dan insiden secara live.',
             onTap: () => _open(context, CommandCenterScreen(api: api)),
+          ),
+          const SizedBox(height: 10),
+          _AdminMenuCard(
+            icon: Icons.sos_rounded,
+            title: 'Pengurusan SOS',
+            subtitle:
+                'Lihat SOS aktif dan tandakan selesai bersama catatan audit.',
+            onTap: () => _open(context, const SosManagementScreen()),
           ),
           const SizedBox(height: 10),
           _AdminMenuCard(

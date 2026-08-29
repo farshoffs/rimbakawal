@@ -9,6 +9,7 @@ import 'core/offline/offline_store.dart';
 import 'core/offline/offline_sync_service.dart';
 import 'features/auth/login_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
+import 'features/sos/sos_alert_gate.dart';
 
 const useMockNfc = bool.fromEnvironment(
   'USE_MOCK_NFC',
@@ -160,11 +161,14 @@ class _AuthGateState extends State<_AuthGate> {
           return LoginScreen(nfcService: _nfcService, mockMode: useMockNfc);
         }
 
-        return DashboardScreen(
+        return SosAlertGate(
           user: user,
-          api: _api,
-          nfcService: _nfcService,
-          mockMode: useMockNfc,
+          child: DashboardScreen(
+            user: user,
+            api: _api,
+            nfcService: _nfcService,
+            mockMode: useMockNfc,
+          ),
         );
       },
     );
