@@ -152,9 +152,9 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
       };
 
   String _stateLabel(String state) => switch (state) {
-        'live' => 'LIVE',
-        'delayed' => 'DELAYED',
-        'stale' => 'STALE',
+        'live' => 'LANGSUNG',
+        'delayed' => 'TERTUNDA',
+        'stale' => 'TIDAK TERKINI',
         _ => 'MENUNGGU LOKASI',
       };
 
