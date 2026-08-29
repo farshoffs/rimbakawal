@@ -22,8 +22,6 @@ def replace_values(path: Path, values: dict[str, str]) -> None:
         print(f'Sudah dikemas kini: {path.relative_to(root)}')
 
 
-# Kekalkan nilai peranan dalaman dalam Bahasa Inggeris untuk keserasian API,
-# tetapi semua paparan kepada pengguna menggunakan Bahasa Melayu rasmi.
 app_user = root / 'lib/core/api/app_user.dart'
 text = app_user.read_text(encoding='utf-8')
 if 'String get jawatanPaparan =>' not in text:
@@ -107,8 +105,8 @@ replacements = {
             "'Pilih Jabatan dan julat sehingga 31 hari. PDF merangkumi rekod titik pemeriksaan dan kejadian SOS.'",
     },
     root / 'lib/features/admin/command_center_screen.dart': {
-        "SnackBar(content: Text('Insiden ditukar kepada ${status.toUpperCase()}.'),)":
-            "SnackBar(content: Text('Status insiden ditukar kepada ${_incidentStatusLabel(status)}.'),)",
+        "Text('Insiden ditukar kepada ${status.toUpperCase()}.')":
+            "Text('Status insiden ditukar kepada ${_incidentStatusLabel(status)}.')",
         "label: 'ALERT'": "label: 'AMARAN'",
         "label: 'INCIDENT'": "label: 'INSIDEN'",
         "label: 'URGENT'": "label: 'SEGERA'",
@@ -182,8 +180,6 @@ for path, values in replacements.items():
     replace_values(path, values)
 
 
-# Tambah pemetaan status/keutamaan insiden untuk paparan sahaja. Nilai API
-# seperti open, acknowledged, resolved, urgent dan important kekal tidak berubah.
 command_center = root / 'lib/features/admin/command_center_screen.dart'
 text = command_center.read_text(encoding='utf-8')
 if 'String _incidentStatusLabel(String status)' not in text:
@@ -209,8 +205,6 @@ else:
     print('Disahkan: pemetaan paparan insiden rasmi')
 
 
-# Audit frasa paparan yang sepatutnya sudah tiada. Corak ini sengaja khusus
-# supaya nilai dalaman API dan nama kelas teknikal tidak dianggap kesalahan.
 audit_terms = {
     "const Text('Profile')",
     "tooltip: 'Upload gambar profil'",
