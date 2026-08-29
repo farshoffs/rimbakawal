@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - scripts/apply_admin_profile_session_relogin.py
+      - scripts/fix_admin_profile_session_lints.py
       - .github/workflows/apply-admin-profile-session-relogin.yml
   workflow_dispatch:
 
@@ -22,7 +23,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply admin profile and session relogin patch
-        run: python3 scripts/apply_admin_profile_session_relogin.py
+        run: |
+          python3 scripts/apply_admin_profile_session_relogin.py
+          python3 scripts/fix_admin_profile_session_lints.py
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
