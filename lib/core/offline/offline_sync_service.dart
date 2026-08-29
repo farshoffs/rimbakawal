@@ -64,6 +64,7 @@ class OfflineSyncService extends ChangeNotifier {
       try {
         await _api.getOfflineBootstrap();
         _lastError = null;
+        _lastSyncAt = DateTime.now();
       } catch (_) {}
       notifyListeners();
       return;
@@ -102,13 +103,7 @@ class OfflineSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> retryFailed() async {
-    final user = _store.cachedUser();
-    if (user == null) return;
-    await _store.retryFailed(user.id);
-    await syncNow();
-  }
-
   bool _hasNetwork(List<ConnectivityResult> results) =>
-      results.isNotEmpty && !results.every((item) => item == ConnectivityResult.none);
+      results.isNotEmpty &&
+      !results.every((item) => item == ConnectivityResult.none);
 }
