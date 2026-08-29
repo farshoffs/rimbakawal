@@ -25,31 +25,60 @@ jobs:
           ref: feature/attendance-geofence-face
 
       - name: Reconstruct attendance upgrade script
+        id: reconstruct
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import base64, gzip
+          import base64, gzip, traceback
 
-          def merge(left: str, right: str) -> str:
-              max_overlap = min(len(left), len(right))
-              for size in range(max_overlap, 0, -1):
+          diag = []
+          def overlap(left: str, right: str) -> int:
+              for size in range(min(len(left), len(right)), 0, -1):
                   if left.endswith(right[:size]):
-                      print(f'Payload overlap: {size} chars')
-                      return left + right[size:]
-              raise RuntimeError('Payload segments do not overlap; refusing to build a corrupted script')
+                      return size
+              return 0
 
-          first = Path('scripts/apply_attendance_upgrade.py.gz.b64').read_text(encoding='utf-8').strip()
-          middle = Path('scripts/attendance_upgrade.middle').read_text(encoding='utf-8').strip()
-          last = Path('scripts/attendance_upgrade.part2').read_text(encoding='utf-8').strip()
-          merged = merge(merge(first, middle), last)
-          print(f'Merged payload length: {len(merged)}')
-          decoded = base64.b64decode(merged, validate=True)
-          script = gzip.decompress(decoded).decode('utf-8')
-          Path('scripts/apply_attendance_upgrade.py').write_text(script, encoding='utf-8')
+          try:
+              first = Path('scripts/apply_attendance_upgrade.py.gz.b64').read_text(encoding='utf-8').strip()
+              middle = Path('scripts/attendance_upgrade.middle').read_text(encoding='utf-8').strip()
+              last = Path('scripts/attendance_upgrade.part2').read_text(encoding='utf-8').strip()
+              o1 = overlap(first, middle)
+              diag += [f'first={len(first)}', f'middle={len(middle)}', f'last={len(last)}', f'overlap_first_middle={o1}']
+              if not o1:
+                  raise RuntimeError('No overlap between first and middle')
+              merged1 = first + middle[o1:]
+              o2 = overlap(merged1, last)
+              diag += [f'merged1={len(merged1)}', f'overlap_merged_last={o2}']
+              if not o2:
+                  raise RuntimeError('No overlap between merged first/middle and last')
+              merged = merged1 + last[o2:]
+              diag += [f'merged={len(merged)}']
+              decoded = base64.b64decode(merged, validate=True)
+              diag += [f'decoded={len(decoded)}']
+              script = gzip.decompress(decoded).decode('utf-8')
+              diag += [f'script={len(script)}', 'status=ok']
+              Path('scripts/apply_attendance_upgrade.py').write_text(script, encoding='utf-8')
+          except Exception as exc:
+              diag += [f'error={type(exc).__name__}: {exc}', traceback.format_exc()]
+              Path('scripts/attendance_payload_diagnostics.txt').write_text('\n'.join(diag), encoding='utf-8')
+              raise
+          Path('scripts/attendance_payload_diagnostics.txt').write_text('\n'.join(diag), encoding='utf-8')
           PY
           python3 -m py_compile scripts/apply_attendance_upgrade.py
+
+      - name: Commit reconstruction diagnostics on failure
+        if: failure() && steps.reconstruct.conclusion == 'failure'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/attendance_payload_diagnostics.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Record attendance payload diagnostics"
+            git push origin HEAD:feature/attendance-geofence-face
+          fi
 
       - name: Apply attendance upgrade
         run: python3 scripts/apply_attendance_upgrade.py
@@ -85,7 +114,8 @@ jobs:
           rm -f scripts/apply_attendance_upgrade.py \
                 scripts/apply_attendance_upgrade.py.gz.b64 \
                 scripts/attendance_upgrade.middle \
-                scripts/attendance_upgrade.part2
+                scripts/attendance_upgrade.part2 \
+                scripts/attendance_payload_diagnostics.txt
           git add -A
           if git diff --cached --quiet; then
             echo "No source changes to commit."
