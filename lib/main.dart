@@ -5,6 +5,8 @@ import 'core/api/app_user.dart';
 import 'core/nfc/mock_nfc_service.dart';
 import 'core/nfc/nfc_service.dart';
 import 'core/nfc/real_nfc_service.dart';
+import 'core/offline/offline_store.dart';
+import 'core/offline/offline_sync_service.dart';
 import 'features/auth/login_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
 
@@ -15,9 +17,14 @@ const useMockNfc = bool.fromEnvironment(
 
 const rimbaRed = Color(0xFFC0392B);
 const rimbaBlue = Color(0xFF4834D4);
+const rimbaInk = Color(0xFF080910);
+const rimbaSurface = Color(0xFF12141E);
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await OfflineStore.instance.init();
+  await ApiService.instance.init();
+  await OfflineSyncService.instance.start();
   runApp(const RimbaKawalApp());
 }
 
@@ -32,9 +39,11 @@ class RimbaKawalApp extends StatelessWidget {
     ).copyWith(
       primary: rimbaRed,
       onPrimary: Colors.white,
-      secondary: rimbaBlue,
+      secondary: const Color(0xFF6C5CE7),
       onSecondary: Colors.white,
-      surface: const Color(0xFF15151F),
+      surface: rimbaSurface,
+      surfaceContainerHighest: const Color(0xFF1C2030),
+      error: const Color(0xFFFF5D66),
     );
 
     return MaterialApp(
@@ -44,37 +53,46 @@ class RimbaKawalApp extends StatelessWidget {
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         colorScheme: colorScheme,
-        scaffoldBackgroundColor: const Color(0xFF0B0B12),
+        scaffoldBackgroundColor: rimbaInk,
         useMaterial3: true,
+        visualDensity: VisualDensity.standard,
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0B0B12),
+          backgroundColor: rimbaInk,
           foregroundColor: Colors.white,
           elevation: 0,
+          centerTitle: false,
+          titleTextStyle: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+          ),
         ),
         cardTheme: CardThemeData(
-          color: const Color(0xFF171722),
+          color: rimbaSurface,
           elevation: 0,
+          margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+            borderRadius: BorderRadius.circular(24),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.07)),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: const Color(0xFF11111A),
-          labelStyle: const TextStyle(color: Color(0xFFCBCAD8)),
-          hintStyle: const TextStyle(color: Color(0xFF777687)),
-          prefixIconColor: const Color(0xFFAAA8B8),
+          fillColor: const Color(0xFF0E1018),
+          labelStyle: const TextStyle(color: Color(0xFFC8CBD8)),
+          hintStyle: const TextStyle(color: Color(0xFF737788)),
+          prefixIconColor: const Color(0xFFAAAFC0),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFF343340)),
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xFF303444)),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFF343340)),
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xFF303444)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
             borderSide: const BorderSide(color: rimbaBlue, width: 2),
           ),
         ),
@@ -84,10 +102,22 @@ class RimbaKawalApp extends StatelessWidget {
             foregroundColor: Colors.white,
             minimumSize: const Size.fromHeight(56),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(18),
             ),
-            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
           ),
+        ),
+        chipTheme: ChipThemeData(
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF222636),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        dividerTheme: DividerThemeData(
+          color: Colors.white.withValues(alpha: 0.07),
         ),
       ),
       home: const _AuthGate(),
@@ -120,7 +150,9 @@ class _AuthGateState extends State<_AuthGate> {
       future: _session,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         final user = snapshot.data;
