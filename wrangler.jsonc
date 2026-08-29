@@ -1,11 +1,14 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "rimbakawal",
-  "main": "./worker/app.js",
-  "compatibility_date": "2026-08-28",
+  "main": "./worker/offline.js",
+  "compatibility_date": "2026-08-29",
   "workers_dev": true,
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "logs": {
+      "head_sampling_rate": 1
+    }
   },
   "d1_databases": [
     {
