@@ -1,0 +1,70 @@
+name: Finalize Patrol Schedule Upgrade
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/finalize-session-schedule-upgrade.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Patch final multiline session call
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('scripts/apply_session_schedule_upgrade.py')
+          t = p.read_text()
+          anchor = '''t = t.replace(\n    "_dayKey(DateTime.now())",\n    "_scheduleDayKey(DateTime.now(), bootstrap.sessionStartMinutes)",\n)'''
+          extra = '''t = t.replace(\n    "              bootstrap.sessionIntervalMinutes,\\n            ),",\n    "              bootstrap.sessionIntervalMinutes,\\n              bootstrap.sessionStartMinutes,\\n            ),",\n)'''
+          if anchor not in t:
+              raise RuntimeError('patrol day-key anchor missing in upgrade script')
+          if extra not in t:
+              t = t.replace(anchor, anchor + '\n' + extra, 1)
+          p.write_text(t)
+          PY
+
+      - name: Apply source upgrade
+        run: python3 scripts/apply_session_schedule_upgrade.py
+
+      - name: Validate Worker syntax
+        run: |
+          node --check worker/index.js
+          node --check worker/app.js
+          node --check worker/offline.js
+
+      - name: Validate Flutter
+        run: |
+          flutter pub get
+          flutter analyze
+
+      - name: Commit validated upgrade
+        shell: bash
+        run: |
+          git config user.name 'RimbaKawal Automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/apply_session_schedule_upgrade.py \
+                  migrations/0009_department_session_start.sql \
+                  lib/core/api/app_user.dart \
+                  lib/core/offline/offline_models.dart \
+                  lib/core/api/api_service.dart \
+                  lib/features/admin/department_maintenance_screen.dart \
+                  lib/features/patrol/patrol_screen.dart \
+                  lib/features/dashboard/dashboard_screen.dart \
+                  worker/index.js worker/app.js worker/offline.js
+          git commit -m 'Improve patrol controls and department session schedules'
+          git push origin main
