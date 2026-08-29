@@ -4,16 +4,20 @@ import 'dart:convert';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
 import '../../core/nfc/nfc_service.dart';
+import '../../core/offline/offline_store.dart';
+import '../../core/offline/offline_sync_service.dart';
 import '../admin/admin_screen.dart';
 import '../admin/command_center_screen.dart';
 import '../auth/login_screen.dart';
 import '../history/clocking_history_screen.dart';
 import '../patrol/patrol_screen.dart';
 import '../profile/profile_screen.dart';
+import '../sync/sync_center_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -35,9 +39,12 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen>
     with WidgetsBindingObserver {
+  final OfflineStore _store = OfflineStore.instance;
+  final OfflineSyncService _sync = OfflineSyncService.instance;
+  final AudioPlayer _alarmPlayer = AudioPlayer();
+
   late AppUser _user;
   late int _sessionIntervalMinutes;
-  final AudioPlayer _alarmPlayer = AudioPlayer();
   Timer? _sessionTimer;
   Timer? _configTimer;
   String? _lastSessionKey;
@@ -47,6 +54,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _store.addListener(_changed);
+    _sync.addListener(_changed);
     _user = widget.user;
     _sessionIntervalMinutes = widget.user.sessionIntervalMinutes;
     _lastSessionKey = _sessionKey(DateTime.now());
@@ -56,15 +65,17 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
     _configTimer = Timer.periodic(
       const Duration(minutes: 5),
-      (_) => _refreshPatrolConfig(),
+      (_) => unawaited(_refreshPatrolConfig()),
     );
-    _refreshPatrolConfig();
+    unawaited(_refreshPatrolConfig());
+    unawaited(_sync.syncNow());
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _refreshPatrolConfig();
+      unawaited(_refreshPatrolConfig());
+      unawaited(_sync.syncNow());
       _checkSessionBoundary();
     }
   }
@@ -72,30 +83,40 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _store.removeListener(_changed);
+    _sync.removeListener(_changed);
     _sessionTimer?.cancel();
     _configTimer?.cancel();
     _alarmPlayer.dispose();
     super.dispose();
   }
 
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _refreshPatrolConfig() async {
     try {
-      final config = await widget.api.getPatrolConfig();
+      final bootstrap = await widget.api.getOfflineBootstrap();
       if (!mounted) return;
-      if (_sessionIntervalMinutes != config.sessionIntervalMinutes) {
-        setState(() => _sessionIntervalMinutes = config.sessionIntervalMinutes);
+      if (_sessionIntervalMinutes != bootstrap.sessionIntervalMinutes) {
+        setState(() => _sessionIntervalMinutes = bootstrap.sessionIntervalMinutes);
         _lastSessionKey = _sessionKey(DateTime.now());
       }
-    } catch (_) {}
+    } catch (_) {
+      final cached = _store.cachedBootstrap();
+      if (cached != null &&
+          _sessionIntervalMinutes != cached.sessionIntervalMinutes &&
+          mounted) {
+        setState(() => _sessionIntervalMinutes = cached.sessionIntervalMinutes);
+      }
+    }
   }
 
   String _sessionKey(DateTime value) {
     final local = value.toLocal();
-    final interval = _sessionIntervalMinutes <= 0
-        ? 120
-        : _sessionIntervalMinutes;
-    final minuteOfDay = local.hour * 60 + local.minute;
-    final index = minuteOfDay ~/ interval;
+    final interval = _sessionIntervalMinutes <= 0 ? 120 : _sessionIntervalMinutes;
+    final index = (local.hour * 60 + local.minute) ~/ interval;
     String two(int v) => v.toString().padLeft(2, '0');
     return '${local.year}-${two(local.month)}-${two(local.day)}-$index-$interval';
   }
@@ -109,7 +130,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
     if (current == _lastSessionKey) return;
     _lastSessionKey = current;
-    _showSessionAlarm();
+    unawaited(_showSessionAlarm());
   }
 
   Future<void> _playAlarm() async {
@@ -131,60 +152,70 @@ class _DashboardScreenState extends State<DashboardScreen>
       final startPatrol = await showGeneralDialog<bool>(
         context: context,
         barrierDismissible: false,
-        barrierColor: Colors.black,
-        transitionDuration: const Duration(milliseconds: 250),
+        barrierColor: Colors.black.withValues(alpha: 0.92),
+        transitionDuration: const Duration(milliseconds: 260),
         pageBuilder: (context, _, _) => Scaffold(
-          backgroundColor: const Color(0xFF09090F),
+          backgroundColor: const Color(0xFF080910),
           body: SafeArea(
             child: Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(28),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 520),
-                  child: Column(
-                    children: [
-                      const Icon(
-                        Icons.notifications_active_rounded,
-                        size: 108,
-                        color: Color(0xFFC0392B),
+                  child: Container(
+                    padding: const EdgeInsets.all(28),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(32),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF331315), Color(0xFF171827), Color(0xFF251A4F)],
                       ),
-                      const SizedBox(height: 24),
-                      Text(
-                        testMode ? 'UJIAN ALARM' : 'SESI RONDAAN BARU',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineLarge
-                            ?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                            ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _user.jabatan,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 18),
-                      Text(
-                        testMode
-                            ? 'Ini ialah ujian paparan dan bunyi alarm RimbaKawal.'
-                            : 'Sesi baharu telah bermula. Kadar rondaan Jabatan ini ialah setiap $_sessionIntervalMinutes minit. Sila lengkapkan semua checkpoint.',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 17, height: 1.5),
-                      ),
-                      const SizedBox(height: 32),
-                      if (!testMode)
-                        FilledButton.icon(
-                          onPressed: () => Navigator.of(context).pop(true),
-                          icon: const Icon(Icons.nfc_rounded),
-                          label: const Text('MULA RONDAAN'),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(
+                          Icons.notifications_active_rounded,
+                          size: 92,
+                          color: Color(0xFFFF6B6B),
                         ),
-                      const SizedBox(height: 12),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: const Text('Tutup alarm'),
-                      ),
-                    ],
+                        const SizedBox(height: 20),
+                        Text(
+                          testMode ? 'UJIAN ALARM' : 'SESI RONDAAN BARU',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _user.jabatan,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          testMode
+                              ? 'Ini ialah ujian paparan dan bunyi alarm RimbaKawal.'
+                              : 'Sesi baharu bermula. Lengkapkan checkpoint setiap $_sessionIntervalMinutes minit. Data rondaan disimpan lokal dahulu.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(height: 1.5),
+                        ),
+                        const SizedBox(height: 26),
+                        if (!testMode)
+                          FilledButton.icon(
+                            onPressed: () => Navigator.of(context).pop(true),
+                            icon: const Icon(Icons.directions_walk_rounded),
+                            label: const Text('MULA RONDAAN'),
+                          ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('Tutup alarm'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -192,19 +223,24 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
       );
-      if (startPatrol == true && mounted) {
-        _open(
-          PatrolScreen(
-            user: _user,
-            nfcService: widget.nfcService,
-            mockMode: widget.mockMode,
-            api: widget.api,
-          ),
-        );
-      }
+      if (startPatrol == true && mounted) _openPatrol();
     } finally {
       await _alarmPlayer.stop();
       _alarmShowing = false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _lastLocation() async {
+    try {
+      final position = await Geolocator.getLastKnownPosition();
+      if (position == null) return null;
+      return {
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'accuracy': position.accuracy,
+      };
+    } catch (_) {
+      return null;
     }
   }
 
@@ -212,9 +248,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Aktifkan SOS?'),
+        title: const Text('Rekod SOS?'),
         content: const Text(
-          'SOS akan direkod dalam RimbaKawal dan dimasukkan ke laporan Admin. Ia tidak menghubungi talian kecemasan secara automatik.',
+          'SOS akan disimpan pada telefon dahulu dan dihantar ke Command Center apabila ada internet. Ia tidak menghubungi talian kecemasan secara automatik.',
         ),
         actions: [
           TextButton(
@@ -229,65 +265,63 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
     );
     if (confirmed != true) return;
-    try {
-      await widget.api.createSos(note: 'SOS dicetuskan dari dashboard');
-      if (!mounted) return;
-      await SystemSound.play(SystemSoundType.alert);
-      if (!mounted) return;
-      await showGeneralDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        barrierColor: Colors.black,
-        pageBuilder: (context, _, _) => Scaffold(
-          backgroundColor: const Color(0xFF210608),
-          body: SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.sos_rounded,
-                      size: 110,
-                      color: Colors.redAccent,
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'SOS DIREKODKAN',
-                      style: Theme.of(context).textTheme.headlineLarge
-                          ?.copyWith(fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Event ini telah direkod dalam RimbaKawal. Jika ini kecemasan sebenar, hubungi pihak bertanggungjawab atau perkhidmatan kecemasan secara terus.',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Tutup'),
-                    ),
-                  ],
-                ),
+
+    await _store.queueEvent(
+      userId: _user.id,
+      type: 'sos',
+      location: await _lastLocation(),
+      payload: const {'note': 'SOS dicetuskan dari dashboard'},
+    );
+    unawaited(_sync.syncNow());
+    await SystemSound.play(SystemSoundType.alert);
+    if (!mounted) return;
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black,
+      pageBuilder: (context, _, _) => Scaffold(
+        backgroundColor: const Color(0xFF210608),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.sos_rounded, size: 110, color: Colors.redAccent),
+                  const SizedBox(height: 20),
+                  Text(
+                    'SOS DISIMPAN',
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Event selamat dalam telefon dan akan sync automatik. Jika ini kecemasan sebenar, hubungi pihak bertanggungjawab atau perkhidmatan kecemasan secara terus.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Tutup'),
+                  ),
+                ],
               ),
             ),
           ),
         ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error.toString())));
-    }
+      ),
+    );
   }
 
   Future<void> _showQuickActions() async {
     await showModalBottomSheet<void>(
       context: context,
+      showDragHandle: true,
       builder: (context) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -297,16 +331,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                 subtitle: const Text('Uji paparan penuh dan bunyi alarm.'),
                 onTap: () {
                   Navigator.of(context).pop();
-                  _showSessionAlarm(testMode: true);
+                  unawaited(_showSessionAlarm(testMode: true));
                 },
               ),
               ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.sos_rounded)),
                 title: const Text('SOS'),
-                subtitle: const Text('Rekod event SOS ke sistem.'),
+                subtitle: const Text('Simpan SOS lokal dahulu.'),
                 onTap: () {
                   Navigator.of(context).pop();
-                  _triggerSos();
+                  unawaited(_triggerSos());
                 },
               ),
             ],
@@ -317,6 +351,29 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _logout() async {
+    final pending = _store.pendingCount(_user.id);
+    if (pending > 0) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Masih ada data belum sync'),
+          content: Text(
+            '$pending event masih disimpan lokal. Data tidak dipadam, tetapi ia hanya boleh sync selepas pengguna ini log masuk semula.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Batal'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Log keluar'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true) return;
+    }
     await widget.api.logout();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -333,6 +390,15 @@ class _DashboardScreenState extends State<DashboardScreen>
   void _open(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
   }
+
+  void _openPatrol() => _open(
+        PatrolScreen(
+          user: _user,
+          nfcService: widget.nfcService,
+          mockMode: widget.mockMode,
+          api: widget.api,
+        ),
+      );
 
   Future<void> _openProfile() async {
     await Navigator.of(context).push(
@@ -357,19 +423,34 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _refreshCurrentUser() async {
-    try {
-      final refreshed = await widget.api.getSession();
-      if (refreshed == null || !mounted) return;
-      setState(() {
-        _user = refreshed;
-        _sessionIntervalMinutes = refreshed.sessionIntervalMinutes;
-      });
-      _lastSessionKey = _sessionKey(DateTime.now());
-    } catch (_) {}
+    final refreshed = await widget.api.getSession();
+    if (refreshed == null || !mounted) return;
+    setState(() {
+      _user = refreshed;
+      _sessionIntervalMinutes = refreshed.sessionIntervalMinutes;
+    });
+    _lastSessionKey = _sessionKey(DateTime.now());
+  }
+
+  ImageProvider<Object>? _avatar() {
+    final picture = _user.profilePicture;
+    if (picture == null || picture.isEmpty) return null;
+    if (picture.startsWith('data:image/') && picture.contains(',')) {
+      try {
+        return MemoryImage(base64Decode(picture.split(',').last));
+      } catch (_) {
+        return null;
+      }
+    }
+    return NetworkImage(picture);
   }
 
   @override
   Widget build(BuildContext context) {
+    final pending = _store.pendingCount(_user.id);
+    final failed = _store.failedCount(_user.id);
+    final image = _avatar();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('RimbaKawal'),
@@ -387,131 +468,178 @@ class _DashboardScreenState extends State<DashboardScreen>
         ],
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Card(
-              child: Padding(
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await _refreshCurrentUser();
+            await _refreshPatrolConfig();
+            await _sync.syncNow();
+          },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
+            children: [
+              Container(
                 padding: const EdgeInsets.all(20),
-                child: Row(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(30),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF251A4F), Color(0xFF151827), Color(0xFF351315)],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF4834D4).withValues(alpha: 0.16),
+                      blurRadius: 36,
+                      offset: const Offset(0, 14),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _Avatar(user: _user, radius: 32),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _user.nama,
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w800),
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 32,
+                          backgroundImage: image,
+                          child: image == null
+                              ? Text(
+                                  _user.nama.isEmpty ? '?' : _user.nama[0],
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _user.nama,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text('${_user.jawatan} • ${_user.jabatan}'),
+                            ],
                           ),
-                          const SizedBox(height: 4),
-                          Text('${_user.jawatan} • ${_user.jabatan}'),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Sesi rondaan: setiap $_sessionIntervalMinutes minit',
-                            style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _StatusPill(
+                          icon: Icons.offline_bolt_rounded,
+                          label: 'OFFLINE READY',
+                          color: const Color(0xFF74B9FF),
+                        ),
+                        _StatusPill(
+                          icon: _sync.isSyncing
+                              ? Icons.sync_rounded
+                              : Icons.cloud_upload_outlined,
+                          label: _sync.isSyncing ? 'SYNCING' : '$pending PENDING',
+                          color: const Color(0xFFA29BFE),
+                        ),
+                        if (failed > 0)
+                          _StatusPill(
+                            icon: Icons.warning_amber_rounded,
+                            label: '$failed FAILED',
+                            color: const Color(0xFFFF7675),
                           ),
-                        ],
-                      ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Sesi rondaan setiap $_sessionIntervalMinutes minit',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => _open(SyncCenterScreen(user: _user)),
+                          icon: const Icon(Icons.sync_rounded),
+                          label: const Text('Sync Center'),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final columns = constraints.maxWidth >= 700 ? 4 : 2;
-                return GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: columns,
-                  crossAxisSpacing: 14,
-                  mainAxisSpacing: 14,
-                  childAspectRatio: 1.05,
-                  children: [
-                    _MenuCard(
+              const SizedBox(height: 22),
+              Text(
+                'Operasi',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final columns = constraints.maxWidth >= 760 ? 4 : 2;
+                  final items = <_MenuData>[
+                    _MenuData(
                       icon: Icons.directions_walk_rounded,
                       title: 'Mula Rondaan',
-                      onTap: () => _open(
-                        PatrolScreen(
-                          user: _user,
-                          nfcService: widget.nfcService,
-                          mockMode: widget.mockMode,
-                          api: widget.api,
-                        ),
-                      ),
+                      subtitle: 'NFC + GPS live',
+                      onTap: _openPatrol,
                     ),
-                    _MenuCard(
+                    _MenuData(
                       icon: Icons.history_rounded,
-                      title: 'Sejarah Rondaan',
-                      onTap: () =>
-                          _open(ClockingHistoryScreen(api: widget.api)),
+                      title: 'Sejarah',
+                      subtitle: 'Sesi & checkpoint',
+                      onTap: () => _open(ClockingHistoryScreen(api: widget.api)),
                     ),
-                    _MenuCard(
+                    _MenuData(
+                      icon: Icons.sync_rounded,
+                      title: 'Sync Center',
+                      subtitle: '$pending menunggu',
+                      onTap: () => _open(SyncCenterScreen(user: _user)),
+                    ),
+                    _MenuData(
                       icon: Icons.person_rounded,
-                      title: 'Profile',
+                      title: 'Profil',
+                      subtitle: _user.jawatan,
                       onTap: _openProfile,
                     ),
                     if (_user.isManagement)
-                      _MenuCard(
+                      _MenuData(
                         icon: Icons.admin_panel_settings_rounded,
                         title: 'Admin',
+                        subtitle: 'Konfigurasi sistem',
                         onTap: _openAdmin,
                       ),
-                    if (_user.isSupervisor)
-                      _MenuCard(
-                        icon: Icons.location_searching_rounded,
+                    if (_user.canMonitor)
+                      _MenuData(
+                        icon: Icons.monitor_heart_rounded,
                         title: 'Pemantauan',
-                        onTap: () =>
-                            _open(CommandCenterScreen(api: widget.api)),
+                        subtitle: 'Live operations',
+                        onTap: () => _open(CommandCenterScreen(api: widget.api)),
                       ),
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MenuCard extends StatelessWidget {
-  const _MenuCard({
-    required this.icon,
-    required this.title,
-    required this.onTap,
-  });
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 42,
-                color: Theme.of(context).colorScheme.secondary,
-              ),
-              const SizedBox(height: 14),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                ),
+                  ];
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: items.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: constraints.maxWidth >= 760 ? 1.35 : 1.12,
+                    ),
+                    itemBuilder: (context, index) => _MenuCard(data: items[index]),
+                  );
+                },
               ),
             ],
           ),
@@ -521,29 +649,98 @@ class _MenuCard extends StatelessWidget {
   }
 }
 
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.user, required this.radius});
-  final AppUser user;
-  final double radius;
-  ImageProvider<Object>? _imageProvider(String? picture) {
-    if (picture == null || picture.isEmpty) return null;
-    if (picture.startsWith('data:image/')) {
-      final comma = picture.indexOf(',');
-      if (comma > 0) {
-        return MemoryImage(base64Decode(picture.substring(comma + 1)));
-      }
-    }
-    return NetworkImage(picture);
-  }
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.icon, required this.label, required this.color});
+  final IconData icon;
+  final String label;
+  final Color color;
 
   @override
-  Widget build(BuildContext context) {
-    final image = _imageProvider(user.profilePicture);
-    final initial = user.nama.isEmpty ? '?' : user.nama[0];
-    return CircleAvatar(
-      radius: radius,
-      backgroundImage: image,
-      child: image == null ? Text(initial) : null,
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _MenuData {
+  const _MenuData({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+}
+
+class _MenuCard extends StatelessWidget {
+  const _MenuCard({required this.data});
+  final _MenuData data;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: data.onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .secondary
+                        .withValues(alpha: 0.11),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Icon(
+                    data.icon,
+                    color: Theme.of(context).colorScheme.secondary,
+                    size: 28,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  data.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  data.subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 }
