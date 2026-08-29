@@ -1,0 +1,39 @@
+name: Apply BPPA Metadata Shift
+
+on:
+  push:
+    branches:
+      - feature/bppa-metadata-shift
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message != 'Apply BPPA metadata and shift fields'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/bppa-metadata-shift
+      - name: Apply source patch
+        run: python3 scripts/apply_bppa_metadata_shift.py
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter build web --release
+      - run: node --check worker/index.js
+      - run: node --check worker/app.js
+      - run: node --check worker/attendance.js
+      - run: node --check worker/reports.js
+      - run: git diff --check
+      - name: Commit product changes
+        run: |
+          git config user.name farshoffs
+          git config user.email farshoffs@gmail.com
+          git add lib worker migrations/0015_bppa_metadata.sql
+          git commit -m 'Apply BPPA metadata and shift fields'
+          git push
