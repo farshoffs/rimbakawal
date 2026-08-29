@@ -27,10 +27,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat scripts/apply_attendance_upgrade.py.gz.b64 scripts/attendance_upgrade.part2 \
-            | base64 -d \
-            | gzip -d \
-            > scripts/apply_attendance_upgrade.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, gzip
+
+          first = Path('scripts/apply_attendance_upgrade.py.gz.b64').read_text(encoding='utf-8').strip()
+          second = Path('scripts/attendance_upgrade.part2').read_text(encoding='utf-8').strip()
+          max_overlap = min(len(first), len(second))
+          overlap = 0
+          for size in range(max_overlap, 0, -1):
+              if first.endswith(second[:size]):
+                  overlap = size
+                  break
+          merged = first + second[overlap:]
+          print(f'Payload overlap: {overlap} chars; merged length: {len(merged)}')
+          decoded = base64.b64decode(merged, validate=True)
+          script = gzip.decompress(decoded).decode('utf-8')
+          Path('scripts/apply_attendance_upgrade.py').write_text(script, encoding='utf-8')
+          PY
           python3 -m py_compile scripts/apply_attendance_upgrade.py
 
       - name: Apply attendance upgrade
