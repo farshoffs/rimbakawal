@@ -131,7 +131,7 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
         title: const Text('Pengurusan SOS'),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: 'Muat semula',
             onPressed: _refresh,
             icon: const Icon(Icons.refresh_rounded),
           ),

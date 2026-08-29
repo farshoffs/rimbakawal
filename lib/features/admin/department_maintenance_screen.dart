@@ -69,7 +69,7 @@ class _DepartmentMaintenanceScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Jabatan & Checkpoint')),
+      appBar: AppBar(title: const Text('Jabatan dan Titik Pemeriksaan')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _editDepartment,
         icon: const Icon(Icons.add_business_rounded),

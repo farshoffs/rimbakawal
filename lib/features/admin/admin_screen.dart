@@ -28,7 +28,7 @@ class AdminScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Admin')),
+      appBar: AppBar(title: const Text('Pentadbiran')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -41,9 +41,9 @@ class AdminScreen extends StatelessWidget {
           const SizedBox(height: 10),
           _AdminMenuCard(
             icon: Icons.monitor_heart_rounded,
-            title: 'Command Center',
+            title: 'Pusat Pemantauan',
             subtitle:
-                'Pantau patrol, late/missed session, SOS dan insiden secara live.',
+                'Pantau rondaan, sesi terlepas, SOS dan insiden secara langsung.',
             onTap: () => _open(context, CommandCenterScreen(api: api)),
           ),
           const SizedBox(height: 10),
@@ -64,9 +64,9 @@ class AdminScreen extends StatelessWidget {
           const SizedBox(height: 10),
           _AdminMenuCard(
             icon: Icons.account_tree_rounded,
-            title: 'Jabatan & Checkpoint',
+            title: 'Jabatan dan Titik Pemeriksaan',
             subtitle:
-                'Selenggara Jabatan, kadar sesi dan NFC checkpoint dalam satu skrin.',
+                'Selenggara Jabatan, kadar sesi dan titik pemeriksaan dalam satu skrin.',
             onTap: () => _open(
               context,
               DepartmentMaintenanceScreen(

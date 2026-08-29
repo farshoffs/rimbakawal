@@ -102,7 +102,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
         title: const Text('Senarai Pengguna'),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: 'Muat semula',
             onPressed: _refresh,
             icon: const Icon(Icons.refresh_rounded),
           ),

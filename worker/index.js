@@ -203,22 +203,6 @@ async function getScans(request, env, url) {
   ).bind(auth.user.department_id).all();
   const checkpoints = checkpointResult.results ?? [];
 
-  const memberResult = await env.DB.prepare(
-    `SELECT u.id, u.nama, u.profile_picture, u.jawatan
-     FROM users u
-     WHERE u.department_id = ? AND u.active = 1
-       AND (
-         LOWER(u.jawatan) IN ('patrol', 'supervisor')
-         OR EXISTS (
-           SELECT 1 FROM nfc_scans s
-           WHERE s.user_id = u.id
-             AND s.scanned_at >= ? AND s.scanned_at < ?
-         )
-       )
-     ORDER BY u.nama ASC`,
-  ).bind(auth.user.department_id, bounds.startIso, bounds.endIso).all();
-  const members = memberResult.results ?? [];
-
   const scanResult = await env.DB.prepare(
     `SELECT s.id, s.user_id, s.nfc_uid, s.scanned_at, s.checkpoint_id,
             s.session_index, c.name AS checkpoint_name,
@@ -240,58 +224,58 @@ async function getScans(request, env, url) {
 
   if (!isFutureDay) {
     const sessionCount = Math.ceil(1440 / interval);
-    for (const member of members) {
-      const patrolRole = ['patrol', 'supervisor'].includes(
-        String(member.jawatan || '').toLowerCase(),
+    for (let index = 0; index < sessionCount; index += 1) {
+      const startMs = bounds.startMs + index * interval * 60000;
+      const endMs = Math.min(bounds.endMs, startMs + interval * 60000);
+      if (requestedDate === todayKey && startMs > nowMs) break;
+
+      const sessionScans = scans.filter((scan) => {
+        const time = Date.parse(scan.scanned_at);
+        return time >= startMs && time < endMs;
+      });
+      const scannedCheckpointIds = new Set(
+        sessionScans
+          .map((scan) => Number(scan.checkpoint_id || 0))
+          .filter((id) => id > 0),
       );
-      for (let index = 0; index < sessionCount; index += 1) {
-        const startMs = bounds.startMs + index * interval * 60000;
-        const endMs = Math.min(bounds.endMs, startMs + interval * 60000);
-        if (requestedDate === todayKey && startMs > nowMs) break;
+      const missing = checkpoints.filter(
+        (checkpoint) => !scannedCheckpointIds.has(Number(checkpoint.id)),
+      );
 
-        const sessionScans = scans.filter((scan) => {
-          const time = Date.parse(scan.scanned_at);
-          return Number(scan.user_id) === Number(member.id) &&
-            time >= startMs && time < endMs;
-        });
-        if (!patrolRole && sessionScans.length === 0) continue;
-        const scannedCheckpointIds = new Set(
-          sessionScans
-            .map((scan) => Number(scan.checkpoint_id || 0))
-            .filter((id) => id > 0),
-        );
-        const missing = checkpoints.filter(
-          (checkpoint) => !scannedCheckpointIds.has(Number(checkpoint.id)),
-        );
+      let status = 'in_progress';
+      if (checkpoints.length === 0) status = 'no_checkpoints';
+      else if (missing.length === 0) status = 'complete';
+      else if (isPastDay || endMs <= nowMs) status = 'missed';
 
-        let status = 'in_progress';
-        if (checkpoints.length === 0) status = 'no_checkpoints';
-        else if (missing.length === 0) status = 'complete';
-        else if (isPastDay || endMs <= nowMs) status = 'missed';
+      const scannerIds = [...new Set(
+        sessionScans.map((scan) => Number(scan.user_id || 0)).filter((id) => id > 0),
+      )];
+      const scannerNames = [...new Set(
+        sessionScans.map((scan) => String(scan.user_name || '').trim()).filter(Boolean),
+      )];
+      const firstScan = sessionScans[0] ?? null;
 
-        sessions.push({
-          userId: Number(member.id),
-          userName: member.nama,
-          profilePicture: member.profile_picture || null,
-          index,
-          startAt: new Date(startMs).toISOString(),
-          endAt: new Date(endMs).toISOString(),
-          status,
-          expectedCount: checkpoints.length,
-          scannedCount: scannedCheckpointIds.size,
-          missingCheckpoints: missing.map((checkpoint) => ({
-            id: checkpoint.id,
-            name: checkpoint.name,
-            position: checkpoint.position,
-          })),
-          scans: sessionScans.map(scanJson),
-        });
-      }
+      sessions.push({
+        userId: scannerIds.length === 1 ? scannerIds[0] : 0,
+        userName: scannerNames.length > 0
+          ? scannerNames.join(', ')
+          : 'Tiada pengawal direkodkan',
+        profilePicture: scannerIds.length === 1 ? (firstScan?.profile_picture || null) : null,
+        index,
+        startAt: new Date(startMs).toISOString(),
+        endAt: new Date(endMs).toISOString(),
+        status,
+        expectedCount: checkpoints.length,
+        scannedCount: scannedCheckpointIds.size,
+        missingCheckpoints: missing.map((checkpoint) => ({
+          id: checkpoint.id,
+          name: checkpoint.name,
+          position: checkpoint.position,
+        })),
+        scans: sessionScans.map(scanJson),
+      });
     }
-    sessions.sort((left, right) => {
-      const timeDifference = Date.parse(right.startAt) - Date.parse(left.startAt);
-      return timeDifference || left.userName.localeCompare(right.userName);
-    });
+    sessions.sort((left, right) => Date.parse(right.startAt) - Date.parse(left.startAt));
   }
 
   return json({
@@ -327,7 +311,7 @@ async function createScan(request, env) {
 
   if (!checkpoint) {
     return json({
-      error: 'NFC ini tidak berdaftar sebagai checkpoint untuk Jabatan anda.',
+      error: 'Tag ini tidak berdaftar sebagai titik pemeriksaan untuk Jabatan anda.',
     }, 403);
   }
 

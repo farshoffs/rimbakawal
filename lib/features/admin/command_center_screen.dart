@@ -182,12 +182,12 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       };
 
   String _statusLabel(String status) => switch (status) {
-        'complete' => 'COMPLETE',
-        'patrolling' => 'PATROLLING',
-        'late' => 'LATE',
-        'missed' => 'MISSED',
-        'no_checkpoints' => 'NO CHECKPOINT',
-        _ => 'WAITING',
+        'complete' => 'LENGKAP',
+        'patrolling' => 'SEDANG MERONDA',
+        'late' => 'LEWAT',
+        'missed' => 'TERLEPAS',
+        'no_checkpoints' => 'TIADA TITIK PEMERIKSAAN',
+        _ => 'MENUNGGU',
       };
 
   String _time(Object? value) {
@@ -218,12 +218,12 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
         title: const Text('Pemantauan Rondaan'),
         actions: [
           IconButton(
-            tooltip: 'Live Map',
+            tooltip: 'Peta Langsung',
             onPressed: _openLiveMap,
             icon: const Icon(Icons.map_rounded),
           ),
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: 'Muat semula',
             onPressed: _refresh,
             icon: const Icon(Icons.refresh_rounded),
           ),
@@ -254,7 +254,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                     ],
                     const SizedBox(height: 18),
                     _SectionHeader(
-                      title: 'Status Guard',
+                      title: 'Status Pengawal',
                       subtitle: '${data?.patrols.length ?? 0} pengguna dipantau',
                     ),
                     const SizedBox(height: 10),
@@ -266,7 +266,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                           ButtonSegment(
                             value: 'alerts',
                             icon: Icon(Icons.warning_amber_rounded),
-                            label: Text('Alert'),
+                            label: Text('Amaran'),
                           ),
                           ButtonSegment(
                             value: 'active',
@@ -288,7 +288,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                     if (patrols.isEmpty)
                       const _EmptyState(
                         icon: Icons.shield_outlined,
-                        text: 'Tiada guard dalam kategori ini.',
+                        text: 'Tiada pengawal dalam kategori ini.',
                       )
                     else
                       LayoutBuilder(
@@ -345,8 +345,8 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                       ),
                     const SizedBox(height: 22),
                     _SectionHeader(
-                      title: 'Incident Queue',
-                      subtitle: '${incidents.length} belum resolved',
+                      title: 'Senarai Insiden',
+                      subtitle: '${incidents.length} belum diselesaikan',
                     ),
                     const SizedBox(height: 10),
                     if (incidents.isEmpty)
@@ -374,7 +374,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                     const SizedBox(height: 22),
                     _SectionHeader(
                       title: 'SOS • 24 Jam',
-                      subtitle: '${sos.length} event',
+                      subtitle: '${sos.length} rekod',
                     ),
                     const SizedBox(height: 10),
                     if (sos.isEmpty)
@@ -457,19 +457,19 @@ class _OperationsHero extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Operations Command Center',
+                      'Pusat Pemantauan Operasi',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w900,
                           ),
                     ),
                     Text(
-                      'Auto-refresh 8 saat${generatedAt == null ? '' : ' • ${_clock(generatedAt!)}'}',
+                      'Kemas kini automatik setiap 8 saat${generatedAt == null ? '' : ' • ${_clock(generatedAt!)}'}',
                     ),
                   ],
                 ),
               ),
               IconButton.filledTonal(
-                tooltip: 'Live Map',
+                tooltip: 'Peta Langsung',
                 onPressed: onMap,
                 icon: const Icon(Icons.map_rounded),
               ),
@@ -487,7 +487,7 @@ class _OperationsHero extends StatelessWidget {
                     width: width,
                     child: _HeroMetric(
                       value: _value('patrolUsers'),
-                      label: 'GUARD',
+                      label: 'PENGAWAL',
                       icon: Icons.shield_rounded,
                       color: const Color(0xFF74B9FF),
                     ),
@@ -496,7 +496,7 @@ class _OperationsHero extends StatelessWidget {
                     width: width,
                     child: _HeroMetric(
                       value: _value('complete'),
-                      label: 'COMPLETE',
+                      label: 'LENGKAP',
                       icon: Icons.check_circle_rounded,
                       color: const Color(0xFF55E6C1),
                     ),
@@ -686,7 +686,7 @@ class _PatrolCard extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Live Map',
+              tooltip: 'Peta Langsung',
               onPressed: onMap,
               icon: const Icon(Icons.location_searching_rounded),
             ),

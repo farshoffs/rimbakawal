@@ -293,7 +293,7 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
             icon: const Icon(Icons.center_focus_strong_rounded),
           ),
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: 'Muat semula',
             onPressed: _refresh,
             icon: const Icon(Icons.refresh_rounded),
           ),

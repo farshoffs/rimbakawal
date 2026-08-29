@@ -201,7 +201,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         ),
                         const SizedBox(height: 20),
                         Text(
-                          testMode ? 'UJIAN ALARM' : 'SESI RONDAAN BARU',
+                          testMode ? 'UJIAN PENGGERA' : 'SESI RONDAAN BARU',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                                 fontWeight: FontWeight.w900,
@@ -217,8 +217,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                         const SizedBox(height: 14),
                         Text(
                           testMode
-                              ? 'Ini ialah ujian paparan dan bunyi alarm RimbaKawal.'
-                              : 'Sesi baharu bermula. Lengkapkan checkpoint setiap $_sessionIntervalMinutes minit. Data rondaan disimpan lokal dahulu.',
+                              ? 'Ini ialah ujian paparan dan bunyi penggera RimbaKawal.'
+                              : 'Sesi baharu telah bermula. Lengkapkan semua titik pemeriksaan dalam tempoh sesi. Rekod rondaan akan disimpan pada peranti sebelum disegerakkan.',
                           textAlign: TextAlign.center,
                           style: const TextStyle(height: 1.5),
                         ),
@@ -232,7 +232,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         const SizedBox(height: 8),
                         TextButton(
                           onPressed: () => Navigator.of(context).pop(false),
-                          child: const Text('Tutup alarm'),
+                          child: const Text('Tutup penggera'),
                         ),
                       ],
                     ),
@@ -322,7 +322,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                   const SizedBox(height: 14),
                   const Text(
-                    'Event selamat dalam telefon dan akan dihantar secara automatik apabila sambungan tersedia.',
+                    'Rekod SOS telah disimpan pada peranti dan akan dihantar secara automatik apabila sambungan tersedia.',
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 24),
@@ -351,8 +351,8 @@ class _DashboardScreenState extends State<DashboardScreen>
             children: [
               ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.alarm_rounded)),
-                title: const Text('Test Alarm'),
-                subtitle: const Text('Uji paparan penuh dan bunyi alarm.'),
+                title: const Text('Uji Penggera'),
+                subtitle: const Text('Uji paparan penuh dan bunyi penggera.'),
                 onTap: () {
                   Navigator.of(context).pop();
                   unawaited(_showSessionAlarm(testMode: true));
@@ -380,7 +380,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Push notification belum dikonfigurasi pada server aplikasi.'),
+          content: Text('Pemberitahuan belum dikonfigurasi pada pelayan aplikasi.'),
         ),
       );
       return;
@@ -391,8 +391,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       SnackBar(
         content: Text(
           enabled
-              ? 'Push notification RimbaKawal telah diaktifkan.'
-              : 'Kebenaran notification belum diberikan pada peranti/browser ini.',
+              ? 'Pemberitahuan RimbaKawal telah diaktifkan.'
+              : 'Kebenaran pemberitahuan belum diberikan pada peranti atau pelayar ini.',
         ),
       ),
     );
@@ -479,13 +479,13 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   String _managementSyncLabel(int pending) {
-    if (_sync.isSyncing) return 'AUTO SYNC • SYNCING';
-    if (pending > 0) return 'AUTO SYNC • $pending PENDING';
+    if (_sync.isSyncing) return 'PENYEGERAKAN AUTOMATIK • SEDANG DISEGERAKKAN';
+    if (pending > 0) return 'PENYEGERAKAN AUTOMATIK • $pending MENUNGGU';
     final last = _sync.lastSyncAt;
-    if (last == null) return 'AUTO SYNC • READY';
+    if (last == null) return 'PENYEGERAKAN AUTOMATIK • SEDIA';
     final local = last.toLocal();
     String two(int value) => value.toString().padLeft(2, '0');
-    return 'AUTO SYNC • ${two(local.hour)}:${two(local.minute)}';
+    return 'PENYEGERAKAN AUTOMATIK • ${two(local.hour)}:${two(local.minute)}';
   }
 
   @override
@@ -499,12 +499,12 @@ class _DashboardScreenState extends State<DashboardScreen>
         title: const Text('RimbaKawal'),
         actions: [
           IconButton(
-            tooltip: 'Aktifkan push notification',
+            tooltip: 'Aktifkan pemberitahuan',
             onPressed: _enableNotifications,
             icon: const Icon(Icons.notifications_active_rounded),
           ),
           IconButton(
-            tooltip: 'Alarm / SOS',
+            tooltip: 'Penggera / SOS',
             onPressed: _showQuickActions,
             icon: const Icon(Icons.crisis_alert_rounded),
           ),
@@ -590,7 +590,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       children: [
                         const _StatusPill(
                           icon: Icons.offline_bolt_rounded,
-                          label: 'OFFLINE READY',
+                          label: 'SEDIA LUAR TALIAN',
                           color: Color(0xFF74B9FF),
                         ),
                         if (_user.isManagement)
@@ -604,7 +604,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         if (_user.isManagement && failed > 0)
                           _StatusPill(
                             icon: Icons.warning_amber_rounded,
-                            label: '$failed FAILED',
+                            label: '$failed GAGAL',
                             color: const Color(0xFFFF7675),
                           ),
                       ],
@@ -632,13 +632,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                     _MenuData(
                       icon: Icons.directions_walk_rounded,
                       title: 'Mula Rondaan',
-                      subtitle: 'NFC + GPS live',
+                      subtitle: 'Imbas titik pemeriksaan dan rekod lokasi',
                       onTap: _openPatrol,
                     ),
                     _MenuData(
                       icon: Icons.history_rounded,
                       title: 'Sejarah',
-                      subtitle: 'Sesi & checkpoint',
+                      subtitle: 'Sesi dan titik pemeriksaan',
                       onTap: () => _open(ClockingHistoryScreen(api: widget.api)),
                     ),
                     _MenuData(
@@ -650,7 +650,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     if (_user.isManagement)
                       _MenuData(
                         icon: Icons.admin_panel_settings_rounded,
-                        title: 'Admin',
+                        title: 'Pentadbiran',
                         subtitle: 'Konfigurasi sistem',
                         onTap: _openAdmin,
                       ),
@@ -658,7 +658,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       _MenuData(
                         icon: Icons.monitor_heart_rounded,
                         title: 'Pemantauan',
-                        subtitle: 'Live operations',
+                        subtitle: 'Pemantauan operasi langsung',
                         onTap: () => _open(CommandCenterScreen(api: widget.api)),
                       ),
                   ];

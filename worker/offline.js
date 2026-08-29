@@ -101,7 +101,7 @@ async function offlineSync(request, env) {
       results.push({
         id: clientEventId || String(event?.id ?? ''),
         status: 'rejected',
-        error: 'Event tempatan tidak sah.',
+        error: 'Rekod tempatan tidak sah.',
       });
       continue;
     }
@@ -141,7 +141,7 @@ async function offlineSync(request, env) {
           result = await syncWelfareCheck(env, auth.user, clientEventId, occurredAt, payload);
           break;
         default:
-          throw new SyncError('Jenis event tidak disokong.');
+          throw new SyncError('Jenis rekod tidak disokong.');
       }
 
       const resultJson = JSON.stringify(result ?? {});
@@ -179,7 +179,7 @@ async function offlineSync(request, env) {
       results.push({
         id: clientEventId,
         status: 'rejected',
-        error: error instanceof SyncError ? error.message : 'Event gagal diproses.',
+        error: error instanceof SyncError ? error.message : 'Rekod gagal diproses.',
       });
     }
   }
@@ -231,7 +231,7 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
     ).bind(user.department_id).all();
     const next = (routeResult.results ?? []).find((row) => !scannedIds.has(Number(row.id)));
     if (next && Number(next.id) !== Number(checkpoint.id)) {
-      throw new SyncError(`Checkpoint seterusnya ialah ${next.name}.`);
+      throw new SyncError(`Titik pemeriksaan seterusnya ialah ${next.name}.`);
     }
   }
 
@@ -270,7 +270,7 @@ async function syncIncident(env, user, clientEventId, occurredAt, payload) {
     const checkpoint = await env.DB.prepare(
       `SELECT id FROM checkpoints WHERE id = ? AND department_id = ? LIMIT 1`,
     ).bind(checkpointId, user.department_id).first();
-    if (!checkpoint) throw new SyncError('Checkpoint insiden tidak sah.');
+    if (!checkpoint) throw new SyncError('Titik pemeriksaan insiden tidak sah.');
   }
 
   const insert = await env.DB.prepare(
@@ -299,7 +299,7 @@ async function syncIncident(env, user, clientEventId, occurredAt, payload) {
 
   try {
     await sendPushToDepartment(env, user.department_id, {
-      title: severity === 'urgent' ? 'INSIDEN URGENT' : severity === 'important' ? 'Insiden Penting' : 'Insiden Baru',
+      title: severity === 'urgent' ? 'INSIDEN SEGERA' : severity === 'important' ? 'Insiden Penting' : 'Insiden Baru',
       body: `${user.nama} • ${category}: ${note.slice(0, 180)}`,
       kind: severity === 'urgent' ? 'incident_urgent' : 'incident',
       data: { incidentId, severity, category },
@@ -362,7 +362,7 @@ async function syncWelfareCheck(env, user, clientEventId, occurredAt, payload) {
   const status = String(payload.status ?? 'ok').trim().toLowerCase();
   const note = String(payload.note ?? '').trim().slice(0, 300);
   if (!['ok', 'needs_attention'].includes(status)) {
-    throw new SyncError('Status welfare tidak sah.');
+    throw new SyncError('Status kebajikan tidak sah.');
   }
   const insert = await env.DB.prepare(
     `INSERT INTO welfare_checks
@@ -380,7 +380,7 @@ async function syncWelfareCheck(env, user, clientEventId, occurredAt, payload) {
   if (status === 'needs_attention') {
     try {
       await sendPushToDepartment(env, user.department_id, {
-        title: 'Welfare Perlu Perhatian',
+        title: 'Kebajikan Perlu Perhatian',
         body: `${user.nama} memerlukan perhatian${note ? ` • ${note}` : ''}`.slice(0, 240),
         kind: 'welfare_attention',
         data: { welfareId },

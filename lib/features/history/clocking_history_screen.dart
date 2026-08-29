@@ -67,7 +67,7 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
         title: const Text('Sejarah Rondaan'),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: 'Muat semula',
             onPressed: () => _load(_selectedDate),
             icon: const Icon(Icons.refresh_rounded),
           ),
@@ -152,7 +152,7 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Text(
-                            '${history.department} • Sesi Rondaan setiap ${history.sessionIntervalMinutes} minit • semua anggota Jabatan',
+                            '${history.department} • Sesi rondaan setiap ${history.sessionIntervalMinutes} minit • rekod mengikut sesi Jabatan',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         );
@@ -200,9 +200,9 @@ class _SessionCard extends StatelessWidget {
         : scheme.secondary;
     final statusLabel = switch (session.status) {
       'complete' => 'LENGKAP',
-      'missed' => 'MISSED CHECKPOINT',
+      'missed' => 'TITIK PEMERIKSAAN TERLEPAS',
       'in_progress' => 'SESI SEMASA',
-      'no_checkpoints' => 'TIADA CHECKPOINT',
+      'no_checkpoints' => 'TIADA TITIK PEMERIKSAAN',
       _ => session.status.toUpperCase(),
     };
 
@@ -272,7 +272,7 @@ class _SessionCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '${session.scannedCount}/${session.expectedCount} checkpoint direkodkan',
+              '${session.scannedCount}/${session.expectedCount} titik pemeriksaan direkodkan',
             ),
             if (session.missingCheckpointNames.isNotEmpty) ...[
               const SizedBox(height: 10),
@@ -284,7 +284,7 @@ class _SessionCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  '${session.isMissed ? 'MISSING' : 'Belum scan'}: ${session.missingCheckpointNames.join(', ')}',
+                  '${session.isMissed ? 'TERLEPAS' : 'Belum diimbas'}: ${session.missingCheckpointNames.join(', ')}',
                   style: TextStyle(
                     color: session.isMissed ? scheme.error : null,
                     fontWeight: FontWeight.w800,
@@ -299,7 +299,7 @@ class _SessionCard extends StatelessWidget {
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.nfc_rounded),
-                  title: Text(scan.checkpointName ?? 'NFC tidak dipadankan'),
+                  title: Text(scan.checkpointName ?? 'Titik pemeriksaan tidak dikenal pasti'),
                   subtitle: Text(
                     '${scan.userName ?? session.userName} • ${scan.nfcUid} • ${formatTime(scan.scannedAt)}',
                   ),

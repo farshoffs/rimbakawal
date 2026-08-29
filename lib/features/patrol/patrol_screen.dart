@@ -182,14 +182,14 @@ class _PatrolScreenState extends State<PatrolScreen>
       setState(() {
         _liveStarting = false;
         _locationStatus =
-            'LIVE • ±${position.accuracy.round()} m • ${_clock(now)}';
+            'LANGSUNG • ±${position.accuracy.round()} m • ${_clock(now)}';
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _liveStarting = false;
         _locationStatus =
-            'GPS tersedia • peta live menunggu internet • ±${position.accuracy.round()} m';
+            'Lokasi tersedia • peta langsung menunggu sambungan internet • ±${position.accuracy.round()} m';
       });
     }
   }
@@ -222,7 +222,7 @@ class _PatrolScreenState extends State<PatrolScreen>
     if (bootstrap == null) {
       setState(() {
         _error =
-            'Konfigurasi rondaan belum pernah dimuat turun. Sambung internet sekali untuk menyediakan mod offline.';
+            'Konfigurasi rondaan belum pernah dimuat turun. Sambungkan peranti ke Internet sekali untuk menyediakan penggunaan luar talian.';
       });
       return;
     }
@@ -242,7 +242,7 @@ class _PatrolScreenState extends State<PatrolScreen>
           .firstOrNull;
       if (checkpoint == null) {
         throw const ApiException(
-          'Tag ini bukan checkpoint aktif untuk Jabatan anda.',
+          'Tag ini bukan titik pemeriksaan aktif untuk Jabatan anda.',
         );
       }
 
@@ -265,7 +265,7 @@ class _PatrolScreenState extends State<PatrolScreen>
             .where((item) => !completedIds.contains(item.id))
             .firstOrNull;
         if (next != null && next.id != checkpoint.id) {
-          throw ApiException('Checkpoint seterusnya ialah ${next.name}.');
+          throw ApiException('Titik pemeriksaan seterusnya ialah ${next.name}.');
         }
       }
 
@@ -288,7 +288,7 @@ class _PatrolScreenState extends State<PatrolScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${checkpoint.name} disimpan dalam telefon. Sync akan berlaku automatik.',
+            '${checkpoint.name} telah disimpan pada peranti dan akan disegerakkan secara automatik.',
           ),
         ),
       );
@@ -499,7 +499,7 @@ class _PatrolScreenState extends State<PatrolScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Insiden disimpan lokal dan dimasukkan ke barisan sync.'),
+        content: Text('Insiden telah disimpan pada peranti dan akan disegerakkan secara automatik.'),
       ),
     );
   }
@@ -509,7 +509,7 @@ class _PatrolScreenState extends State<PatrolScreen>
       userId: widget.user.id,
       type: 'welfare_check',
       location: await _captureEventLocation(),
-      payload: const {'status': 'ok', 'note': 'Guard confirmed OK'},
+      payload: const {'status': 'ok', 'note': 'Pengawal mengesahkan keadaan selamat'},
     );
     unawaited(_sync.syncNow());
     if (!mounted) return;
@@ -525,7 +525,7 @@ class _PatrolScreenState extends State<PatrolScreen>
       builder: (context) => AlertDialog(
         title: const Text('Tamatkan rondaan?'),
         content: Text(
-          'Semua data sudah disimpan dalam telefon. ${_store.pendingCount(widget.user.id)} event masih menunggu sync.',
+          'Semua data telah disimpan pada peranti. ${_store.pendingCount(widget.user.id)} rekod masih menunggu penyegerakan.',
         ),
         actions: [
           TextButton(
@@ -836,7 +836,7 @@ class _PatrolScreenState extends State<PatrolScreen>
                 children: [
                   Expanded(
                     child: Text(
-                      'Timeline sesi',
+                      'Rekod sesi',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w900,
                           ),
@@ -989,7 +989,7 @@ class _LiveHero extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  liveStarting ? 'STARTING' : 'ON PATROL',
+                  liveStarting ? 'MEMULAKAN' : 'SEDANG MERONDA',
                   style: const TextStyle(
                     color: Color(0xFF55E6C1),
                     fontWeight: FontWeight.w900,
@@ -1019,18 +1019,18 @@ class _LiveHero extends StatelessWidget {
             children: [
               const _MiniBadge(
                 icon: Icons.phone_android_rounded,
-                text: 'LOCAL FIRST',
+                text: 'DISIMPAN PADA PERANTI',
                 color: Color(0xFF74B9FF),
               ),
               _MiniBadge(
                 icon: syncing ? Icons.sync_rounded : Icons.cloud_upload_outlined,
-                text: syncing ? 'SYNCING…' : '$pending PENDING',
+                text: syncing ? 'MENYEGERAK…' : '$pending MENUNGGU',
                 color: const Color(0xFFA29BFE),
               ),
               if (failed > 0)
                 _MiniBadge(
                   icon: Icons.warning_amber_rounded,
-                  text: '$failed FAILED',
+                  text: '$failed GAGAL',
                   color: const Color(0xFFFF7675),
                 ),
             ],
@@ -1040,7 +1040,7 @@ class _LiveHero extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: syncing ? null : onSync,
               icon: const Icon(Icons.sync_rounded),
-              label: const Text('Sync sekarang'),
+              label: const Text('Segerak sekarang'),
             ),
           ],
         ],
@@ -1173,8 +1173,8 @@ class _RouteCard extends StatelessWidget {
                           Text(
                             next?.name ??
                                 (total == 0
-                                    ? 'Tiada checkpoint aktif'
-                                    : 'Semua checkpoint selesai'),
+                                    ? 'Tiada titik pemeriksaan aktif'
+                                    : 'Semua titik pemeriksaan selesai'),
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w900,
@@ -1241,7 +1241,7 @@ class _ScanCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              scanning ? 'Sentuhkan tag NFC…' : 'Scan checkpoint',
+              scanning ? 'Dekatkan tag pada peranti…' : 'Imbas titik pemeriksaan',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w900,
                   ),
@@ -1249,8 +1249,8 @@ class _ScanCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               nextName == null
-                  ? 'Data disimpan dalam telefon dahulu.'
-                  : 'Checkpoint dijangka: $nextName',
+                  ? 'Data akan disimpan pada peranti terlebih dahulu.'
+                  : 'Titik pemeriksaan seterusnya: $nextName',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 18),
@@ -1259,10 +1259,10 @@ class _ScanCard extends StatelessWidget {
               icon: const Icon(Icons.nfc_rounded),
               label: Text(
                 scanning
-                    ? 'SCANNING…'
+                    ? 'MENGIMBAS…'
                     : mockMode
-                        ? 'SCAN MOCK NFC'
-                        : 'SCAN NFC',
+                        ? 'SIMULASI IMBASAN'
+                        : 'IMBAS TITIK PEMERIKSAAN',
               ),
             ),
           ],
@@ -1306,11 +1306,11 @@ class _TimelineEvent extends StatelessWidget {
           title: Text(
             checkpoint?.name ??
                 event.payload['checkpointName'] as String? ??
-                'Checkpoint',
+                'Titik Pemeriksaan',
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
           subtitle: Text(
-            '${_formatEventTime(event.occurredAt)} • ${event.isSynced ? 'Synced' : event.isFailed ? 'Perlu semak' : 'Disimpan lokal'}',
+            '${_formatEventTime(event.occurredAt)} • ${event.isSynced ? 'Disegerakkan' : event.isFailed ? 'Perlu semak' : 'Disimpan pada peranti'}',
           ),
           trailing: IconButton(
             tooltip: 'Lapor insiden',
@@ -1345,7 +1345,7 @@ class _EmptyTimeline extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               const Text(
-                'Belum ada checkpoint dalam sesi ini.',
+                'Belum ada titik pemeriksaan direkodkan dalam sesi ini.',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
             ],

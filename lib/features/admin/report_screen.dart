@@ -129,7 +129,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   'Masa',
                   'Pengguna',
                   'Jabatan',
-                  'Checkpoint',
+                  'Titik Pemeriksaan',
                   'UID',
                 ],
                 data: scans.map((item) {

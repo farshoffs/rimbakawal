@@ -268,7 +268,7 @@ async function createSmartScan(request, env) {
      LIMIT 1`,
   ).bind(auth.user.department_id, nfcUid).first();
   if (!checkpoint) {
-    return json({ error: 'NFC ini tidak berdaftar sebagai checkpoint untuk Jabatan anda.' }, 403);
+    return json({ error: 'Tag ini tidak berdaftar sebagai titik pemeriksaan untuk Jabatan anda.' }, 403);
   }
 
   const now = new Date();
@@ -300,7 +300,7 @@ async function createSmartScan(request, env) {
     const expected = activeCheckpoints.find((row) => !scannedIds.has(Number(row.id)));
     if (expected && Number(expected.id) !== Number(checkpoint.id)) {
       return json({
-        error: `Susunan rondaan aktif. Checkpoint seterusnya ialah ${expected.name}.`,
+        error: `Susunan rondaan aktif. Titik pemeriksaan seterusnya ialah ${expected.name}.`,
         expectedCheckpoint: {
           id: Number(expected.id),
           name: expected.name,
@@ -396,7 +396,7 @@ async function createIncident(request, env) {
 
   try {
     await sendPushToDepartment(env, auth.user.department_id, {
-      title: severity === 'urgent' ? 'INSIDEN URGENT' : severity === 'important' ? 'Insiden Penting' : 'Insiden Baru',
+      title: severity === 'urgent' ? 'INSIDEN SEGERA' : severity === 'important' ? 'Insiden Penting' : 'Insiden Baru',
       body: `${auth.user.nama} • ${category}: ${note.slice(0, 180)}`,
       kind: severity === 'urgent' ? 'incident_urgent' : 'incident',
       data: { incidentId, severity, category },
@@ -571,9 +571,21 @@ async function commandCenter(request, env) {
 
     let missedSessions = 0;
     for (let index = 0; index < currentIndex; index += 1) {
-      const unique = new Set(userDayScans
-        .filter((row) => Number(row.session_index) === index)
-        .map((row) => Number(row.checkpoint_id)).filter((id) => id > 0));
+      const previousStartMs = scheduleDay.startMs + index * interval * 60000;
+      const previousEndMs = Math.min(
+        scheduleDay.endMs,
+        previousStartMs + interval * 60000,
+      );
+      const previousRows = userDayScans.filter((row) => {
+        const time = Date.parse(row.scanned_at);
+        return time >= previousStartMs && time < previousEndMs;
+      });
+      if (previousRows.length === 0) continue;
+      const unique = new Set(
+        previousRows
+          .map((row) => Number(row.checkpoint_id))
+          .filter((id) => id > 0),
+      );
       if (expected > 0 && unique.size < expected) missedSessions += 1;
     }
 
@@ -583,10 +595,9 @@ async function commandCenter(request, env) {
     let status = 'waiting';
     if (expected === 0) status = 'no_checkpoints';
     else if (uniqueCurrent.size >= expected) status = 'complete';
-    else if (activePatrol) status = 'patrolling';
+    else if (activePatrol && minutesIntoSession >= grace && uniqueCurrent.size === 0) status = 'late';
+    else if (activePatrol || uniqueCurrent.size > 0) status = 'patrolling';
     else if (missedSessions > 0) status = 'missed';
-    else if (minutesIntoSession >= grace && uniqueCurrent.size === 0) status = 'late';
-    else if (uniqueCurrent.size > 0) status = 'patrolling';
 
     if (status === 'complete') completeCount += 1;
     if (status === 'late' || status === 'missed') alertCount += 1;
