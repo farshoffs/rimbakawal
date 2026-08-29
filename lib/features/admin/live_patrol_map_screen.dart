@@ -155,7 +155,7 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
         'live' => 'LIVE',
         'delayed' => 'DELAYED',
         'stale' => 'STALE',
-        _ => 'WAITING GPS',
+        _ => 'MENUNGGU LOKASI',
       };
 
   List<LatLng> _trail(Map<String, dynamic> patrol) {

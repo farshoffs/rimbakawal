@@ -172,7 +172,7 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
                                     ?.copyWith(fontWeight: FontWeight.w900),
                               ),
                               const Text(
-                                'Auto-refresh setiap 8 saat. Resolve memerlukan catatan audit.',
+                                'Paparan dikemas kini secara automatik setiap 8 saat. Penyelesaian SOS memerlukan catatan audit.',
                               ),
                             ],
                           ),
