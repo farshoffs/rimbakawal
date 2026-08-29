@@ -117,7 +117,7 @@ class _ReportScreenState extends State<ReportScreen> {
             ),
             pw.SizedBox(height: 20),
             pw.Text(
-              'Rekod Titik Pemeriksaan',
+              'Rekod Checkpoint',
               style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 8),
@@ -129,7 +129,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   'Masa',
                   'Pengguna',
                   'Jabatan',
-                  'Titik Pemeriksaan',
+                  'Checkpoint',
                   'UID',
                 ],
                 data: scans.map((item) {
@@ -182,7 +182,7 @@ class _ReportScreenState extends State<ReportScreen> {
               ),
             pw.SizedBox(height: 16),
             pw.Text(
-              'Dijana oleh RimbaKawal. Masa rekod titik pemeriksaan diperoleh daripada pelayan.',
+              'Dijana oleh RimbaKawal. Masa rekod checkpoint diperoleh daripada pelayan.',
               style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
             ),
           ],
@@ -258,7 +258,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Pilih Jabatan dan julat sehingga 31 hari. PDF merangkumi rekod titik pemeriksaan dan kejadian SOS.',
+                    'Pilih Jabatan dan julat sehingga 31 hari. PDF merangkumi rekod checkpoint dan kejadian SOS.',
                   ),
                   const SizedBox(height: 18),
                   DropdownButtonFormField<int?>(

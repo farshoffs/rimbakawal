@@ -268,7 +268,7 @@ async function createSmartScan(request, env) {
      LIMIT 1`,
   ).bind(auth.user.department_id, nfcUid).first();
   if (!checkpoint) {
-    return json({ error: 'Tag ini tidak berdaftar sebagai titik pemeriksaan untuk Jabatan anda.' }, 403);
+    return json({ error: 'Tag ini tidak berdaftar sebagai checkpoint untuk Jabatan anda.' }, 403);
   }
 
   const now = new Date();
@@ -300,7 +300,7 @@ async function createSmartScan(request, env) {
     const expected = activeCheckpoints.find((row) => !scannedIds.has(Number(row.id)));
     if (expected && Number(expected.id) !== Number(checkpoint.id)) {
       return json({
-        error: `Susunan rondaan aktif. Titik pemeriksaan seterusnya ialah ${expected.name}.`,
+        error: `Susunan rondaan aktif. Checkpoint seterusnya ialah ${expected.name}.`,
         expectedCheckpoint: {
           id: Number(expected.id),
           name: expected.name,

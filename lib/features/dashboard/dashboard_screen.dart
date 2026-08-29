@@ -218,7 +218,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         Text(
                           testMode
                               ? 'Ini ialah ujian paparan dan bunyi penggera RimbaKawal.'
-                              : 'Sesi baharu telah bermula. Lengkapkan semua titik pemeriksaan dalam tempoh sesi. Rekod rondaan akan disimpan pada peranti sebelum disegerakkan.',
+                              : 'Sesi baharu telah bermula. Lengkapkan semua checkpoint dalam tempoh sesi. Rekod rondaan akan disimpan pada peranti sebelum disegerakkan.',
                           textAlign: TextAlign.center,
                           style: const TextStyle(height: 1.5),
                         ),
@@ -632,13 +632,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                     _MenuData(
                       icon: Icons.directions_walk_rounded,
                       title: 'Mula Rondaan',
-                      subtitle: 'Imbas titik pemeriksaan dan rekod lokasi',
+                      subtitle: 'Imbas checkpoint dan rekod lokasi',
                       onTap: _openPatrol,
                     ),
                     _MenuData(
                       icon: Icons.history_rounded,
                       title: 'Sejarah',
-                      subtitle: 'Sesi dan titik pemeriksaan',
+                      subtitle: 'Sesi dan checkpoint',
                       onTap: () => _open(ClockingHistoryScreen(api: widget.api)),
                     ),
                     _MenuData(

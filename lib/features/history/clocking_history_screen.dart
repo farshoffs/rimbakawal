@@ -200,9 +200,9 @@ class _SessionCard extends StatelessWidget {
         : scheme.secondary;
     final statusLabel = switch (session.status) {
       'complete' => 'LENGKAP',
-      'missed' => 'TITIK PEMERIKSAAN TERLEPAS',
+      'missed' => 'CHECKPOINT TERLEPAS',
       'in_progress' => 'SESI SEMASA',
-      'no_checkpoints' => 'TIADA TITIK PEMERIKSAAN',
+      'no_checkpoints' => 'TIADA CHECKPOINT',
       _ => session.status.toUpperCase(),
     };
 
@@ -272,7 +272,7 @@ class _SessionCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '${session.scannedCount}/${session.expectedCount} titik pemeriksaan direkodkan',
+              '${session.scannedCount}/${session.expectedCount} checkpoint direkodkan',
             ),
             if (session.missingCheckpointNames.isNotEmpty) ...[
               const SizedBox(height: 10),
@@ -299,7 +299,7 @@ class _SessionCard extends StatelessWidget {
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.nfc_rounded),
-                  title: Text(scan.checkpointName ?? 'Titik pemeriksaan tidak dikenal pasti'),
+                  title: Text(scan.checkpointName ?? 'Checkpoint tidak dikenal pasti'),
                   subtitle: Text(
                     '${scan.userName ?? session.userName} • ${scan.nfcUid} • ${formatTime(scan.scannedAt)}',
                   ),

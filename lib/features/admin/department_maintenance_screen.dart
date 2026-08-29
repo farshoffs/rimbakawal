@@ -69,7 +69,7 @@ class _DepartmentMaintenanceScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Jabatan dan Titik Pemeriksaan')),
+      appBar: AppBar(title: const Text('Jabatan dan Checkpoint')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _editDepartment,
         icon: const Icon(Icons.add_business_rounded),
@@ -117,7 +117,7 @@ class _DepartmentMaintenanceScreenState
                   subtitle: Text(
                     'Mula ${TimeOfDay(hour: department.sessionStartMinutes ~/ 60, minute: department.sessionStartMinutes % 60).format(context)} • '
                     'Sesi setiap ${department.sessionIntervalMinutes} minit • '
-                    '${department.checkpointCount} titik pemeriksaan aktif'
+                    '${department.checkpointCount} checkpoint aktif'
                     '${department.active ? '' : ' • TIDAK AKTIF'}',
                   ),
                   trailing: IconButton(
@@ -157,7 +157,7 @@ class _DepartmentMaintenanceScreenState
                               if (checkpoints.isEmpty) {
                                 return const Padding(
                                   padding: EdgeInsets.all(12),
-                                  child: Text('Belum ada titik pemeriksaan.'),
+                                  child: Text('Belum ada checkpoint.'),
                                 );
                               }
                               return Column(
@@ -193,7 +193,7 @@ class _DepartmentMaintenanceScreenState
                           OutlinedButton.icon(
                             onPressed: () => _editCheckpoint(department),
                             icon: const Icon(Icons.add_rounded),
-                            label: const Text('Tambah Titik Pemeriksaan'),
+                            label: const Text('Tambah Checkpoint'),
                           ),
                         ],
                       ),
@@ -441,7 +441,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
     final uid = _uidController.text.trim().toUpperCase();
     final position = int.tryParse(_positionController.text.trim());
     if (name.isEmpty || uid.isEmpty || position == null) {
-      setState(() => _error = 'Lengkapkan nama, UID tag NFC dan susunan titik pemeriksaan.');
+      setState(() => _error = 'Lengkapkan nama, UID tag NFC dan susunan checkpoint.');
       return;
     }
     setState(() {
@@ -482,7 +482,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.checkpoint == null ? 'Tambah Titik Pemeriksaan' : 'Edit Titik Pemeriksaan'),
+      title: Text(widget.checkpoint == null ? 'Tambah Checkpoint' : 'Edit Checkpoint'),
       content: SizedBox(
         width: 440,
         child: SingleChildScrollView(
@@ -492,7 +492,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
               TextField(
                 controller: _nameController,
                 decoration: const InputDecoration(
-                  labelText: 'Nama titik pemeriksaan',
+                  labelText: 'Nama checkpoint',
                   hintText: 'Contoh: Pintu Utama',
                 ),
               ),
@@ -537,7 +537,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
                 controller: _positionController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: 'Susunan titik pemeriksaan',
+                  labelText: 'Susunan checkpoint',
                   prefixIcon: Icon(Icons.format_list_numbered_rounded),
                 ),
               ),
@@ -545,7 +545,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
                 const SizedBox(height: 8),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Titik pemeriksaan aktif'),
+                  title: const Text('Checkpoint aktif'),
                   value: _active,
                   onChanged: (value) => setState(() => _active = value),
                 ),

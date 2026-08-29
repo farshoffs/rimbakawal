@@ -186,7 +186,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
         'patrolling' => 'SEDANG MERONDA',
         'late' => 'LEWAT',
         'missed' => 'TERLEPAS',
-        'no_checkpoints' => 'TIADA TITIK PEMERIKSAAN',
+        'no_checkpoints' => 'TIADA CHECKPOINT',
         _ => 'MENUNGGU',
       };
 
@@ -679,7 +679,7 @@ class _PatrolCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    '$scanned/$expected titik pemeriksaan • imbasan terakhir $time${missed > 0 ? ' • $missed sesi terlepas' : ''}',
+                    '$scanned/$expected checkpoint • imbasan terakhir $time${missed > 0 ? ' • $missed sesi terlepas' : ''}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -747,7 +747,7 @@ class _IncidentCard extends StatelessWidget {
                           style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
                         Text(
-                          '${incident['nama'] ?? '-'} • ${incident['jabatan'] ?? '-'} • ${incident['checkpoint_name'] ?? 'Tanpa titik pemeriksaan'}',
+                          '${incident['nama'] ?? '-'} • ${incident['jabatan'] ?? '-'} • ${incident['checkpoint_name'] ?? 'Tanpa checkpoint'}',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),

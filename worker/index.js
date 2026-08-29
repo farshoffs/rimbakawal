@@ -311,7 +311,7 @@ async function createScan(request, env) {
 
   if (!checkpoint) {
     return json({
-      error: 'Tag ini tidak berdaftar sebagai titik pemeriksaan untuk Jabatan anda.',
+      error: 'Tag ini tidak berdaftar sebagai checkpoint untuk Jabatan anda.',
     }, 403);
   }
 

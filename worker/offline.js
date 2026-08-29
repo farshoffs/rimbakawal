@@ -231,7 +231,7 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
     ).bind(user.department_id).all();
     const next = (routeResult.results ?? []).find((row) => !scannedIds.has(Number(row.id)));
     if (next && Number(next.id) !== Number(checkpoint.id)) {
-      throw new SyncError(`Titik pemeriksaan seterusnya ialah ${next.name}.`);
+      throw new SyncError(`Checkpoint seterusnya ialah ${next.name}.`);
     }
   }
 
@@ -270,7 +270,7 @@ async function syncIncident(env, user, clientEventId, occurredAt, payload) {
     const checkpoint = await env.DB.prepare(
       `SELECT id FROM checkpoints WHERE id = ? AND department_id = ? LIMIT 1`,
     ).bind(checkpointId, user.department_id).first();
-    if (!checkpoint) throw new SyncError('Titik pemeriksaan insiden tidak sah.');
+    if (!checkpoint) throw new SyncError('Checkpoint insiden tidak sah.');
   }
 
   const insert = await env.DB.prepare(

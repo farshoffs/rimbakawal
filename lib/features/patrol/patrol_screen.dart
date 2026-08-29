@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
@@ -31,13 +32,11 @@ class PatrolScreen extends StatefulWidget {
   State<PatrolScreen> createState() => _PatrolScreenState();
 }
 
-class _PatrolScreenState extends State<PatrolScreen>
-    with SingleTickerProviderStateMixin {
+class _PatrolScreenState extends State<PatrolScreen> {
   final OfflineStore _store = OfflineStore.instance;
   final OfflineSyncService _sync = OfflineSyncService.instance;
   final ImagePicker _imagePicker = ImagePicker();
 
-  late final AnimationController _pulseController;
   late final String _clientSessionId;
   late final DateTime _startedAt;
   StreamSubscription<Position>? _positionSub;
@@ -56,10 +55,7 @@ class _PatrolScreenState extends State<PatrolScreen>
     super.initState();
     _startedAt = DateTime.now();
     _clientSessionId = _store.newId('patrol-session');
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2100),
-    )..repeat();
+    unawaited(WakelockPlus.enable());
     _store.addListener(_onLocalChanged);
     _sync.addListener(_onLocalChanged);
     unawaited(_startOfflinePatrol());
@@ -71,7 +67,7 @@ class _PatrolScreenState extends State<PatrolScreen>
     _sync.removeListener(_onLocalChanged);
     _positionSub?.cancel();
     _locationHeartbeat?.cancel();
-    _pulseController.dispose();
+    unawaited(WakelockPlus.disable());
     if (!_ending) unawaited(widget.api.endLivePatrol(_clientSessionId));
     super.dispose();
   }
@@ -242,7 +238,7 @@ class _PatrolScreenState extends State<PatrolScreen>
           .firstOrNull;
       if (checkpoint == null) {
         throw const ApiException(
-          'Tag ini bukan titik pemeriksaan aktif untuk Jabatan anda.',
+          'Tag ini bukan checkpoint aktif untuk Jabatan anda.',
         );
       }
 
@@ -265,7 +261,7 @@ class _PatrolScreenState extends State<PatrolScreen>
             .where((item) => !completedIds.contains(item.id))
             .firstOrNull;
         if (next != null && next.id != checkpoint.id) {
-          throw ApiException('Titik pemeriksaan seterusnya ialah ${next.name}.');
+          throw ApiException('Checkpoint seterusnya ialah ${next.name}.');
         }
       }
 
@@ -789,7 +785,6 @@ class _PatrolScreenState extends State<PatrolScreen>
               _LiveHero(
                 user: widget.user,
                 image: _profileImage(),
-                animation: _pulseController,
                 locationStatus: _locationStatus,
                 liveStarting: _liveStarting,
                 pending: pending,
@@ -899,7 +894,6 @@ class _LiveHero extends StatelessWidget {
   const _LiveHero({
     required this.user,
     required this.image,
-    required this.animation,
     required this.locationStatus,
     required this.liveStarting,
     required this.pending,
@@ -910,7 +904,6 @@ class _LiveHero extends StatelessWidget {
 
   final AppUser user;
   final ImageProvider<Object>? image;
-  final Animation<double> animation;
   final String locationStatus;
   final bool liveStarting;
   final int pending;
@@ -936,19 +929,14 @@ class _LiveHero extends StatelessWidget {
         children: [
           Row(
             children: [
-              AnimatedBuilder(
-                animation: animation,
-                builder: (context, child) => Container(
-                  padding: EdgeInsets.all(5 + animation.value * 3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFF6C5CE7)
-                          .withValues(alpha: 1 - animation.value * 0.65),
-                      width: 2,
-                    ),
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFF6C5CE7).withValues(alpha: 0.35),
+                    width: 2,
                   ),
-                  child: child,
                 ),
                 child: CircleAvatar(
                   radius: 30,
@@ -1173,8 +1161,8 @@ class _RouteCard extends StatelessWidget {
                           Text(
                             next?.name ??
                                 (total == 0
-                                    ? 'Tiada titik pemeriksaan aktif'
-                                    : 'Semua titik pemeriksaan selesai'),
+                                    ? 'Tiada checkpoint aktif'
+                                    : 'Semua checkpoint selesai'),
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w900,
@@ -1241,7 +1229,7 @@ class _ScanCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              scanning ? 'Dekatkan tag pada peranti…' : 'Imbas titik pemeriksaan',
+              scanning ? 'Dekatkan tag pada peranti…' : 'Imbas checkpoint',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w900,
                   ),
@@ -1250,7 +1238,7 @@ class _ScanCard extends StatelessWidget {
             Text(
               nextName == null
                   ? 'Data akan disimpan pada peranti terlebih dahulu.'
-                  : 'Titik pemeriksaan seterusnya: $nextName',
+                  : 'Checkpoint seterusnya: $nextName',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 18),
@@ -1261,8 +1249,8 @@ class _ScanCard extends StatelessWidget {
                 scanning
                     ? 'MENGIMBAS…'
                     : mockMode
-                        ? 'SIMULASI IMBASAN'
-                        : 'IMBAS TITIK PEMERIKSAAN',
+                        ? 'IMBAS CHECKPOINT'
+                        : 'IMBAS CHECKPOINT',
               ),
             ),
           ],
@@ -1306,7 +1294,7 @@ class _TimelineEvent extends StatelessWidget {
           title: Text(
             checkpoint?.name ??
                 event.payload['checkpointName'] as String? ??
-                'Titik Pemeriksaan',
+                'Checkpoint',
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
           subtitle: Text(
@@ -1345,7 +1333,7 @@ class _EmptyTimeline extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               const Text(
-                'Belum ada titik pemeriksaan direkodkan dalam sesi ini.',
+                'Belum ada checkpoint direkodkan dalam sesi ini.',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
             ],

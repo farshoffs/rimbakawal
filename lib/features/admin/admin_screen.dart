@@ -64,9 +64,9 @@ class AdminScreen extends StatelessWidget {
           const SizedBox(height: 10),
           _AdminMenuCard(
             icon: Icons.account_tree_rounded,
-            title: 'Jabatan dan Titik Pemeriksaan',
+            title: 'Jabatan dan Checkpoint',
             subtitle:
-                'Selenggara Jabatan, kadar sesi dan titik pemeriksaan dalam satu skrin.',
+                'Selenggara Jabatan, kadar sesi dan checkpoint dalam satu skrin.',
             onTap: () => _open(
               context,
               DepartmentMaintenanceScreen(
