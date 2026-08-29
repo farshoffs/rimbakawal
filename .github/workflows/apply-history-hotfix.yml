@@ -1,0 +1,51 @@
+name: Apply Patrol History Hotfix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/fix_patrol_history.py
+      - .github/workflows/apply-history-hotfix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patrol history hotfix
+        run: python3 scripts/fix_patrol_history.py
+
+      - name: Validate Worker JavaScript
+        run: |
+          node --check worker/index.js
+          node --check worker/app.js
+          node --check worker/offline.js
+          node --check worker/push.js
+          node --check worker/sos.js
+          grep -q "function sessionWindow(value, interval, startMinutes = 420)" worker/index.js
+          grep -q "const todayKey = malaysiaDateKey(new Date());" worker/index.js
+
+      - name: Check diff
+        run: git diff --check && git diff --stat
+
+      - name: Commit validated hotfix
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add worker/index.js
+          git commit -m "Fix patrol history loading and calendar dates"
+          git push origin HEAD:main
