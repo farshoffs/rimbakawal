@@ -1,0 +1,30 @@
+name: Tune BPPA Layout
+on:
+  push:
+    branches: [feature/bppa-monthly-reports]
+permissions:
+  contents: write
+jobs:
+  tune:
+    if: github.event.head_commit.message != 'Fit BPPA PKK 2 rows to A4'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/bppa-monthly-reports
+      - name: Fit rows and commit
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/features/admin/report_screen.dart')
+          s = p.read_text()
+          old = 'height: 13.5'
+          if old not in s:
+              raise SystemExit('row height marker missing')
+          p.write_text(s.replace(old, 'height: 10.6'))
+          PY
+          git config user.name farshoffs
+          git config user.email farshoffs@gmail.com
+          git add lib/features/admin/report_screen.dart
+          git commit -m 'Fit BPPA PKK 2 rows to A4'
+          git push
