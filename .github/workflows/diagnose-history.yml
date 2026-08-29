@@ -24,8 +24,12 @@ jobs:
           set -euo pipefail
           echo '=== TOTAL NFC SCANS ==='
           npx wrangler d1 execute rimbakawal-db --remote --command "SELECT COUNT(*) AS total_scans, MIN(scanned_at) AS earliest_scan, MAX(scanned_at) AS latest_scan FROM nfc_scans;"
-          echo '=== SCANS BY UTC DATE (LAST 14 DATES) ==='
-          npx wrangler d1 execute rimbakawal-db --remote --command "SELECT substr(scanned_at,1,10) AS utc_date, COUNT(*) AS scan_count FROM nfc_scans GROUP BY substr(scanned_at,1,10) ORDER BY utc_date DESC LIMIT 14;"
+          echo '=== DEPARTMENT CONFIG ==='
+          npx wrangler d1 execute rimbakawal-db --remote --command "SELECT id, name, session_interval_minutes, session_start_minutes, active FROM departments ORDER BY id;"
+          echo '=== SCANS BY MALAYSIA CALENDAR HOUR ==='
+          npx wrangler d1 execute rimbakawal-db --remote --command "SELECT strftime('%Y-%m-%d %H:00', datetime(scanned_at, '+8 hours')) AS malaysia_hour, COUNT(*) AS scan_count FROM nfc_scans GROUP BY malaysia_hour ORDER BY malaysia_hour DESC LIMIT 24;"
+          echo '=== SCANS BY MALAYSIA CALENDAR DATE ==='
+          npx wrangler d1 execute rimbakawal-db --remote --command "SELECT date(datetime(scanned_at, '+8 hours')) AS malaysia_date, COUNT(*) AS scan_count FROM nfc_scans GROUP BY malaysia_date ORDER BY malaysia_date DESC LIMIT 14;"
           echo '=== SCANS BY DEPARTMENT ==='
           npx wrangler d1 execute rimbakawal-db --remote --command "SELECT COALESCE(CAST(u.department_id AS TEXT),'none') AS department_id, COUNT(*) AS scan_count, MIN(s.scanned_at) AS earliest_scan, MAX(s.scanned_at) AS latest_scan FROM nfc_scans s JOIN users u ON u.id=s.user_id GROUP BY u.department_id ORDER BY scan_count DESC;"
           echo '=== TABLE COUNTS ==='
