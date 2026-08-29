@@ -1,0 +1,32 @@
+name: Diagnose Patrol History
+
+on:
+  push:
+    branches:
+      - diagnose-history
+    paths:
+      - .github/workflows/diagnose-history.yml
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: npm ci
+      - name: Aggregate D1 patrol history
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== TOTAL NFC SCANS ==='
+          npx wrangler d1 execute rimbakawal-db --remote --command "SELECT COUNT(*) AS total_scans, MIN(scanned_at) AS earliest_scan, MAX(scanned_at) AS latest_scan FROM nfc_scans;"
+          echo '=== SCANS BY UTC DATE (LAST 14 DATES) ==='
+          npx wrangler d1 execute rimbakawal-db --remote --command "SELECT substr(scanned_at,1,10) AS utc_date, COUNT(*) AS scan_count FROM nfc_scans GROUP BY substr(scanned_at,1,10) ORDER BY utc_date DESC LIMIT 14;"
+          echo '=== SCANS BY DEPARTMENT ==='
+          npx wrangler d1 execute rimbakawal-db --remote --command "SELECT COALESCE(CAST(u.department_id AS TEXT),'none') AS department_id, COUNT(*) AS scan_count, MIN(s.scanned_at) AS earliest_scan, MAX(s.scanned_at) AS latest_scan FROM nfc_scans s JOIN users u ON u.id=s.user_id GROUP BY u.department_id ORDER BY scan_count DESC;"
+          echo '=== TABLE COUNTS ==='
+          npx wrangler d1 execute rimbakawal-db --remote --command "SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM departments) AS departments, (SELECT COUNT(*) FROM checkpoints) AS checkpoints, (SELECT COUNT(*) FROM patrol_sessions) AS patrol_sessions, (SELECT COUNT(*) FROM sessions) AS auth_sessions;"
