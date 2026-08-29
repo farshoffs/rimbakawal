@@ -1,0 +1,53 @@
+name: Apply Patrol Schedule Upgrade V2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-session-schedule-upgrade-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply source upgrade
+        run: python3 scripts/apply_session_schedule_upgrade.py
+
+      - name: Validate Worker syntax
+        run: |
+          node --check worker/index.js
+          node --check worker/app.js
+          node --check worker/offline.js
+
+      - name: Validate Flutter
+        run: |
+          flutter pub get
+          flutter analyze
+
+      - name: Commit validated source changes
+        shell: bash
+        run: |
+          git config user.name 'RimbaKawal Automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add migrations/0009_department_session_start.sql \
+                  lib/core/api/app_user.dart \
+                  lib/core/offline/offline_models.dart \
+                  lib/core/api/api_service.dart \
+                  lib/features/admin/department_maintenance_screen.dart \
+                  lib/features/patrol/patrol_screen.dart \
+                  lib/features/dashboard/dashboard_screen.dart \
+                  worker/index.js worker/app.js worker/offline.js
+          git commit -m 'Improve patrol controls and department session schedules'
+          git push origin main
