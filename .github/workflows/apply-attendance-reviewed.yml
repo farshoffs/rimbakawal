@@ -19,7 +19,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply requested change
-        run: python3 scripts/apply_attendance_reviewed.py
+        run: |
+          python3 scripts/fix_apply_attendance_reviewed.py
+          python3 scripts/apply_attendance_reviewed.py
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
