@@ -1,0 +1,244 @@
+name: Apply Web Attendance and Patrol UX
+
+on:
+  push:
+    branches:
+      - feature/web-attendance-patrol-ux
+
+permissions:
+  contents: write
+
+jobs:
+  patch-validate-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/web-attendance-patrol-ux
+          fetch-depth: 0
+
+      - name: Apply requested fixes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'Pattern not found in {path}: {old[:120]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          # Attendance: natural copy + dedicated browser webcam flow.
+          p = Path('lib/features/attendance/attendance_screen.dart')
+          text = p.read_text()
+          text = text.replace("import 'package:image_picker/image_picker.dart';\n", "import 'package:flutter/foundation.dart';\nimport 'package:image_picker/image_picker.dart';\n\nimport 'web_selfie_capture_stub.dart' if (dart.library.html) 'web_selfie_capture_web.dart';\n")
+          text = text.replace("  final ImagePicker _picker = ImagePicker();\n", "  final ImagePicker _picker = ImagePicker();\n")
+          old = """      final image = await _picker.pickImage(\n        source: ImageSource.camera,\n        preferredCameraDevice: CameraDevice.front,\n        maxWidth: 720,\n        imageQuality: 65,\n      );\n      if (image == null) return;\n      final bytes = await image.readAsBytes();\n      final lower = image.path.toLowerCase();\n      final mime = lower.endsWith('.png') ? 'png' : 'jpeg';\n      final dataUrl = 'data:image/$mime;base64,${base64Encode(bytes)}';\n"""
+          new = """      final String? dataUrl;\n      if (kIsWeb) {\n        dataUrl = await captureWebSelfie(context);\n      } else {\n        final image = await _picker.pickImage(\n          source: ImageSource.camera,\n          preferredCameraDevice: CameraDevice.front,\n          maxWidth: 720,\n          imageQuality: 65,\n        );\n        if (image == null) return;\n        final bytes = await image.readAsBytes();\n        final lower = image.path.toLowerCase();\n        final mime = lower.endsWith('.png') ? 'png' : 'jpeg';\n        dataUrl = 'data:image/$mime;base64,${base64Encode(bytes)}';\n      }\n      if (dataUrl == null || dataUrl.isEmpty) return;\n"""
+          if old not in text: raise SystemExit('attendance capture block missing')
+          text = text.replace(old, new, 1)
+          text = text.replace("'Geofence ${status!.department.attendanceRadiusMeters}m • selfie kamera hadapan diperlukan.'", "'Anda perlu berada dalam lingkungan ${status!.department.attendanceRadiusMeters}m dari kawasan yang ditetapkan dan ambil selfie.'")
+          text = text.replace("label: Text(_punching ? 'MENGESAHKAN…' : nextLabel),", "label: Text(_punching ? 'MENYIMPAN…' : nextLabel),")
+          text = text.replace("'Lokasi, ketepatan GPS dan selfie dihantar bersama rekod. Jika AI tidak dapat membuat padanan automatik, rekod tetap disimpan tetapi ditanda untuk semakan Admin.'", "'Lokasi semasa, ketepatan GPS dan selfie akan disimpan bersama rekod kehadiran. Jika selfie perlu diperiksa semula, Admin boleh membuat semakan daripada Sejarah Kehadiran.'")
+          p.write_text(text)
+
+          # Dashboard copy.
+          replace('lib/features/dashboard/dashboard_screen.dart',
+                  "subtitle: 'Punch lokasi + pengesahan wajah',",
+                  "subtitle: 'Rekod masuk/keluar dengan lokasi dan selfie',")
+
+          # Patrol flashlight: larger standard FAB.
+          replace('lib/features/patrol/patrol_screen.dart',
+                  "FloatingActionButton.small(\n              heroTag: 'torch-fab',",
+                  "FloatingActionButton(\n              heroTag: 'torch-fab',")
+          replace('lib/features/patrol/patrol_screen.dart',
+                  "child: Icon(\n                _torchChanging",
+                  "child: Icon(\n                _torchChanging")
+
+          # Department start-time control: responsive rather than squeezing into a vertical trailing button.
+          p = Path('lib/features/admin/department_maintenance_screen.dart')
+          text = p.read_text()
+          old = """              ListTile(\n                contentPadding: const EdgeInsets.symmetric(horizontal: 4),\n                leading: const Icon(Icons.schedule_rounded),\n                title: const Text('Jam mula rondaan'),\n                subtitle: Text('Sesi 1 bermula pada ${_startTime.format(context)}'),\n                trailing: FilledButton.tonal(onPressed: _pickStartTime, child: Text(_startTime.format(context))),\n              ),\n"""
+          new = """              LayoutBuilder(\n                builder: (context, constraints) {\n                  final timeButton = FilledButton.tonalIcon(\n                    onPressed: _pickStartTime,\n                    icon: const Icon(Icons.schedule_rounded),\n                    label: Text(_startTime.format(context)),\n                  );\n                  final details = Column(\n                    crossAxisAlignment: CrossAxisAlignment.start,\n                    children: [\n                      const Text(\n                        'Jam mula rondaan',\n                        style: TextStyle(fontWeight: FontWeight.w800),\n                      ),\n                      const SizedBox(height: 3),\n                      Text('Sesi 1 bermula pada ${_startTime.format(context)}'),\n                    ],\n                  );\n                  if (constraints.maxWidth < 430) {\n                    return Column(\n                      crossAxisAlignment: CrossAxisAlignment.stretch,\n                      children: [\n                        details,\n                        const SizedBox(height: 10),\n                        timeButton,\n                      ],\n                    );\n                  }\n                  return Row(\n                    children: [\n                      const Icon(Icons.schedule_rounded),\n                      const SizedBox(width: 12),\n                      Expanded(child: details),\n                      const SizedBox(width: 12),\n                      timeButton,\n                    ],\n                  );\n                },\n              ),\n"""
+          if old not in text: raise SystemExit('department time control missing')
+          p.write_text(text.replace(old, new, 1))
+
+          # API method to delete a full patrol session.
+          p = Path('lib/core/api/api_service.dart')
+          text = p.read_text()
+          marker = """  Future<HistoryDay> getHistory(DateTime date, {int? departmentId}) async =>\n      HistoryDay.fromJson(\n"""
+          method = """  Future<void> deletePatrolSession(String clientSessionId) async {\n    _decode(\n      await http.delete(\n        _uri('/api/admin/patrol-sessions/${Uri.encodeComponent(clientSessionId)}'),\n        headers: _headers(),\n      ),\n    );\n  }\n\n"""
+          if marker not in text: raise SystemExit('api history marker missing')
+          p.write_text(text.replace(marker, method + marker, 1))
+
+          # History UI: management-only overflow menu + delete confirmation.
+          p = Path('lib/features/history/clocking_history_screen.dart')
+          text = p.read_text()
+          marker = """  bool _sameDay(DateTime a, DateTime b) =>\n      a.year == b.year && a.month == b.month && a.day == b.day;\n\n"""
+          method = """  Future<void> _deletePatrolRun(HistoryPatrolRun run) async {\n    if (!widget.user.isManagement) return;\n    final confirmed = await showDialog<bool>(\n      context: context,\n      builder: (context) => AlertDialog(\n        title: const Text('Padam sesi rondaan?'),\n        content: Text(\n          'Sesi Rondaan ${run.sessionIndex + 1} oleh ${run.userName} akan dipadam bersama trail lokasi dan rekod checkpoint dalam sesi ini.',\n        ),\n        actions: [\n          TextButton(\n            onPressed: () => Navigator.of(context).pop(false),\n            child: const Text('Batal'),\n          ),\n          FilledButton(\n            onPressed: () => Navigator.of(context).pop(true),\n            style: FilledButton.styleFrom(\n              backgroundColor: Theme.of(context).colorScheme.error,\n              foregroundColor: Theme.of(context).colorScheme.onError,\n            ),\n            child: const Text('Padam Sesi'),\n          ),\n        ],\n      ),\n    );\n    if (confirmed != true) return;\n    try {\n      await widget.api.deletePatrolSession(run.clientSessionId);\n      if (!mounted) return;\n      ScaffoldMessenger.of(context).showSnackBar(\n        const SnackBar(content: Text('Sesi rondaan telah dipadam.')),\n      );\n      _load(_selectedDate);\n    } catch (error) {\n      if (!mounted) return;\n      ScaffoldMessenger.of(context).showSnackBar(\n        SnackBar(content: Text(error.toString())),\n      );\n    }\n  }\n\n"""
+          if marker not in text: raise SystemExit('history insertion marker missing')
+          text = text.replace(marker, marker + method, 1)
+          old = """                          (run) =>\n                              _PatrolRunCard(run: run, formatTime: _formatTime),\n"""
+          new = """                          (run) => _PatrolRunCard(\n                            run: run,\n                            formatTime: _formatTime,\n                            canDelete: widget.user.isManagement,\n                            onDelete: () => _deletePatrolRun(run),\n                          ),\n"""
+          if old not in text: raise SystemExit('history card mapping missing')
+          text = text.replace(old, new, 1)
+          text = text.replace(
+            "const _PatrolRunCard({required this.run, required this.formatTime});",
+            "const _PatrolRunCard({required this.run, required this.formatTime, required this.canDelete, required this.onDelete});",
+            1,
+          )
+          text = text.replace(
+            "  final String Function(DateTime) formatTime;\n",
+            "  final String Function(DateTime) formatTime;\n  final bool canDelete;\n  final VoidCallback onDelete;\n",
+            1,
+          )
+          old = """                Container(\n                  padding: const EdgeInsets.symmetric(\n                    horizontal: 9,\n                    vertical: 5,\n                  ),\n                  decoration: BoxDecoration(\n                    color: statusColor.withValues(alpha: 0.15),\n                    borderRadius: BorderRadius.circular(999),\n                  ),\n                  child: Text(\n                    statusLabel,\n                    style: TextStyle(\n                      color: statusColor,\n                      fontSize: 11,\n                      fontWeight: FontWeight.w900,\n                    ),\n                  ),\n                ),\n"""
+          new = """                Row(\n                  mainAxisSize: MainAxisSize.min,\n                  children: [\n                    Container(\n                      padding: const EdgeInsets.symmetric(\n                        horizontal: 9,\n                        vertical: 5,\n                      ),\n                      decoration: BoxDecoration(\n                        color: statusColor.withValues(alpha: 0.15),\n                        borderRadius: BorderRadius.circular(999),\n                      ),\n                      child: Text(\n                        statusLabel,\n                        style: TextStyle(\n                          color: statusColor,\n                          fontSize: 11,\n                          fontWeight: FontWeight.w900,\n                        ),\n                      ),\n                    ),\n                    if (canDelete) ...[\n                      const SizedBox(width: 4),\n                      PopupMenuButton<String>(\n                        tooltip: 'Pilihan sesi',\n                        onSelected: (value) {\n                          if (value == 'delete') onDelete();\n                        },\n                        itemBuilder: (context) => const [\n                          PopupMenuItem<String>(\n                            value: 'delete',\n                            child: Row(\n                              children: [\n                                Icon(Icons.delete_outline_rounded),\n                                SizedBox(width: 8),\n                                Text('Padam Sesi Rondaan'),\n                              ],\n                            ),\n                          ),\n                        ],\n                      ),\n                    ],\n                  ],\n                ),\n"""
+          if old not in text: raise SystemExit('history status widget missing')
+          p.write_text(text.replace(old, new, 1))
+
+          # Worker route + management-only delete handler.
+          p = Path('worker/index.js')
+          text = p.read_text()
+          route_marker = """      match = url.pathname.match(/^\\/api\\/admin\\/users\\/(\\d+)\\/department$/);\n      if (match && request.method === 'PUT') {\n        return updateUserDepartment(request, env, Number(match[1]));\n      }\n\n"""
+          route = """      match = url.pathname.match(/^\\/api\\/admin\\/patrol-sessions\\/(.+)$/);\n      if (match && request.method === 'DELETE') {\n        return deletePatrolSession(request, env, decodeURIComponent(match[1]));\n      }\n\n"""
+          if route_marker not in text: raise SystemExit('worker route marker missing')
+          text = text.replace(route_marker, route_marker + route, 1)
+          fn_marker = "async function getScans(request, env, url) {\n"
+          fn = """async function deletePatrolSession(request, env, clientSessionId) {\n  const auth = await requireUser(request, env);\n  if (auth.response) return auth.response;\n  const role = String(auth.user.jawatan || '').trim().toLowerCase();\n  if (role !== 'management') {\n    return json({ error: 'Hanya Pengurusan boleh memadam sesi rondaan.' }, 403);\n  }\n\n  const sessionId = String(clientSessionId || '').trim();\n  if (!sessionId || sessionId.length > 220) {\n    return json({ error: 'Sesi rondaan tidak sah.' }, 400);\n  }\n\n  const existing = await env.DB.prepare(\n    `SELECT id FROM patrol_session_history WHERE client_session_id = ? LIMIT 1`,\n  ).bind(sessionId).first();\n  if (!existing) return json({ error: 'Sesi rondaan tidak ditemui.' }, 404);\n\n  await env.DB.batch([\n    env.DB.prepare('DELETE FROM live_patrol_trail WHERE client_session_id = ?').bind(sessionId),\n    env.DB.prepare('DELETE FROM live_patrol_presence WHERE client_session_id = ?').bind(sessionId),\n    env.DB.prepare('DELETE FROM nfc_scans WHERE client_session_id = ?').bind(sessionId),\n    env.DB.prepare('DELETE FROM patrol_activity_log WHERE client_session_id = ?').bind(sessionId),\n    env.DB.prepare('DELETE FROM patrol_session_history WHERE client_session_id = ?').bind(sessionId),\n  ]);\n  return json({ ok: true });\n}\n\n"""
+          if fn_marker not in text: raise SystemExit('worker function marker missing')
+          p.write_text(text.replace(fn_marker, fn + fn_marker, 1))
+          PY
+
+          cat > lib/features/attendance/web_selfie_capture_stub.dart <<'DART'
+          import 'package:flutter/material.dart';
+
+          Future<String?> captureWebSelfie(BuildContext context) async => null;
+          DART
+
+          cat > lib/features/attendance/web_selfie_capture_web.dart <<'DART'
+          // ignore_for_file: deprecated_member_use
+          import 'dart:async';
+          import 'dart:html' as html;
+          import 'dart:ui_web' as ui_web;
+
+          import 'package:flutter/material.dart';
+
+          Future<String?> captureWebSelfie(BuildContext context) async {
+            final mediaDevices = html.window.navigator.mediaDevices;
+            if (mediaDevices == null) {
+              throw StateError('Pelayar ini tidak menyediakan akses webcam.');
+            }
+
+            final stream = await mediaDevices.getUserMedia({
+              'video': {
+                'facingMode': {'ideal': 'user'},
+                'width': {'ideal': 720},
+                'height': {'ideal': 720},
+              },
+              'audio': false,
+            });
+            final video = html.VideoElement()
+              ..autoplay = true
+              ..muted = true
+              ..srcObject = stream
+              ..setAttribute('playsinline', 'true')
+              ..style.width = '100%'
+              ..style.height = '100%'
+              ..style.objectFit = 'cover';
+
+            try {
+              await video.onLoadedMetadata.first.timeout(const Duration(seconds: 10));
+              await video.play();
+              final viewType = 'rimbakawal-selfie-${DateTime.now().microsecondsSinceEpoch}';
+              ui_web.platformViewRegistry.registerViewFactory(viewType, (int _) => video);
+
+              if (!context.mounted) return null;
+              final takePhoto = await showDialog<bool>(
+                context: context,
+                barrierDismissible: false,
+                builder: (dialogContext) => AlertDialog(
+                  title: const Text('Ambil Selfie'),
+                  content: SizedBox(
+                    width: 440,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Pastikan wajah jelas dan berada di tengah kamera.',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: HtmlElementView(viewType: viewType),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('Batal'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                      icon: const Icon(Icons.camera_alt_rounded),
+                      label: const Text('AMBIL GAMBAR'),
+                    ),
+                  ],
+                ),
+              );
+              if (takePhoto != true) return null;
+
+              final width = video.videoWidth > 0 ? video.videoWidth : 720;
+              final height = video.videoHeight > 0 ? video.videoHeight : 720;
+              final canvas = html.CanvasElement(width: width, height: height);
+              canvas.context2D.drawImageScaled(video, 0, 0, width, height);
+              return canvas.toDataUrl('image/jpeg', 0.72);
+            } on TimeoutException {
+              throw StateError('Webcam mengambil masa terlalu lama untuk bermula. Cuba semula.');
+            } finally {
+              for (final track in stream.getTracks()) {
+                track.stop();
+              }
+              video.srcObject = null;
+            }
+          }
+          DART
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter
+        run: flutter analyze
+
+      - name: Build web
+        run: flutter build web --release
+
+      - name: Validate Worker JavaScript
+        run: node --check worker/index.js && node --check worker/attendance.js && node --check worker/offline.js && node --check worker/app.js
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit validated fixes
+        shell: bash
+        run: |
+          git config user.name "farshoffs"
+          git config user.email "farshoffs@gmail.com"
+          git add lib worker pubspec.lock
+          git commit -m "Improve attendance web capture and patrol UX"
+          git push origin HEAD:feature/web-attendance-patrol-ux
