@@ -242,6 +242,11 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                       generatedAt: data?.generatedAt,
                       onMap: _openLiveMap,
                     ),
+                    const SizedBox(height: 12),
+                    _AttendanceOverview(
+                      summary: data?.attendanceSummary ?? const <String, dynamic>{},
+                      recent: data?.attendanceRecent ?? const <Map<String, dynamic>>[],
+                    ),
                     if (_error != null) ...[
                       const SizedBox(height: 12),
                       Card(
@@ -849,3 +854,72 @@ String _incidentSeverityLabel(String severity) => switch (severity.toLowerCase()
       'normal' => 'BIASA',
       _ => severity.toUpperCase(),
     };
+
+
+class _AttendanceOverview extends StatelessWidget {
+  const _AttendanceOverview({required this.summary, required this.recent});
+  final Map<String, dynamic> summary;
+  final List<Map<String, dynamic>> recent;
+
+  String _time(Object? value) {
+    final date = DateTime.tryParse(value as String? ?? '')?.toLocal();
+    if (date == null) return '-';
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(date.hour)}:${two(date.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(children: [
+                const Icon(Icons.fingerprint_rounded),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Kehadiran Hari Ini', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900))),
+              ]),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _AttendanceMetric(label: 'Hadir', value: '${summary['presentUsers'] ?? 0}'),
+                  _AttendanceMetric(label: 'Dalam Kawasan', value: '${summary['currentlyIn'] ?? 0}'),
+                  _AttendanceMetric(label: 'Tidak Hadir', value: '${summary['absentUsers'] ?? 0}'),
+                  _AttendanceMetric(label: 'Semak Wajah', value: '${summary['faceReviewRequired'] ?? 0}'),
+                ],
+              ),
+              if (recent.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Divider(),
+                ...recent.take(5).map((row) => ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(row['punchType'] == 'IN' ? Icons.login_rounded : Icons.logout_rounded),
+                      title: Text(row['userName'] as String? ?? 'Pengguna', style: const TextStyle(fontWeight: FontWeight.w800)),
+                      subtitle: Text('${row['department'] ?? '-'} • ${row['punchType'] == 'IN' ? 'MASUK' : 'KELUAR'} ${_time(row['punchedAt'])}'),
+                      trailing: Text(row['faceScore'] == null ? 'SEMAK' : '${(row['faceScore'] as num).round()}%', style: const TextStyle(fontWeight: FontWeight.w900)),
+                    )),
+              ],
+            ],
+          ),
+        ),
+      );
+}
+
+class _AttendanceMetric extends StatelessWidget {
+  const _AttendanceMetric({required this.label, required this.value});
+  final String label;
+  final String value;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [Text(value, style: const TextStyle(fontWeight: FontWeight.w900)), const SizedBox(width: 5), Text(label)]),
+      );
+}

@@ -1,8 +1,0 @@
-first=10000
-middle=8559
-last=16500
-overlap_first_middle=0
-error=RuntimeError: No overlap between first and middle
-Traceback (most recent call last):
-  File "<stdin>", line 18, in <module>
-RuntimeError: No overlap between first and middle

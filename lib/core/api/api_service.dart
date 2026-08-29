@@ -345,6 +345,10 @@ class DepartmentRecord {
     this.sessionStartMinutes = 420,
     required this.active,
     required this.checkpointCount,
+    this.attendanceLatitude,
+    this.attendanceLongitude,
+    this.attendanceRadiusMeters = 150,
+    this.attendanceLocationLabel = '',
   });
   final int id;
   final String name;
@@ -352,17 +356,22 @@ class DepartmentRecord {
   final int sessionStartMinutes;
   final bool active;
   final int checkpointCount;
+  final double? attendanceLatitude;
+  final double? attendanceLongitude;
+  final int attendanceRadiusMeters;
+  final String attendanceLocationLabel;
 
-  factory DepartmentRecord.fromJson(Map<String, dynamic> json) =>
-      DepartmentRecord(
+  factory DepartmentRecord.fromJson(Map<String, dynamic> json) => DepartmentRecord(
         id: (json['id'] as num).toInt(),
         name: json['name'] as String,
-        sessionIntervalMinutes:
-            (json['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,
-        sessionStartMinutes:
-            (json['sessionStartMinutes'] as num?)?.toInt() ?? 420,
+        sessionIntervalMinutes: (json['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,
+        sessionStartMinutes: (json['sessionStartMinutes'] as num?)?.toInt() ?? 420,
         active: json['active'] as bool? ?? true,
         checkpointCount: (json['checkpointCount'] as num?)?.toInt() ?? 0,
+        attendanceLatitude: (json['attendanceLatitude'] as num?)?.toDouble(),
+        attendanceLongitude: (json['attendanceLongitude'] as num?)?.toDouble(),
+        attendanceRadiusMeters: (json['attendanceRadiusMeters'] as num?)?.toInt() ?? 150,
+        attendanceLocationLabel: json['attendanceLocationLabel'] as String? ?? '',
       );
 }
 
@@ -399,26 +408,25 @@ class CommandCenterData {
     required this.patrols,
     required this.incidents,
     required this.sosEvents,
+    required this.attendanceSummary,
+    required this.attendanceRecent,
     required this.generatedAt,
   });
   final Map<String, dynamic> summary;
   final List<Map<String, dynamic>> patrols;
   final List<Map<String, dynamic>> incidents;
   final List<Map<String, dynamic>> sosEvents;
+  final Map<String, dynamic> attendanceSummary;
+  final List<Map<String, dynamic>> attendanceRecent;
   final DateTime generatedAt;
 
-  factory CommandCenterData.fromJson(Map<String, dynamic> json) =>
-      CommandCenterData(
+  factory CommandCenterData.fromJson(Map<String, dynamic> json) => CommandCenterData(
         summary: Map<String, dynamic>.from(json['summary'] as Map? ?? const {}),
-        patrols: (json['patrols'] as List<dynamic>? ?? const [])
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList(),
-        incidents: (json['incidents'] as List<dynamic>? ?? const [])
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList(),
-        sosEvents: (json['sosEvents'] as List<dynamic>? ?? const [])
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList(),
+        patrols: (json['patrols'] as List<dynamic>? ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList(),
+        incidents: (json['incidents'] as List<dynamic>? ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList(),
+        sosEvents: (json['sosEvents'] as List<dynamic>? ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList(),
+        attendanceSummary: Map<String, dynamic>.from(json['attendanceSummary'] as Map? ?? const {}),
+        attendanceRecent: (json['attendanceRecent'] as List<dynamic>? ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList(),
         generatedAt: DateTime.parse(json['generatedAt'] as String),
       );
 }
@@ -434,6 +442,96 @@ class LiveMapData {
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList(),
   );
+}
+
+
+class AttendanceRecord {
+  const AttendanceRecord({
+    required this.id,
+    required this.punchType,
+    required this.punchedAt,
+    required this.latitude,
+    required this.longitude,
+    required this.distanceMeters,
+    required this.faceStatus,
+    this.accuracyMeters,
+    this.faceScore,
+    this.faceModel,
+    this.faceReason,
+    this.userId,
+    this.userName,
+    this.departmentId,
+    this.department,
+    this.profilePicture,
+    this.selfieData,
+  });
+  final int id;
+  final String punchType;
+  final DateTime punchedAt;
+  final double latitude;
+  final double longitude;
+  final double? accuracyMeters;
+  final double distanceMeters;
+  final String faceStatus;
+  final double? faceScore;
+  final String? faceModel;
+  final String? faceReason;
+  final int? userId;
+  final String? userName;
+  final int? departmentId;
+  final String? department;
+  final String? profilePicture;
+  final String? selfieData;
+
+  factory AttendanceRecord.fromJson(Map<String, dynamic> json) => AttendanceRecord(
+        id: (json['id'] as num?)?.toInt() ?? 0,
+        punchType: json['punchType'] as String? ?? 'IN',
+        punchedAt: DateTime.parse(json['punchedAt'] as String),
+        latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
+        longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
+        accuracyMeters: (json['accuracyMeters'] as num?)?.toDouble(),
+        distanceMeters: (json['distanceMeters'] as num?)?.toDouble() ?? 0,
+        faceStatus: json['faceStatus'] as String? ?? 'review_required',
+        faceScore: (json['faceScore'] as num?)?.toDouble(),
+        faceModel: json['faceModel'] as String?,
+        faceReason: json['faceReason'] as String?,
+        userId: (json['userId'] as num?)?.toInt(),
+        userName: json['userName'] as String?,
+        departmentId: (json['departmentId'] as num?)?.toInt(),
+        department: json['department'] as String?,
+        profilePicture: json['profilePicture'] as String?,
+        selfieData: json['selfieData'] as String?,
+      );
+}
+
+class AttendanceStatus {
+  const AttendanceStatus({
+    required this.department,
+    required this.nextPunchType,
+    required this.records,
+    required this.profilePictureConfigured,
+  });
+  final DepartmentRecord department;
+  final String nextPunchType;
+  final List<AttendanceRecord> records;
+  final bool profilePictureConfigured;
+
+  factory AttendanceStatus.fromJson(Map<String, dynamic> json) => AttendanceStatus(
+        department: DepartmentRecord.fromJson(Map<String, dynamic>.from(json['department'] as Map)),
+        nextPunchType: json['nextPunchType'] as String? ?? 'IN',
+        records: (json['records'] as List<dynamic>? ?? const []).map((item) => AttendanceRecord.fromJson(Map<String, dynamic>.from(item as Map))).toList(),
+        profilePictureConfigured: json['profilePictureConfigured'] as bool? ?? false,
+      );
+}
+
+class AttendanceAdminData {
+  const AttendanceAdminData({required this.summary, required this.records});
+  final Map<String, dynamic> summary;
+  final List<AttendanceRecord> records;
+  factory AttendanceAdminData.fromJson(Map<String, dynamic> json) => AttendanceAdminData(
+        summary: Map<String, dynamic>.from(json['summary'] as Map? ?? const {}),
+        records: (json['records'] as List<dynamic>? ?? const []).map((item) => AttendanceRecord.fromJson(Map<String, dynamic>.from(item as Map))).toList(),
+      );
 }
 
 class ApiService {
@@ -852,6 +950,10 @@ class ApiService {
     required String name,
     required int sessionIntervalMinutes,
     int sessionStartMinutes = 420,
+    required double attendanceLatitude,
+    required double attendanceLongitude,
+    int attendanceRadiusMeters = 150,
+    String attendanceLocationLabel = '',
   }) async {
     final data = _decode(
       await http.post(
@@ -861,12 +963,14 @@ class ApiService {
           'name': name,
           'sessionIntervalMinutes': sessionIntervalMinutes,
           'sessionStartMinutes': sessionStartMinutes,
+          'attendanceLatitude': attendanceLatitude,
+          'attendanceLongitude': attendanceLongitude,
+          'attendanceRadiusMeters': attendanceRadiusMeters,
+          'attendanceLocationLabel': attendanceLocationLabel,
         }),
       ),
     );
-    return DepartmentRecord.fromJson(
-      Map<String, dynamic>.from(data['department'] as Map),
-    );
+    return DepartmentRecord.fromJson(Map<String, dynamic>.from(data['department'] as Map));
   }
 
   Future<DepartmentRecord> updateDepartment(DepartmentRecord department) async {
@@ -879,12 +983,14 @@ class ApiService {
           'sessionIntervalMinutes': department.sessionIntervalMinutes,
           'sessionStartMinutes': department.sessionStartMinutes,
           'active': department.active,
+          'attendanceLatitude': department.attendanceLatitude,
+          'attendanceLongitude': department.attendanceLongitude,
+          'attendanceRadiusMeters': department.attendanceRadiusMeters,
+          'attendanceLocationLabel': department.attendanceLocationLabel,
         }),
       ),
     );
-    return DepartmentRecord.fromJson(
-      Map<String, dynamic>.from(data['department'] as Map),
-    );
+    return DepartmentRecord.fromJson(Map<String, dynamic>.from(data['department'] as Map));
   }
 
   Future<List<CheckpointRecord>> getAdminCheckpoints(int departmentId) async {
@@ -981,6 +1087,45 @@ class ApiService {
     );
     return AppUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
   }
+
+
+  Future<AttendanceStatus> getAttendanceStatus() async => AttendanceStatus.fromJson(
+        _decode(await http.get(_uri('/api/attendance/status'), headers: _headers())),
+      );
+
+  Future<AttendanceRecord> punchAttendance({
+    required double latitude,
+    required double longitude,
+    required double accuracy,
+    required String selfieData,
+  }) async {
+    final data = _decode(
+      await http.post(
+        _uri('/api/attendance/punch'),
+        headers: _headers(jsonBody: true),
+        body: jsonEncode({
+          'latitude': latitude,
+          'longitude': longitude,
+          'accuracy': accuracy,
+          'selfie': selfieData,
+        }),
+      ),
+    );
+    return AttendanceRecord.fromJson(Map<String, dynamic>.from(data['record'] as Map));
+  }
+
+  Future<AttendanceAdminData> getAdminAttendance(DateTime date, {int? departmentId}) async =>
+      AttendanceAdminData.fromJson(
+        _decode(
+          await http.get(
+            _uri('/api/admin/attendance', {
+              'date': _dateKey(date),
+              if (departmentId != null) 'departmentId': departmentId.toString(),
+            }),
+            headers: _headers(),
+          ),
+        ),
+      );
 
   String _dateKey(DateTime value) {
     final local = value.toLocal();
