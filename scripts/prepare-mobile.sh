@@ -26,3 +26,4 @@ perl -0pi -e \
 
 cd "$MOBILE_BUILD_DIR"
 flutter pub get
+dart run flutter_launcher_icons

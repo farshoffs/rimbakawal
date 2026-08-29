@@ -229,33 +229,13 @@ class _TemporaryLogo extends StatelessWidget {
   const _TemporaryLogo();
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 104,
-      height: 104,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [_rimbaRed, _rimbaBlue]),
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF0E0E16),
-          borderRadius: BorderRadius.circular(27),
-        ),
-        child: const Stack(
-          alignment: Alignment.center,
-          children: [
-            Icon(Icons.shield_outlined, color: Colors.white, size: 64),
-            Padding(
-              padding: EdgeInsets.only(top: 4),
-              child: Icon(Icons.forest, color: Color(0xFFB8AEFF), size: 30),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Image.asset(
+    'assets/branding/rimbakawal_icon.png',
+    width: 104,
+    height: 104,
+    filterQuality: FilterQuality.high,
+    semanticLabel: 'Logo RimbaKawal',
+  );
 }
 
 class _GradientButton extends StatelessWidget {
