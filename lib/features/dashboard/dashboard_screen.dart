@@ -50,6 +50,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   Timer? _configTimer;
   String? _lastSessionKey;
   bool _alarmShowing = false;
+  bool _forcingRelogin = false;
 
   @override
   void initState() {
@@ -124,7 +125,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   String _sessionKey(DateTime value) {
-    final local = value.toLocal();
+    final local = value.toUtc().add(const Duration(hours: 8));
     final interval = _sessionIntervalMinutes.clamp(15, 1440);
     final startMinutes = _sessionStartMinutes.clamp(0, 1439);
     final minuteOfDay = local.hour * 60 + local.minute;
@@ -138,7 +139,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _checkSessionBoundary() {
-    if (_user.isManagement) return;
     final current = _sessionKey(DateTime.now());
     if (_lastSessionKey == null) {
       _lastSessionKey = current;
@@ -146,7 +146,32 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
     if (current == _lastSessionKey) return;
     _lastSessionKey = current;
-    unawaited(_showSessionAlarm());
+    unawaited(_forceReloginForNewSession());
+  }
+
+  Future<void> _forceReloginForNewSession() async {
+    if (_forcingRelogin || !mounted) return;
+    _forcingRelogin = true;
+    try {
+      await _alarmPlayer.stop();
+      try {
+        await NotificationService.instance.unregisterCurrentDevice();
+      } catch (_) {}
+      await widget.api.logout();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(
+          builder: (_) => LoginScreen(
+            nfcService: widget.nfcService,
+            mockMode: widget.mockMode,
+            notice: 'Sesi Rondaan baharu telah bermula. Sila log masuk semula untuk meneruskan.',
+          ),
+        ),
+        (_) => false,
+      );
+    } finally {
+      _forcingRelogin = false;
+    }
   }
 
   Future<void> _playAlarm() async {

@@ -13,11 +13,13 @@ class LoginScreen extends StatefulWidget {
   const LoginScreen({
     required this.nfcService,
     required this.mockMode,
+    this.notice,
     super.key,
   });
 
   final NfcService nfcService;
   final bool mockMode;
+  final String? notice;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -141,6 +143,27 @@ class _LoginScreenState extends State<LoginScreen> {
                                 'Masukkan No. Kad Pengenalan yang berdaftar.',
                                 style: TextStyle(color: Color(0xFFAAA8B8), height: 1.45),
                               ),
+                              if (widget.notice != null && widget.notice!.isNotEmpty) ...[
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF4834D4).withValues(alpha: 0.16),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: const Color(0xFF6C5CE7).withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    widget.notice!,
+                                    style: const TextStyle(
+                                      color: Color(0xFFD6D0FF),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
                               const SizedBox(height: 24),
                               TextFormField(
                                 controller: _identityCardController,

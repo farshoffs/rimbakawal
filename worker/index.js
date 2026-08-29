@@ -59,6 +59,11 @@ export default {
         return updateCheckpoint(request, env, Number(match[1]));
       }
 
+      match = url.pathname.match(/^\/api\/admin\/users\/(\d+)$/);
+      if (match && request.method === 'PUT') {
+        return updateAdminUser(request, env, Number(match[1]));
+      }
+
       match = url.pathname.match(/^\/api\/admin\/users\/(\d+)\/department$/);
       if (match && request.method === 'PUT') {
         return updateUserDepartment(request, env, Number(match[1]));
@@ -90,7 +95,7 @@ async function login(request, env) {
     return json({ error: 'Pengguna tidak berdaftar.' }, 401);
   }
 
-  const token = randomToken();
+  const token = `${Date.now().toString(36)}.${randomToken()}`;
   const tokenHash = await sha256(token);
   const expiresAtMs = Date.now() + SESSION_TTL_MS;
 
@@ -492,6 +497,57 @@ async function updateCheckpoint(request, env, checkpointId) {
   return json({ checkpoint: checkpointJson(checkpoint) });
 }
 
+async function updateAdminUser(request, env, userId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+
+  const body = await readJson(request);
+  const nama = String(body.nama ?? '').trim().toUpperCase();
+  const jawatan = String(body.jawatan ?? '').trim();
+  const departmentId = Number(body.departmentId);
+
+  if (nama.length < 3) return json({ error: 'Nama pengguna tidak sah.' }, 400);
+  if (!['Patrol', 'Supervisor', 'Management'].includes(jawatan)) {
+    return json({ error: 'Jawatan pengguna tidak sah.' }, 400);
+  }
+  if (!Number.isInteger(departmentId) || departmentId <= 0) {
+    return json({ error: 'Pilih Jabatan pengguna.' }, 400);
+  }
+
+  const department = await env.DB.prepare(
+    'SELECT id, name, active FROM departments WHERE id = ? LIMIT 1',
+  ).bind(departmentId).first();
+  if (!department || Number(department.active) !== 1) {
+    return json({ error: 'Jabatan aktif tidak ditemui.' }, 404);
+  }
+
+  const user = await getUserById(env, userId);
+  if (!user) return json({ error: 'Pengguna tidak ditemui.' }, 404);
+
+  let profilePicture = user.profile_picture || null;
+  if (body.clearProfilePicture === true) {
+    profilePicture = null;
+  } else if (Object.prototype.hasOwnProperty.call(body, 'profilePicture')) {
+    const picture = String(body.profilePicture ?? '');
+    if (!/^data:image\/(jpeg|png|webp);base64,/i.test(picture)) {
+      return json({ error: 'Format gambar mesti JPEG, PNG atau WebP.' }, 400);
+    }
+    if (picture.length > 700000) {
+      return json({ error: 'Gambar terlalu besar. Had selepas pemampatan ialah kira-kira 500 KB.' }, 413);
+    }
+    profilePicture = picture;
+  }
+
+  await env.DB.prepare(
+    `UPDATE users
+     SET nama = ?, jawatan = ?, department_id = ?, jabatan = ?, profile_picture = ?
+     WHERE id = ?`,
+  ).bind(nama, jawatan, departmentId, department.name, profilePicture, userId).run();
+
+  const updated = await getUserById(env, userId);
+  return json({ user: publicUser(updated) });
+}
+
 async function updateUserDepartment(request, env, userId) {
   const auth = await requireManagement(request, env);
   if (auth.response) return auth.response;
@@ -529,16 +585,38 @@ async function requireUser(request, env) {
   }
 
   const tokenHash = await sha256(token);
-  const user = await env.DB.prepare(
-    `${userSelect()}
-     JOIN sessions s ON s.user_id = u.id
-     WHERE s.token_hash = ? AND s.expires_at_ms > ? AND u.active = 1
+  const session = await env.DB.prepare(
+    `SELECT user_id, expires_at_ms, created_at
+     FROM sessions
+     WHERE token_hash = ? AND expires_at_ms > ?
      LIMIT 1`,
   ).bind(tokenHash, Date.now()).first();
 
-  if (!user) {
+  if (!session) {
     return { response: json({ error: 'Sesi telah tamat. Sila log masuk semula.' }, 401) };
   }
+
+  const user = await getUserById(env, session.user_id);
+  if (!user || Number(user.active) !== 1) {
+    await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(tokenHash).run();
+    return { response: json({ error: 'Pengguna tidak aktif. Sila log masuk semula.' }, 401) };
+  }
+
+  const interval = Math.max(15, Math.min(1440, Number(user.session_interval_minutes || 120)));
+  const window = sessionWindow(new Date(), interval, user.session_start_minutes);
+  const rawCreatedAt = String(session.created_at || '').trim().replace(' ', 'T');
+  const createdAtMs = Date.parse(rawCreatedAt.endsWith('Z') ? rawCreatedAt : `${rawCreatedAt}Z`);
+
+  if (!Number.isFinite(createdAtMs) || createdAtMs < window.startMs) {
+    await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(tokenHash).run();
+    return {
+      response: json(
+        { error: 'Sesi Rondaan baharu telah bermula. Sila log masuk semula.' },
+        401,
+      ),
+    };
+  }
+
   return { user };
 }
 

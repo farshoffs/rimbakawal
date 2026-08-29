@@ -366,9 +366,19 @@ class ApiService {
   }
 
   Future<AppUser?> getSession() async {
-    if (_sessionToken == null) {
-      return _offline.cachedUser();
+    if (_sessionToken == null || _sessionToken!.isEmpty) {
+      await _offline.clearCachedUser();
+      return null;
     }
+
+    final cached = _offline.cachedUser();
+    if (cached != null && !_tokenBelongsToCurrentSession(cached)) {
+      _sessionToken = null;
+      await _vault.clearToken();
+      await _offline.clearCachedUser();
+      return null;
+    }
+
     try {
       final response = await http.get(
         _uri('/api/auth/session'),
@@ -383,10 +393,19 @@ class ApiService {
       final user = AppUser.fromJson(
         Map<String, dynamic>.from(_decode(response)['user'] as Map),
       );
+      if (!_tokenBelongsToCurrentSession(user)) {
+        _sessionToken = null;
+        await _vault.clearToken();
+        await _offline.clearCachedUser();
+        return null;
+      }
       await _offline.cacheUser(user);
       return user;
     } catch (_) {
-      return _offline.cachedUser();
+      if (cached != null && _tokenBelongsToCurrentSession(cached)) {
+        return cached;
+      }
+      return null;
     }
   }
 
@@ -813,6 +832,31 @@ class ApiService {
     );
   }
 
+  Future<AppUser> updateAdminUser({
+    required int userId,
+    required String nama,
+    required String jawatan,
+    required int departmentId,
+    String? profilePicture,
+    bool clearProfilePicture = false,
+  }) async {
+    final body = <String, dynamic>{
+      'nama': nama,
+      'jawatan': jawatan,
+      'departmentId': departmentId,
+    };
+    if (profilePicture != null) body['profilePicture'] = profilePicture;
+    if (clearProfilePicture) body['clearProfilePicture'] = true;
+    final data = _decode(
+      await http.put(
+        _uri('/api/admin/users/$userId'),
+        headers: _headers(jsonBody: true),
+        body: jsonEncode(body),
+      ),
+    );
+    return AppUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
+  }
+
   Future<AppUser> updateUserDepartment(int userId, int departmentId) async {
     final data = _decode(
       await http.put(
@@ -830,6 +874,43 @@ class ApiService {
     final local = value.toLocal();
     String two(int v) => v.toString().padLeft(2, '0');
     return '${local.year}-${two(local.month)}-${two(local.day)}';
+  }
+
+  bool _tokenBelongsToCurrentSession(AppUser user) {
+    final token = _sessionToken;
+    if (token == null || token.isEmpty) return false;
+    final separator = token.indexOf('.');
+    if (separator <= 0) return false;
+    final encodedTime = token.substring(0, separator);
+    final issuedAtMs = int.tryParse(encodedTime, radix: 36);
+    if (issuedAtMs == null || issuedAtMs <= 0) return false;
+    final sessionStart = _currentSessionStartUtc(user);
+    return !DateTime.fromMillisecondsSinceEpoch(
+      issuedAtMs,
+      isUtc: true,
+    ).isBefore(sessionStart);
+  }
+
+  DateTime _currentSessionStartUtc(AppUser user) {
+    final malaysiaNow = DateTime.now().toUtc().add(const Duration(hours: 8));
+    final interval = user.sessionIntervalMinutes.clamp(15, 1440);
+    final startMinutes = user.sessionStartMinutes.clamp(0, 1439);
+    final minuteOfDay = malaysiaNow.hour * 60 + malaysiaNow.minute;
+    var scheduleDay = DateTime.utc(
+      malaysiaNow.year,
+      malaysiaNow.month,
+      malaysiaNow.day,
+    );
+    if (minuteOfDay < startMinutes) {
+      scheduleDay = scheduleDay.subtract(const Duration(days: 1));
+    }
+    final anchor = scheduleDay.add(Duration(minutes: startMinutes));
+    final elapsedMinutes = malaysiaNow.difference(anchor).inMinutes;
+    final sessionIndex = elapsedMinutes ~/ interval;
+    final malaysiaSessionStart = anchor.add(
+      Duration(minutes: sessionIndex * interval),
+    );
+    return malaysiaSessionStart.subtract(const Duration(hours: 8));
   }
 
   Map<String, dynamic> _decode(http.Response response) {
