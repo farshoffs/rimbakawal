@@ -30,7 +30,9 @@ jobs:
           cache: true
 
       - name: Apply push notification source upgrade
-        run: python3 scripts/apply_push_notifications_upgrade.py
+        run: |
+          python3 scripts/apply_push_notifications_upgrade.py
+          python3 scripts/fix_push_notification_lints.py
 
       - name: Resolve Flutter dependencies
         run: flutter pub get
