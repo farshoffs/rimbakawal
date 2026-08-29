@@ -146,9 +146,9 @@ jobs:
             await adminScreen('10-pusat-pemantauan-admin', 220, 3400);
             await adminScreen('11-sejarah-kehadiran', 318, 2800);
             await adminScreen('12-pengurusan-sos', 416, 2400);
-            await adminScreen('13-senarai-pengguna', 514, 2400);
-            await adminScreen('14-jabatan-checkpoint', 612, 3000);
-            await adminScreen('15-laporan', 710, 2400);
+            await adminScreen('13-senarai-pengguna', 568, 2400);
+            await adminScreen('14-jabatan-checkpoint', 675, 3000);
+            await adminScreen('15-laporan', 786, 2400);
           } finally {
             await browser.close();
           }
