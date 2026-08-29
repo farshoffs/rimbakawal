@@ -1,0 +1,73 @@
+name: Apply Push Notifications
+
+on:
+  push:
+    branches:
+      - feature/push-notifications
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rimbakawal-push-validation
+  cancel-in-progress: true
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Rebuild and verify payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/rkx_*.txt | base64 -d > /tmp/rk_push_stage.tar.xz
+          echo "6350c884b1a3d5f0f11b19bccb02514b6e71b8efe139acc40b57dc4f5459da7c  /tmp/rk_push_stage.tar.xz" | sha256sum -c -
+          mkdir -p /tmp/rk_push_stage
+          tar -xJf /tmp/rk_push_stage.tar.xz -C /tmp/rk_push_stage
+          cp -R /tmp/rk_push_stage/. .
+          rm -f .github/rkx_*.txt .github/rk_push_stage.b64 .github/rk_push_payload.part*
+          chmod +x scripts/prepare-mobile.sh
+
+      - name: Validate Worker syntax
+        run: |
+          node --check worker/push.js
+          node --check worker/push_auth.js
+          node --check worker/push_delivery.js
+          node --check worker/push_scheduled.js
+          node --check worker/sos.js
+          node --check worker/offline.js
+          node --check worker/app.js
+          node --check worker/index.js
+          node --check web/firebase-messaging-sw.js
+
+      - name: Validate Flutter
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter build web --release --dart-define=USE_MOCK_NFC=true
+
+      - name: Commit validated implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "RimbaKawal Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No implementation changes to commit."
+            exit 0
+          fi
+          git commit -m "Add cross-platform push notifications"
+          git push origin HEAD:feature/push-notifications
