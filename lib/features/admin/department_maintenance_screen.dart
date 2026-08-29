@@ -335,12 +335,44 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                 decoration: const InputDecoration(labelText: 'Tempoh satu sesi (minit)', helperText: 'Nilai asal: 120 minit (2 jam)', prefixIcon: Icon(Icons.timer_outlined)),
               ),
               const SizedBox(height: 14),
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                leading: const Icon(Icons.schedule_rounded),
-                title: const Text('Jam mula rondaan'),
-                subtitle: Text('Sesi 1 bermula pada ${_startTime.format(context)}'),
-                trailing: FilledButton.tonal(onPressed: _pickStartTime, child: Text(_startTime.format(context))),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final timeButton = FilledButton.tonalIcon(
+                    onPressed: _pickStartTime,
+                    icon: const Icon(Icons.schedule_rounded),
+                    label: Text(_startTime.format(context)),
+                  );
+                  final details = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Jam mula rondaan',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 3),
+                      Text('Sesi 1 bermula pada ${_startTime.format(context)}'),
+                    ],
+                  );
+                  if (constraints.maxWidth < 430) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        details,
+                        const SizedBox(height: 10),
+                        timeButton,
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      const Icon(Icons.schedule_rounded),
+                      const SizedBox(width: 12),
+                      Expanded(child: details),
+                      const SizedBox(width: 12),
+                      timeButton,
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 16),
               Text('Kawasan Kehadiran', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),

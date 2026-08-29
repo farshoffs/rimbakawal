@@ -91,6 +91,47 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
+  Future<void> _deletePatrolRun(HistoryPatrolRun run) async {
+    if (!widget.user.isManagement) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Padam sesi rondaan?'),
+        content: Text(
+          'Sesi Rondaan ${run.sessionIndex + 1} oleh ${run.userName} akan dipadam bersama trail lokasi dan rekod checkpoint dalam sesi ini.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            child: const Text('Padam Sesi'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.deletePatrolSession(run.clientSessionId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sesi rondaan telah dipadam.')),
+      );
+      _load(_selectedDate);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final today = DateTime.now();
@@ -233,8 +274,12 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                         )
                       else
                         ...history.patrolRuns.map(
-                          (run) =>
-                              _PatrolRunCard(run: run, formatTime: _formatTime),
+                          (run) => _PatrolRunCard(
+                            run: run,
+                            formatTime: _formatTime,
+                            canDelete: widget.user.isManagement,
+                            onDelete: () => _deletePatrolRun(run),
+                          ),
                         ),
                     ],
                   );
@@ -249,10 +294,12 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
 }
 
 class _PatrolRunCard extends StatelessWidget {
-  const _PatrolRunCard({required this.run, required this.formatTime});
+  const _PatrolRunCard({required this.run, required this.formatTime, required this.canDelete, required this.onDelete});
 
   final HistoryPatrolRun run;
   final String Function(DateTime) formatTime;
+  final bool canDelete;
+  final VoidCallback onDelete;
 
   ImageProvider<Object>? _imageProvider(String? picture) {
     if (picture == null || picture.isEmpty) return null;
@@ -418,23 +465,49 @@ class _PatrolRunCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: TextStyle(
-                      color: statusColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        statusLabel,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
                     ),
-                  ),
+                    if (canDelete) ...[
+                      const SizedBox(width: 4),
+                      PopupMenuButton<String>(
+                        tooltip: 'Pilihan sesi',
+                        onSelected: (value) {
+                          if (value == 'delete') onDelete();
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem<String>(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete_outline_rounded),
+                                SizedBox(width: 8),
+                                Text('Padam Sesi Rondaan'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),

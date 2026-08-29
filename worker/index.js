@@ -69,6 +69,11 @@ export default {
         return updateUserDepartment(request, env, Number(match[1]));
       }
 
+      match = url.pathname.match(/^\/api\/admin\/patrol-sessions\/(.+)$/);
+      if (match && request.method === 'DELETE') {
+        return deletePatrolSession(request, env, decodeURIComponent(match[1]));
+      }
+
       return json({ error: 'Not found' }, 404);
     } catch (error) {
       console.error(error);
@@ -175,6 +180,34 @@ async function updateProfilePicture(request, env) {
 
   const updated = await getUserById(env, auth.user.id);
   return json({ user: publicUser(updated) });
+}
+
+async function deletePatrolSession(request, env, clientSessionId) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth.response;
+  const role = String(auth.user.jawatan || '').trim().toLowerCase();
+  if (role !== 'management') {
+    return json({ error: 'Hanya Pengurusan boleh memadam sesi rondaan.' }, 403);
+  }
+
+  const sessionId = String(clientSessionId || '').trim();
+  if (!sessionId || sessionId.length > 220) {
+    return json({ error: 'Sesi rondaan tidak sah.' }, 400);
+  }
+
+  const existing = await env.DB.prepare(
+    `SELECT id FROM patrol_session_history WHERE client_session_id = ? LIMIT 1`,
+  ).bind(sessionId).first();
+  if (!existing) return json({ error: 'Sesi rondaan tidak ditemui.' }, 404);
+
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM live_patrol_trail WHERE client_session_id = ?').bind(sessionId),
+    env.DB.prepare('DELETE FROM live_patrol_presence WHERE client_session_id = ?').bind(sessionId),
+    env.DB.prepare('DELETE FROM nfc_scans WHERE client_session_id = ?').bind(sessionId),
+    env.DB.prepare('DELETE FROM patrol_activity_log WHERE client_session_id = ?').bind(sessionId),
+    env.DB.prepare('DELETE FROM patrol_session_history WHERE client_session_id = ?').bind(sessionId),
+  ]);
+  return json({ ok: true });
 }
 
 async function getScans(request, env, url) {

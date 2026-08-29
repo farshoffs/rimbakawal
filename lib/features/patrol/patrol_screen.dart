@@ -867,7 +867,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            FloatingActionButton.small(
+            FloatingActionButton(
               heroTag: 'torch-fab',
               tooltip: _torchOn ? 'Tutup lampu suluh' : 'Buka lampu suluh',
               onPressed: _torchChanging || _ending ? null : _toggleTorch,

@@ -851,6 +851,15 @@ class ApiService {
     );
   }
 
+  Future<void> deletePatrolSession(String clientSessionId) async {
+    _decode(
+      await http.delete(
+        _uri('/api/admin/patrol-sessions/${Uri.encodeComponent(clientSessionId)}'),
+        headers: _headers(),
+      ),
+    );
+  }
+
   Future<HistoryDay> getHistory(DateTime date, {int? departmentId}) async =>
       HistoryDay.fromJson(
         _decode(

@@ -664,7 +664,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     _MenuData(
                       icon: Icons.fingerprint_rounded,
                       title: 'Kehadiran',
-                      subtitle: 'Punch lokasi + pengesahan wajah',
+                      subtitle: 'Rekod masuk/keluar dengan lokasi dan selfie',
                       onTap: () => _open(AttendanceScreen(api: widget.api, user: _user)),
                     ),
                     _MenuData(
