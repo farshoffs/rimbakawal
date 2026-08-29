@@ -1,273 +1,167 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
+patrol_path = root / 'lib/features/patrol/patrol_screen.dart'
+pubspec_path = root / 'pubspec.yaml'
 
 
-def replace_values(path: Path, values: dict[str, str]) -> None:
+def replace_required(text: str, old: str, new: str, label: str) -> str:
+    if old in text:
+        return text.replace(old, new)
+    if new in text:
+        return text
+    raise SystemExit(f'Padanan tidak ditemui untuk {label}')
+
+
+source_files = list((root / 'lib').rglob('*.dart')) + list((root / 'worker').rglob('*.js'))
+phrase_replacements = [
+    ('TITIK PEMERIKSAAN', 'CHECKPOINT'),
+    ('Titik Pemeriksaan', 'Checkpoint'),
+    ('Titik pemeriksaan', 'Checkpoint'),
+    ('titik pemeriksaan', 'checkpoint'),
+    ('SIMULASI IMBASAN', 'IMBAS CHECKPOINT'),
+    ('Simulasi Imbasan', 'Imbas Checkpoint'),
+]
+
+for path in source_files:
     text = path.read_text(encoding='utf-8')
-    changed = False
-    for old, new in values.items():
-        if old in text:
-            text = text.replace(old, new)
-            changed = True
-        elif new not in text:
-            raise SystemExit(
-                f'Frasa sasaran atau penggantinya tidak ditemui dalam '
-                f'{path.relative_to(root)}: {old}'
-            )
-    if changed:
+    original = text
+    for old, new in phrase_replacements:
+        text = text.replace(old, new)
+    if text != original:
         path.write_text(text, encoding='utf-8')
-        print(f'Dikemas kini: {path.relative_to(root)}')
-    else:
-        print(f'Sudah dikemas kini: {path.relative_to(root)}')
+        print(f'Istilah dikemas kini: {path.relative_to(root)}')
 
 
-app_user = root / 'lib/core/api/app_user.dart'
-text = app_user.read_text(encoding='utf-8')
-if 'String get jawatanPaparan =>' not in text:
-    marker = "  bool get canMonitor => isManagement || isSupervisor;\n"
-    if marker not in text:
-        raise SystemExit('Lokasi getter jawatanPaparan tidak ditemui.')
-    text = text.replace(
-        marker,
-        marker + "  String get jawatanPaparan => labelJawatan(jawatan);\n",
-    )
-if 'String labelJawatan(String? value)' not in text:
-    text = text.rstrip() + """
+text = patrol_path.read_text(encoding='utf-8')
+text = replace_required(
+    text,
+    "import 'package:image_picker/image_picker.dart';\n",
+    "import 'package:image_picker/image_picker.dart';\nimport 'package:wakelock_plus/wakelock_plus.dart';\n",
+    'import wakelock_plus',
+)
+text = replace_required(
+    text,
+    'class _PatrolScreenState extends State<PatrolScreen>\n    with SingleTickerProviderStateMixin {',
+    'class _PatrolScreenState extends State<PatrolScreen> {',
+    'buang SingleTickerProviderStateMixin',
+)
+text = text.replace('  late final AnimationController _pulseController;\n', '')
+text = replace_required(
+    text,
+    "    _pulseController = AnimationController(\n      vsync: this,\n      duration: const Duration(milliseconds: 2100),\n    )..repeat();\n",
+    '    unawaited(WakelockPlus.enable());\n',
+    'aktifkan skrin kekal menyala',
+)
+text = replace_required(
+    text,
+    '    _pulseController.dispose();\n',
+    '    unawaited(WakelockPlus.disable());\n',
+    'matikan wakelock ketika keluar skrin',
+)
+text = text.replace('                animation: _pulseController,\n', '')
+text = text.replace('    required this.animation,\n', '')
+text = text.replace('  final Animation<double> animation;\n', '')
 
-String labelJawatan(String? value) {
-  final raw = (value ?? '').trim();
-  return switch (raw.toLowerCase()) {
-    'management' => 'Pengurusan',
-    'supervisor' => 'Penyelia',
-    'patrol' => 'Pengawal Rondaan',
-    _ => raw.isEmpty ? '-' : raw,
-  };
-}
+animated_avatar = """              AnimatedBuilder(
+                animation: animation,
+                builder: (context, child) => Container(
+                  padding: EdgeInsets.all(5 + animation.value * 3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFF6C5CE7)
+                          .withValues(alpha: 1 - animation.value * 0.65),
+                      width: 2,
+                    ),
+                  ),
+                  child: child,
+                ),
+                child: CircleAvatar(
+                  radius: 30,
+                  backgroundImage: image,
+                  child: image == null
+                      ? Text(
+                          user.nama.isEmpty ? '?' : user.nama[0],
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
 """
-app_user.write_text(text, encoding='utf-8')
-print('Disahkan: label jawatan rasmi')
-
-
-replacements = {
-    root / 'lib/features/profile/profile_screen.dart': {
-        "AppBar(title: const Text('Profile'))": "AppBar(title: const Text('Profil'))",
-        "tooltip: 'Upload gambar profil'": "tooltip: 'Muat naik gambar profil'",
-        "value: _user.jawatan)": "value: _user.jawatanPaparan)",
-    },
-    root / 'lib/features/dashboard/dashboard_screen.dart': {
-        "Text('${_user.jawatan} • ${_user.jabatan}')":
-            "Text('${_user.jawatanPaparan} • ${_user.jabatan}')",
-        "subtitle: _user.jawatan,": "subtitle: _user.jawatanPaparan,",
-    },
-    root / 'lib/features/admin/user_maintenance_screen.dart': {
-        "'${user.noKadPengenalan}\\n${user.jawatan} • ${user.jabatan}'":
-            "'${user.noKadPengenalan}\\n${user.jawatanPaparan} • ${user.jabatan}'",
-        "'Lengkapkan nama, IC 12 digit dan Jabatan.'":
-            "'Lengkapkan nama, No. Kad Pengenalan 12 digit dan Jabatan.'",
-        "DropdownMenuItem(value: 'Patrol', child: Text('Patrol'))":
-            "DropdownMenuItem(value: 'Patrol', child: Text('Pengawal Rondaan'))",
-        "child: Text('Supervisor'),": "child: Text('Penyelia'),",
-        "child: Text('Management'),": "child: Text('Pengurusan'),",
-    },
-    root / 'lib/features/admin/department_maintenance_screen.dart': {
-        "'${department.checkpointCount} checkpoint aktif'":
-            "'${department.checkpointCount} titik pemeriksaan aktif'",
-        "Text('Belum ada checkpoint NFC.')": "Text('Belum ada titik pemeriksaan.')",
-        "label: const Text('Tambah Checkpoint')":
-            "label: const Text('Tambah Titik Pemeriksaan')",
-        "helperText: 'Default: 120 minit (2 jam)'":
-            "helperText: 'Nilai asal: 120 minit (2 jam)'",
-        "'Lengkapkan nama, UID NFC dan susunan checkpoint.'":
-            "'Lengkapkan nama, UID tag NFC dan susunan titik pemeriksaan.'",
-        "widget.checkpoint == null ? 'Tambah Checkpoint' : 'Edit Checkpoint'":
-            "widget.checkpoint == null ? 'Tambah Titik Pemeriksaan' : 'Edit Titik Pemeriksaan'",
-        "labelText: 'Nama checkpoint'": "labelText: 'Nama titik pemeriksaan'",
-        "hintText: 'Contoh: Checkpoint 1'": "hintText: 'Contoh: Pintu Utama'",
-        "labelText: 'NFC UID'": "labelText: 'UID tag NFC'",
-        "hintText: 'Scan atau masukkan UID'": "hintText: 'Imbas tag atau masukkan UID'",
-        "label: Text(_scanning ? 'Scan…' : 'Scan')":
-            "label: Text(_scanning ? 'Mengimbas…' : 'Imbas')",
-        "'Web menggunakan Mock NFC untuk ujian setup.'":
-            "'Versi web menggunakan simulasi NFC untuk ujian konfigurasi.'",
-        "labelText: 'Susunan checkpoint'": "labelText: 'Susunan titik pemeriksaan'",
-        "title: const Text('Checkpoint aktif')":
-            "title: const Text('Titik pemeriksaan aktif')",
-    },
-    root / 'lib/features/admin/report_screen.dart': {
-        "'Jumlah scan'": "'Jumlah imbasan'",
-        "'Rekod Checkpoint'": "'Rekod Titik Pemeriksaan'",
-        "'Tiada rekod scan dalam tempoh ini.'":
-            "'Tiada rekod imbasan dalam tempoh ini.'",
-        "'Dijana oleh RimbaKawal. Masa rekod checkpoint datang daripada server.'":
-            "'Dijana oleh RimbaKawal. Masa rekod titik pemeriksaan diperoleh daripada pelayan.'",
-        "'Pilih Jabatan dan julat sehingga 31 hari. PDF merangkumi rekod checkpoint dan event SOS.'":
-            "'Pilih Jabatan dan julat sehingga 31 hari. PDF merangkumi rekod titik pemeriksaan dan kejadian SOS.'",
-    },
-    root / 'lib/features/admin/command_center_screen.dart': {
-        "Text('Insiden ditukar kepada ${status.toUpperCase()}.')":
-            "Text('Status insiden ditukar kepada ${_incidentStatusLabel(status)}.')",
-        "label: 'ALERT'": "label: 'AMARAN'",
-        "label: 'INCIDENT'": "label: 'INSIDEN'",
-        "label: 'URGENT'": "label: 'SEGERA'",
-        "label: 'SOS 24H'": "label: 'SOS 24 JAM'",
-        "'$scanned/$expected checkpoint • last scan $time${missed > 0 ? ' • $missed missed' : ''}'":
-            "'$scanned/$expected titik pemeriksaan • imbasan terakhir $time${missed > 0 ? ' • $missed sesi terlepas' : ''}'",
-        "'${incident['category'] ?? 'Incident'} • ${severity.toUpperCase()}'":
-            "'${incident['category'] ?? 'Insiden'} • ${_incidentSeverityLabel(severity)}'",
-        "'${incident['nama'] ?? '-'} • ${incident['jabatan'] ?? '-'} • ${incident['checkpoint_name'] ?? 'Tanpa checkpoint'}'":
-            "'${incident['nama'] ?? '-'} • ${incident['jabatan'] ?? '-'} • ${incident['checkpoint_name'] ?? 'Tanpa titik pemeriksaan'}'",
-        "status.toUpperCase(),": "_incidentStatusLabel(status),",
-        "label: const Text('Acknowledge')": "label: const Text('Ambil Maklum')",
-        "label: const Text('Resolve')": "label: const Text('Selesaikan')",
-    },
-    root / 'lib/features/admin/live_patrol_map_screen.dart': {
-        "'live' => 'LIVE',": "'live' => 'LANGSUNG',",
-        "'delayed' => 'DELAYED',": "'delayed' => 'TERTUNDA',",
-        "'stale' => 'STALE',": "'stale' => 'TIDAK TERKINI',",
-        "_ => 'WAITING GPS',": "_ => 'MENUNGGU LOKASI',",
-        "text: 'GPS ${_time(patrol['locationAt'])}'":
-            "text: 'Lokasi ${_time(patrol['locationAt'])}'",
-        "text: '${_trail(patrol).length} titik trail'":
-            "text: '${_trail(patrol).length} titik laluan'",
-        "'Rondaan telah bermula tetapi telefon belum menghantar koordinat GPS. Semak permission lokasi pada telefon guard.'":
-            "'Rondaan telah bermula tetapi telefon belum menghantar koordinat lokasi. Semak kebenaran lokasi pada telefon pengawal.'",
-        "title: const Text('Live Patrol Map')": "title: const Text('Peta Rondaan Langsung')",
-        "tooltip: 'Fit semua guard'": "tooltip: 'Papar semua pengawal'",
-        "'OpenStreetMap contributors'": "'Penyumbang OpenStreetMap'",
-        "'$total rondaan aktif • $located ada GPS'":
-            "'$total rondaan aktif • $located mempunyai lokasi'",
-        "'Refresh 5s${generatedAt == null ? '' : ' • ${_headerTime(generatedAt!)}'}'":
-            "'Kemas kini setiap 5 saat${generatedAt == null ? '' : ' • ${_headerTime(generatedAt!)}'}'",
-        "? 'GPS ${patrol['locationAgeSeconds'] ?? 0}s ago'":
-            "? 'Lokasi ${patrol['locationAgeSeconds'] ?? 0} saat lalu'",
-        ": 'Sesi aktif • menunggu GPS'": ": 'Sesi aktif • menunggu lokasi'",
-    },
-    root / 'lib/features/admin/sos_management_screen.dart': {
-        "import 'package:flutter/material.dart';\n":
-            "import 'package:flutter/material.dart';\n\nimport '../../core/api/app_user.dart';\n",
-        "'$active SOS ACTIVE'": "'$active SOS AKTIF'",
-        "label: Text(isActive ? 'ACTIVE' : 'SELESAI')":
-            "label: Text(isActive ? 'AKTIF' : 'SELESAI')",
-        "'${event['jawatan'] ?? '-'} • ${event['jabatan'] ?? '-'}'":
-            "'${labelJawatan(event['jawatan'] as String?)} • ${event['jabatan'] ?? '-'}'",
-    },
-    root / 'lib/features/sos/sos_alert_gate.dart': {
-        "'ALERT SOS JABATAN'": "'AMARAN SOS JABATAN'",
-        "value: event['jawatan'] as String? ?? '-'":
-            "value: labelJawatan(event['jawatan'] as String?)",
-        "'SOS ini masih ACTIVE sehingga Supervisor atau Management menandakan ia selesai.'":
-            "'SOS ini kekal AKTIF sehingga Penyelia atau Pengurusan menandakannya selesai.'",
-        "label: const Text('TUTUP ALERT')": "label: const Text('TUTUP AMARAN')",
-        "hintText: 'Contoh: Guard telah ditemui dan keadaan disahkan selamat.'":
-            "hintText: 'Contoh: Pengawal telah ditemui dan keadaan disahkan selamat.'",
-    },
-    root / 'lib/features/patrol/patrol_screen.dart': {
-        "DropdownMenuItem(value: 'normal', child: Text('Normal'))":
-            "DropdownMenuItem(value: 'normal', child: Text('Biasa'))",
-    },
-    root / 'web/manifest.json': {
-        '"description": "RimbaKawal smart patrol system."':
-            '"description": "RimbaKawal — Sistem Rondaan Pintar."',
-    },
-    root / 'web/index.html': {
-        'content="RimbaKawal smart patrol system."':
-            'content="RimbaKawal — Sistem Rondaan Pintar."',
-    },
-}
-
-for path, values in replacements.items():
-    replace_values(path, values)
-
-
-command_center = root / 'lib/features/admin/command_center_screen.dart'
-text = command_center.read_text(encoding='utf-8')
-if 'String _incidentStatusLabel(String status)' not in text:
-    text = text.rstrip() + """
-
-String _incidentStatusLabel(String status) => switch (status.toLowerCase()) {
-      'open' => 'TERBUKA',
-      'acknowledged' => 'DIAMBIL MAKLUM',
-      'resolved' => 'SELESAI',
-      _ => status.toUpperCase(),
-    };
-
-String _incidentSeverityLabel(String severity) => switch (severity.toLowerCase()) {
-      'urgent' => 'SEGERA',
-      'important' => 'PENTING',
-      'normal' => 'BIASA',
-      _ => severity.toUpperCase(),
-    };
+static_avatar = """              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFF6C5CE7).withValues(alpha: 0.35),
+                    width: 2,
+                  ),
+                ),
+                child: CircleAvatar(
+                  radius: 30,
+                  backgroundImage: image,
+                  child: image == null
+                      ? Text(
+                          user.nama.isEmpty ? '?' : user.nama[0],
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
 """
-    command_center.write_text(text, encoding='utf-8')
-    print('Ditambah: pemetaan paparan insiden rasmi')
+text = replace_required(text, animated_avatar, static_avatar, 'avatar statik Rondaan Aktif')
+text = text.replace("? 'SIMULASI IMBASAN'", "? 'IMBAS CHECKPOINT'")
+text = text.replace("? 'Simulasi Imbasan'", "? 'Imbas Checkpoint'")
+patrol_path.write_text(text, encoding='utf-8')
+print('Rondaan Aktif: animasi dibuang dan skrin kekal menyala diaktifkan')
+
+
+pubspec = pubspec_path.read_text(encoding='utf-8')
+if '  wakelock_plus:' not in pubspec:
+    marker = '  url_launcher: ^6.3.2\n'
+    if marker not in pubspec:
+        raise SystemExit('Lokasi dependency url_launcher tidak ditemui dalam pubspec.yaml')
+    pubspec = pubspec.replace(marker, marker + '  wakelock_plus: ^1.7.0\n')
+    pubspec_path.write_text(pubspec, encoding='utf-8')
+    print('Dependency wakelock_plus ditambah')
 else:
-    print('Disahkan: pemetaan paparan insiden rasmi')
+    print('Dependency wakelock_plus sudah tersedia')
 
 
-audit_terms = {
-    "const Text('Profile')",
-    "tooltip: 'Upload gambar profil'",
-    "Text('Patrol')",
-    "Text('Supervisor')",
-    "Text('Management')",
-    " checkpoint aktif'",
-    "Text('Belum ada checkpoint NFC.')",
-    "Text('Tambah Checkpoint')",
-    "'Tambah Checkpoint'",
-    "'Edit Checkpoint'",
-    "labelText: 'Nama checkpoint'",
-    "hintText: 'Scan atau masukkan UID'",
-    "'Web menggunakan Mock NFC untuk ujian setup.'",
-    "labelText: 'Susunan checkpoint'",
-    "Text('Checkpoint aktif')",
-    "'Jumlah scan'",
-    "'Rekod Checkpoint'",
-    "'Tiada rekod scan dalam tempoh ini.'",
-    "rekod checkpoint datang daripada server",
-    "rekod checkpoint dan event SOS",
-    "label: 'ALERT'",
-    "label: 'INCIDENT'",
-    "label: 'URGENT'",
-    "label: 'SOS 24H'",
-    "checkpoint • last scan",
-    "missed' : ''",
-    "Text('Acknowledge')",
-    "Text('Resolve')",
-    "'Live Patrol Map'",
-    "'Fit semua guard'",
-    "titik trail",
-    "permission lokasi pada telefon guard",
-    "'Refresh 5s",
-    "s ago'",
-    "menunggu GPS",
-    "SOS ACTIVE",
-    "? 'ACTIVE' : 'SELESAI'",
-    "'ALERT SOS JABATAN'",
-    "'TUTUP ALERT'",
-    "Contoh: Guard telah ditemui",
-    "RimbaKawal smart patrol system.",
-    "NFC + GPS live",
-    "Live operations",
-    "WAITING GPS",
-    "Auto-refresh",
-    "OFFLINE READY",
-    "AUTO SYNC",
-    "MISSED CHECKPOINT",
-    "Command Center",
-    "Status Guard",
-    "Incident Queue",
-    "Operations Command Center",
-}
-remaining = []
-for path in list((root / 'lib').rglob('*.dart')) + [
-    root / 'web/manifest.json',
-    root / 'web/index.html',
-]:
-    text = path.read_text(encoding='utf-8')
-    for term in audit_terms:
-        if term in text:
-            remaining.append(f'{path.relative_to(root)} -> {term}')
-if remaining:
-    raise SystemExit('Istilah paparan lama masih ditemui:\n' + '\n'.join(sorted(remaining)))
-print('Audit Bahasa Melayu rasmi: bersih')
+remaining_terms = []
+for path in source_files:
+    content = path.read_text(encoding='utf-8')
+    for term in (
+        'TITIK PEMERIKSAAN',
+        'Titik Pemeriksaan',
+        'Titik pemeriksaan',
+        'titik pemeriksaan',
+        'SIMULASI IMBASAN',
+        'Simulasi Imbasan',
+    ):
+        if term in content:
+            remaining_terms.append(f'{path.relative_to(root)} -> {term}')
+if remaining_terms:
+    raise SystemExit('Istilah lama masih ditemui:\n' + '\n'.join(remaining_terms))
+
+patrol = patrol_path.read_text(encoding='utf-8')
+for forbidden in ('_pulseController', 'SingleTickerProviderStateMixin', 'AnimatedBuilder('):
+    if forbidden in patrol:
+        raise SystemExit(f'Animasi lama masih ditemui pada patrol_screen.dart: {forbidden}')
+for required in (
+    "import 'package:wakelock_plus/wakelock_plus.dart';",
+    'WakelockPlus.enable()',
+    'WakelockPlus.disable()',
+    "'IMBAS CHECKPOINT'",
+):
+    if required not in patrol:
+        raise SystemExit(f'Perubahan wajib tidak ditemui pada patrol_screen.dart: {required}')
+
+print('Audit checkpoint, animasi dan skrin kekal menyala: LULUS')
