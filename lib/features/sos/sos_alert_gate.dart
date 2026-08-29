@@ -61,7 +61,7 @@ class _SosAlertGateState extends State<SosAlertGate>
       if (!mounted || alerts.isEmpty) return;
       await _showAlert(alerts.first);
     } catch (_) {
-      // SOS polling is best-effort. Offline users will receive the alert after reconnecting.
+      // SOS polling is best-effort. Offline users receive the alert after reconnecting.
     } finally {
       _polling = false;
     }
@@ -84,6 +84,12 @@ class _SosAlertGateState extends State<SosAlertGate>
 
     _showing = true;
     await _playAlarm();
+    if (!mounted) {
+      await _alarmPlayer.stop();
+      _showing = false;
+      return;
+    }
+
     bool resolved = false;
     try {
       resolved = await showGeneralDialog<bool>(
