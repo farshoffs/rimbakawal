@@ -342,7 +342,7 @@ class _PatrolScreenState extends State<PatrolScreen>
                     initialValue: severity,
                     decoration: const InputDecoration(labelText: 'Keutamaan'),
                     items: const [
-                      DropdownMenuItem(value: 'normal', child: Text('Normal')),
+                      DropdownMenuItem(value: 'normal', child: Text('Biasa')),
                       DropdownMenuItem(value: 'important', child: Text('Penting')),
                       DropdownMenuItem(value: 'urgent', child: Text('Segera')),
                     ],

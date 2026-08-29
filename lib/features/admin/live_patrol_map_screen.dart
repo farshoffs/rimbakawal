@@ -240,7 +240,7 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                     ),
                     _InfoChip(
                       icon: Icons.my_location_rounded,
-                      text: 'GPS ${_time(patrol['locationAt'])}',
+                      text: 'Lokasi ${_time(patrol['locationAt'])}',
                     ),
                     if (patrol['accuracy'] is num)
                       _InfoChip(
@@ -249,7 +249,7 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                       ),
                     _InfoChip(
                       icon: Icons.route_rounded,
-                      text: '${_trail(patrol).length} titik trail',
+                      text: '${_trail(patrol).length} titik laluan',
                     ),
                   ],
                 ),
@@ -262,7 +262,7 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                   )
                 else
                   const Text(
-                    'Rondaan telah bermula tetapi telefon belum menghantar koordinat GPS. Semak permission lokasi pada telefon guard.',
+                    'Rondaan telah bermula tetapi telefon belum menghantar koordinat lokasi. Semak kebenaran lokasi pada telefon pengawal.',
                   ),
               ],
             ),
@@ -285,10 +285,10 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Live Patrol Map'),
+        title: const Text('Peta Rondaan Langsung'),
         actions: [
           IconButton(
-            tooltip: 'Fit semua guard',
+            tooltip: 'Papar semua pengawal',
             onPressed: located.isEmpty ? null : _fitAll,
             icon: const Icon(Icons.center_focus_strong_rounded),
           ),
@@ -403,7 +403,7 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                       RichAttributionWidget(
                         attributions: [
                           TextSourceAttribution(
-                            'OpenStreetMap contributors',
+                            'Penyumbang OpenStreetMap',
                             onTap: () => launchUrl(
                               Uri.parse('https://www.openstreetmap.org/copyright'),
                             ),
@@ -506,11 +506,11 @@ class _MapHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '$total rondaan aktif • $located ada GPS',
+                      '$total rondaan aktif • $located mempunyai lokasi',
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                     Text(
-                      'Refresh 5s${generatedAt == null ? '' : ' • ${_headerTime(generatedAt!)}'}',
+                      'Kemas kini setiap 5 saat${generatedAt == null ? '' : ' • ${_headerTime(generatedAt!)}'}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -582,8 +582,8 @@ class _PatrolMiniCard extends StatelessWidget {
                   const SizedBox(height: 5),
                   Text(
                     patrol['latitude'] is num
-                        ? 'GPS ${patrol['locationAgeSeconds'] ?? 0}s ago'
-                        : 'Sesi aktif • menunggu GPS',
+                        ? 'Lokasi ${patrol['locationAgeSeconds'] ?? 0} saat lalu'
+                        : 'Sesi aktif • menunggu lokasi',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall,

@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#0B0B12",
     "theme_color": "#4834D4",
-    "description": "RimbaKawal smart patrol system.",
+    "description": "RimbaKawal — Sistem Rondaan Pintar.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

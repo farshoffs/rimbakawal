@@ -26,6 +26,7 @@ class AppUser {
   bool get isManagement => jawatan.toLowerCase() == 'management';
   bool get isSupervisor => jawatan.toLowerCase() == 'supervisor';
   bool get canMonitor => isManagement || isSupervisor;
+  String get jawatanPaparan => labelJawatan(jawatan);
 
   factory AppUser.fromJson(Map<String, dynamic> json) {
     return AppUser(
@@ -43,4 +44,14 @@ class AppUser {
       active: json['active'] as bool? ?? true,
     );
   }
+}
+
+String labelJawatan(String? value) {
+  final raw = (value ?? '').trim();
+  return switch (raw.toLowerCase()) {
+    'management' => 'Pengurusan',
+    'supervisor' => 'Penyelia',
+    'patrol' => 'Pengawal Rondaan',
+    _ => raw.isEmpty ? '-' : raw,
+  };
 }

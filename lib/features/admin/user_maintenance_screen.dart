@@ -143,7 +143,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                   subtitle: Text(
-                    '${user.noKadPengenalan}\n${user.jawatan} • ${user.jabatan}',
+                    '${user.noKadPengenalan}\n${user.jawatanPaparan} • ${user.jabatan}',
                   ),
                   isThreeLine: true,
                   trailing: const Icon(Icons.edit_location_alt_rounded),
@@ -210,7 +210,7 @@ class _AddUserDialogState extends State<_AddUserDialog> {
     final name = _nameController.text.trim();
     final ic = _icController.text.replaceAll(RegExp(r'\D'), '');
     if (name.length < 3 || ic.length != 12 || _departmentId == null) {
-      setState(() => _error = 'Lengkapkan nama, IC 12 digit dan Jabatan.');
+      setState(() => _error = 'Lengkapkan nama, No. Kad Pengenalan 12 digit dan Jabatan.');
       return;
     }
     setState(() {
@@ -271,14 +271,14 @@ class _AddUserDialogState extends State<_AddUserDialog> {
                   prefixIcon: Icon(Icons.work_outline_rounded),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'Patrol', child: Text('Patrol')),
+                  DropdownMenuItem(value: 'Patrol', child: Text('Pengawal Rondaan')),
                   DropdownMenuItem(
                     value: 'Supervisor',
-                    child: Text('Supervisor'),
+                    child: Text('Penyelia'),
                   ),
                   DropdownMenuItem(
                     value: 'Management',
-                    child: Text('Management'),
+                    child: Text('Pengurusan'),
                   ),
                 ],
                 onChanged: (value) {

@@ -93,7 +93,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       await _refresh(silent: true);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Insiden ditukar kepada ${status.toUpperCase()}.')),
+        SnackBar(content: Text('Status insiden ditukar kepada ${_incidentStatusLabel(status)}.')),
       );
     } catch (error) {
       if (!mounted) return;
@@ -505,7 +505,7 @@ class _OperationsHero extends StatelessWidget {
                     width: width,
                     child: _HeroMetric(
                       value: alerts,
-                      label: 'ALERT',
+                      label: 'AMARAN',
                       icon: Icons.warning_amber_rounded,
                       color: alerts > 0
                           ? const Color(0xFFFF7675)
@@ -516,7 +516,7 @@ class _OperationsHero extends StatelessWidget {
                     width: width,
                     child: _HeroMetric(
                       value: incidents,
-                      label: 'INCIDENT',
+                      label: 'INSIDEN',
                       icon: Icons.report_problem_rounded,
                       color: const Color(0xFFFDCB6E),
                     ),
@@ -525,7 +525,7 @@ class _OperationsHero extends StatelessWidget {
                     width: width,
                     child: _HeroMetric(
                       value: _value('urgentIncidents'),
-                      label: 'URGENT',
+                      label: 'SEGERA',
                       icon: Icons.priority_high_rounded,
                       color: const Color(0xFFFF9F43),
                     ),
@@ -534,7 +534,7 @@ class _OperationsHero extends StatelessWidget {
                     width: width,
                     child: _HeroMetric(
                       value: sos,
-                      label: 'SOS 24H',
+                      label: 'SOS 24 JAM',
                       icon: Icons.sos_rounded,
                       color: sos > 0
                           ? const Color(0xFFFF7675)
@@ -679,7 +679,7 @@ class _PatrolCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    '$scanned/$expected checkpoint • last scan $time${missed > 0 ? ' • $missed missed' : ''}',
+                    '$scanned/$expected titik pemeriksaan • imbasan terakhir $time${missed > 0 ? ' • $missed sesi terlepas' : ''}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -743,11 +743,11 @@ class _IncidentCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${incident['category'] ?? 'Incident'} • ${severity.toUpperCase()}',
+                          '${incident['category'] ?? 'Insiden'} • ${_incidentSeverityLabel(severity)}',
                           style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
                         Text(
-                          '${incident['nama'] ?? '-'} • ${incident['jabatan'] ?? '-'} • ${incident['checkpoint_name'] ?? 'Tanpa checkpoint'}',
+                          '${incident['nama'] ?? '-'} • ${incident['jabatan'] ?? '-'} • ${incident['checkpoint_name'] ?? 'Tanpa titik pemeriksaan'}',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -755,7 +755,7 @@ class _IncidentCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    status.toUpperCase(),
+                    _incidentStatusLabel(status),
                     style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 10),
                   ),
                 ],
@@ -777,12 +777,12 @@ class _IncidentCard extends StatelessWidget {
                     OutlinedButton.icon(
                       onPressed: onAcknowledge,
                       icon: const Icon(Icons.visibility_rounded),
-                      label: const Text('Acknowledge'),
+                      label: const Text('Ambil Maklum'),
                     ),
                   FilledButton.tonalIcon(
                     onPressed: onResolve,
                     icon: const Icon(Icons.task_alt_rounded),
-                    label: const Text('Resolve'),
+                    label: const Text('Selesaikan'),
                   ),
                 ],
               ),
@@ -835,3 +835,17 @@ class _EmptyState extends StatelessWidget {
         ),
       );
 }
+
+String _incidentStatusLabel(String status) => switch (status.toLowerCase()) {
+      'open' => 'TERBUKA',
+      'acknowledged' => 'DIAMBIL MAKLUM',
+      'resolved' => 'SELESAI',
+      _ => status.toUpperCase(),
+    };
+
+String _incidentSeverityLabel(String severity) => switch (severity.toLowerCase()) {
+      'urgent' => 'SEGERA',
+      'important' => 'PENTING',
+      'normal' => 'BIASA',
+      _ => severity.toUpperCase(),
+    };

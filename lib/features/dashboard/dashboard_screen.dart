@@ -577,7 +577,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     ),
                               ),
                               const SizedBox(height: 3),
-                              Text('${_user.jawatan} • ${_user.jabatan}'),
+                              Text('${_user.jawatanPaparan} • ${_user.jabatan}'),
                             ],
                           ),
                         ),
@@ -644,7 +644,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     _MenuData(
                       icon: Icons.person_rounded,
                       title: 'Profil',
-                      subtitle: _user.jawatan,
+                      subtitle: _user.jawatanPaparan,
                       onTap: _openProfile,
                     ),
                     if (_user.isManagement)

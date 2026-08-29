@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/api/app_user.dart';
+
 import '../sos/sos_alert_api.dart';
 
 class SosManagementScreen extends StatefulWidget {
@@ -165,7 +167,7 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                '$active SOS ACTIVE',
+                                '$active SOS AKTIF',
                                 style: Theme.of(context)
                                     .textTheme
                                     .headlineSmall
@@ -233,13 +235,13 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
                                       ),
                                     ),
                                     Chip(
-                                      label: Text(isActive ? 'ACTIVE' : 'SELESAI'),
+                                      label: Text(isActive ? 'AKTIF' : 'SELESAI'),
                                     ),
                                   ],
                                 ),
                                 const SizedBox(height: 10),
                                 Text(
-                                  '${event['jawatan'] ?? '-'} • ${event['jabatan'] ?? '-'}',
+                                  '${labelJawatan(event['jawatan'] as String?)} • ${event['jabatan'] ?? '-'}',
                                 ),
                                 Text('Dicetus: ${_dateTime(event['triggered_at'])}'),
                                 const SizedBox(height: 8),

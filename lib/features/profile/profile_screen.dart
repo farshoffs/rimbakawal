@@ -97,7 +97,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final image = _imageProvider(_user.profilePicture);
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(title: const Text('Profil')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -119,7 +119,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   right: -6,
                   bottom: -6,
                   child: IconButton.filled(
-                    tooltip: 'Upload gambar profil',
+                    tooltip: 'Muat naik gambar profil',
                     onPressed: _uploading ? null : _pickAndUpload,
                     icon: _uploading
                         ? const SizedBox(
@@ -141,7 +141,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 24),
           _InfoTile(label: 'Nama', value: _user.nama),
           _InfoTile(label: 'No. Kad Pengenalan', value: _user.noKadPengenalan),
-          _InfoTile(label: 'Jawatan', value: _user.jawatan),
+          _InfoTile(label: 'Jawatan', value: _user.jawatanPaparan),
           _InfoTile(label: 'Jabatan', value: _user.jabatan),
           _InfoTile(
             label: 'Kadar Sesi Rondaan',

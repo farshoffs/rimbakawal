@@ -131,7 +131,7 @@ class _SosAlertGateState extends State<SosAlertGate>
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'ALERT SOS JABATAN',
+                              'AMARAN SOS JABATAN',
                               textAlign: TextAlign.center,
                               style: Theme.of(dialogContext)
                                   .textTheme
@@ -158,7 +158,7 @@ class _SosAlertGateState extends State<SosAlertGate>
                             ),
                             _InfoRow(
                               label: 'Jawatan',
-                              value: event['jawatan'] as String? ?? '-',
+                              value: labelJawatan(event['jawatan'] as String?),
                             ),
                             _InfoRow(
                               label: 'Masa',
@@ -172,7 +172,7 @@ class _SosAlertGateState extends State<SosAlertGate>
                             ),
                             const SizedBox(height: 24),
                             const Text(
-                              'SOS ini masih ACTIVE sehingga Supervisor atau Management menandakan ia selesai.',
+                              'SOS ini kekal AKTIF sehingga Penyelia atau Pengurusan menandakannya selesai.',
                               textAlign: TextAlign.center,
                               style: TextStyle(height: 1.45),
                             ),
@@ -193,7 +193,7 @@ class _SosAlertGateState extends State<SosAlertGate>
                             OutlinedButton.icon(
                               onPressed: () => Navigator.of(dialogContext).pop(false),
                               icon: const Icon(Icons.visibility_rounded),
-                              label: const Text('TUTUP ALERT'),
+                              label: const Text('TUTUP AMARAN'),
                             ),
                           ],
                         ),
@@ -256,7 +256,7 @@ class _SosAlertGateState extends State<SosAlertGate>
               maxLines: 6,
               decoration: const InputDecoration(
                 labelText: 'Catatan penyelesaian',
-                hintText: 'Contoh: Guard telah ditemui dan keadaan disahkan selamat.',
+                hintText: 'Contoh: Pengawal telah ditemui dan keadaan disahkan selamat.',
               ),
             ),
           ],

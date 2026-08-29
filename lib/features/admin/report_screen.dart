@@ -108,7 +108,7 @@ class _ReportScreenState extends State<ReportScreen> {
                 _stat('Pengguna aktif', '${summary['activeUsers'] ?? 0}'),
                 pw.SizedBox(width: 8),
                 _stat(
-                  'Jumlah scan',
+                  'Jumlah imbasan',
                   '${summary['totalScans'] ?? scans.length}',
                 ),
                 pw.SizedBox(width: 8),
@@ -117,12 +117,12 @@ class _ReportScreenState extends State<ReportScreen> {
             ),
             pw.SizedBox(height: 20),
             pw.Text(
-              'Rekod Checkpoint',
+              'Rekod Titik Pemeriksaan',
               style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 8),
             if (scans.isEmpty)
-              pw.Text('Tiada rekod scan dalam tempoh ini.')
+              pw.Text('Tiada rekod imbasan dalam tempoh ini.')
             else
               pw.TableHelper.fromTextArray(
                 headers: const [
@@ -182,7 +182,7 @@ class _ReportScreenState extends State<ReportScreen> {
               ),
             pw.SizedBox(height: 16),
             pw.Text(
-              'Dijana oleh RimbaKawal. Masa rekod checkpoint datang daripada server.',
+              'Dijana oleh RimbaKawal. Masa rekod titik pemeriksaan diperoleh daripada pelayan.',
               style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
             ),
           ],
@@ -258,7 +258,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Pilih Jabatan dan julat sehingga 31 hari. PDF merangkumi rekod checkpoint dan event SOS.',
+                    'Pilih Jabatan dan julat sehingga 31 hari. PDF merangkumi rekod titik pemeriksaan dan kejadian SOS.',
                   ),
                   const SizedBox(height: 18),
                   DropdownButtonFormField<int?>(
