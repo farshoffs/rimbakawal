@@ -196,12 +196,19 @@ async function getScans(request, env, url) {
   const checkpoints = checkpointResult.results ?? [];
 
   const memberResult = await env.DB.prepare(
-    `SELECT id, nama, profile_picture
-     FROM users
-     WHERE department_id = ? AND active = 1
-       AND LOWER(jawatan) IN ('patrol', 'supervisor')
-     ORDER BY nama ASC`,
-  ).bind(auth.user.department_id).all();
+    `SELECT u.id, u.nama, u.profile_picture, u.jawatan
+     FROM users u
+     WHERE u.department_id = ? AND u.active = 1
+       AND (
+         LOWER(u.jawatan) IN ('patrol', 'supervisor')
+         OR EXISTS (
+           SELECT 1 FROM nfc_scans s
+           WHERE s.user_id = u.id
+             AND s.scanned_at >= ? AND s.scanned_at < ?
+         )
+       )
+     ORDER BY u.nama ASC`,
+  ).bind(auth.user.department_id, bounds.startIso, bounds.endIso).all();
   const members = memberResult.results ?? [];
 
   const scanResult = await env.DB.prepare(
@@ -226,6 +233,9 @@ async function getScans(request, env, url) {
   if (!isFutureDay) {
     const sessionCount = Math.ceil(1440 / interval);
     for (const member of members) {
+      const patrolRole = ['patrol', 'supervisor'].includes(
+        String(member.jawatan || '').toLowerCase(),
+      );
       for (let index = 0; index < sessionCount; index += 1) {
         const startMs = bounds.startMs + index * interval * 60000;
         const endMs = Math.min(bounds.endMs, startMs + interval * 60000);
@@ -236,6 +246,7 @@ async function getScans(request, env, url) {
           return Number(scan.user_id) === Number(member.id) &&
             time >= startMs && time < endMs;
         });
+        if (!patrolRole && sessionScans.length === 0) continue;
         const scannedCheckpointIds = new Set(
           sessionScans
             .map((scan) => Number(scan.checkpoint_id || 0))
@@ -269,6 +280,10 @@ async function getScans(request, env, url) {
         });
       }
     }
+    sessions.sort((left, right) => {
+      const timeDifference = Date.parse(right.startAt) - Date.parse(left.startAt);
+      return timeDifference || left.userName.localeCompare(right.userName);
+    });
   }
 
   return json({
