@@ -1,0 +1,38 @@
+name: Fix BPPA Metadata Follow-up
+
+on:
+  push:
+    branches:
+      - feature/bppa-metadata-shift
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'Fix BPPA metadata UI details'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/bppa-metadata-shift
+      - run: python3 scripts/fix_bppa_metadata_followup.py
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter build web --release
+      - run: node --check worker/app.js
+      - run: node --check worker/index.js
+      - run: node --check worker/attendance.js
+      - run: node --check worker/reports.js
+      - run: git diff --check
+      - name: Commit follow-up
+        run: |
+          git config user.name farshoffs
+          git config user.email farshoffs@gmail.com
+          git add lib worker
+          git commit -m 'Fix BPPA metadata UI details'
+          git push
