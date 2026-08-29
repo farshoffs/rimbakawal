@@ -33,7 +33,7 @@ async function monthlyReport(request, env, ctx, url) {
     : [fromStart, toEnd, departmentId];
 
   const scanSql = `SELECT s.id, s.user_id, s.scanned_at, s.nfc_uid, s.session_index,
-              u.nama, u.no_kad_pengenalan, u.jawatan,
+              u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan,
               COALESCE(d.name, u.jabatan) AS jabatan,
               COALESCE(c.name, 'Checkpoint') AS checkpoint_name,
               c.position AS checkpoint_position
@@ -47,7 +47,7 @@ async function monthlyReport(request, env, ctx, url) {
 
   const attendanceSql = `SELECT a.id, a.user_id, a.department_id, a.work_date,
               a.punch_type, a.punched_at,
-              u.nama, u.no_kad_pengenalan, u.jawatan,
+              u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan,
               COALESCE(d.name, u.jabatan) AS jabatan
        FROM attendance_records a
        JOIN users u ON u.id = a.user_id
@@ -56,11 +56,23 @@ async function monthlyReport(request, env, ctx, url) {
        ${departmentId == null ? '' : 'AND a.department_id = ?'}
        ORDER BY a.punched_at ASC, a.id ASC`;
 
+  const departmentMeta = departmentId == null ? null : await env.DB.prepare(
+    'SELECT id, name, company_name, zone FROM departments WHERE id = ? LIMIT 1',
+  ).bind(departmentId).first();
+
   const [scanResult, attendanceResult] = await Promise.all([
     env.DB.prepare(scanSql).bind(...bindings).all(),
     env.DB.prepare(attendanceSql).bind(...bindings).all(),
   ]);
 
+  if (departmentMeta) {
+    payload.department = {
+      id: Number(departmentMeta.id),
+      name: departmentMeta.name,
+      companyName: departmentMeta.company_name || '',
+      zone: departmentMeta.zone || '',
+    };
+  }
   payload.scans = scanResult.results ?? [];
   payload.attendance = attendanceResult.results ?? [];
   payload.summary = {

@@ -445,7 +445,7 @@ async function adminDepartments(request, env) {
   const result = await env.DB.prepare(
     `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
             d.attendance_latitude, d.attendance_longitude, d.attendance_radius_m,
-            d.attendance_location_label,
+            d.attendance_location_label, d.company_name, d.zone,
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
      LEFT JOIN checkpoints c ON c.department_id = d.id
@@ -468,8 +468,9 @@ async function createDepartment(request, env) {
   const result = await env.DB.prepare(
     `INSERT INTO departments (
        name, session_interval_minutes, session_start_minutes, active, updated_at,
-       attendance_latitude, attendance_longitude, attendance_radius_m, attendance_location_label
-     ) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, ?, ?, ?, ?)`,
+       attendance_latitude, attendance_longitude, attendance_radius_m, attendance_location_label,
+       company_name, zone
+     ) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     parsed.name,
     parsed.interval,
@@ -478,6 +479,8 @@ async function createDepartment(request, env) {
     parsed.longitude,
     parsed.radius,
     parsed.locationLabel,
+    parsed.companyName || null,
+    parsed.zone || null,
   ).run();
   return json({ department: departmentJson(await getDepartment(env, result.meta?.last_row_id)) }, 201);
 }
@@ -500,7 +503,7 @@ async function updateDepartment(request, env, departmentId) {
       `UPDATE departments SET
          name = ?, session_interval_minutes = ?, session_start_minutes = ?, active = ?,
          attendance_latitude = ?, attendance_longitude = ?, attendance_radius_m = ?,
-         attendance_location_label = ?, updated_at = CURRENT_TIMESTAMP
+         attendance_location_label = ?, company_name = ?, zone = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
     ).bind(
       parsed.name,
@@ -511,6 +514,8 @@ async function updateDepartment(request, env, departmentId) {
       parsed.longitude,
       parsed.radius,
       parsed.locationLabel,
+      parsed.companyName || null,
+      parsed.zone || null,
       departmentId,
     ),
     env.DB.prepare('UPDATE users SET jabatan = ? WHERE department_id = ?').bind(parsed.name, departmentId),
@@ -526,6 +531,8 @@ function validateDepartmentBody(body) {
   const longitude = Number(body.attendanceLongitude);
   const radius = Number(body.attendanceRadiusMeters ?? DEFAULT_RADIUS_M);
   const locationLabel = String(body.attendanceLocationLabel ?? '').trim().slice(0, 160);
+  const companyName = String(body.companyName ?? '').trim().slice(0, 180);
+  const zone = String(body.zone ?? '').trim().slice(0, 100);
   if (name.length < 2) return { error: 'Nama Jabatan terlalu pendek.' };
   if (!Number.isInteger(interval) || interval < 15 || interval > 1440) {
     return { error: 'Tempoh sesi mesti antara 15 hingga 1440 minit.' };
@@ -539,7 +546,7 @@ function validateDepartmentBody(body) {
   if (!Number.isFinite(radius) || radius < 30 || radius > 1000) {
     return { error: 'Radius kehadiran mesti antara 30m hingga 1000m.' };
   }
-  return { name, interval, startMinutes, latitude, longitude, radius: Math.round(radius), locationLabel };
+  return { name, interval, startMinutes, latitude, longitude, radius: Math.round(radius), locationLabel, companyName, zone };
 }
 
 async function getDepartment(env, id) {
@@ -547,7 +554,7 @@ async function getDepartment(env, id) {
   return env.DB.prepare(
     `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
             d.attendance_latitude, d.attendance_longitude, d.attendance_radius_m,
-            d.attendance_location_label,
+            d.attendance_location_label, d.company_name, d.zone,
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
      LEFT JOIN checkpoints c ON c.department_id = d.id
@@ -568,6 +575,8 @@ function departmentJson(row) {
     attendanceLongitude: row.attendance_longitude == null ? null : Number(row.attendance_longitude),
     attendanceRadiusMeters: Number(row.attendance_radius_m || DEFAULT_RADIUS_M),
     attendanceLocationLabel: row.attendance_location_label || '',
+    companyName: row.company_name || '',
+    zone: row.zone || '',
   };
 }
 

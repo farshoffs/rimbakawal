@@ -117,6 +117,7 @@ class _DepartmentMaintenanceScreenState
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                   subtitle: Text(
+                    '${department.companyName.isEmpty ? '' : '${department.companyName} • '}${department.zone.isEmpty ? '' : 'Zon ${department.zone} • '}'
                     'Mula ${TimeOfDay(hour: department.sessionStartMinutes ~/ 60, minute: department.sessionStartMinutes % 60).format(context)} • '
                     'Sesi setiap ${department.sessionIntervalMinutes} minit • '
                     '${department.checkpointCount} checkpoint aktif • '
@@ -226,6 +227,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _intervalController;
   late final TextEditingController _locationLabelController;
+  late final TextEditingController _companyController;
+  late final TextEditingController _zoneController;
   late TimeOfDay _startTime;
   late bool _active;
   double? _latitude;
@@ -240,6 +243,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     _nameController = TextEditingController(text: widget.department?.name ?? '');
     _intervalController = TextEditingController(text: (widget.department?.sessionIntervalMinutes ?? 120).toString());
     _locationLabelController = TextEditingController(text: widget.department?.attendanceLocationLabel ?? '');
+    _companyController = TextEditingController(text: widget.department?.companyName ?? '');
+    _zoneController = TextEditingController(text: widget.department?.zone ?? '');
     final startMinutes = widget.department?.sessionStartMinutes ?? 420;
     _startTime = TimeOfDay(hour: startMinutes ~/ 60, minute: startMinutes % 60);
     _active = widget.department?.active ?? true;
@@ -253,6 +258,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     _nameController.dispose();
     _intervalController.dispose();
     _locationLabelController.dispose();
+    _companyController.dispose();
+    _zoneController.dispose();
     super.dispose();
   }
 
@@ -285,6 +292,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
           attendanceLongitude: _longitude!,
           attendanceRadiusMeters: _radius.round(),
           attendanceLocationLabel: _locationLabelController.text.trim(),
+          companyName: _companyController.text.trim(),
+          zone: _zoneController.text.trim(),
         );
       } else {
         await widget.api.updateDepartment(
@@ -299,6 +308,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
             attendanceLongitude: _longitude,
             attendanceRadiusMeters: _radius.round(),
             attendanceLocationLabel: _locationLabelController.text.trim(),
+            companyName: _companyController.text.trim(),
+            zone: _zoneController.text.trim(),
           ),
         );
       }
@@ -327,6 +338,26 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
               TextField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Nama Jabatan', prefixIcon: Icon(Icons.account_tree_rounded)),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _companyController,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'Nama Syarikat',
+                  prefixIcon: Icon(Icons.business_rounded),
+                  helperText: 'Digunakan dalam borang BPPA PKK 2 dan PKK 3.',
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _zoneController,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'Zon',
+                  prefixIcon: Icon(Icons.map_outlined),
+                  helperText: 'Digunakan dalam borang BPPA PKK 2 dan PKK 3.',
+                ),
               ),
               const SizedBox(height: 14),
               TextField(

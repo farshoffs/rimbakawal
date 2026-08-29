@@ -232,7 +232,11 @@ class _ReportScreenState extends State<ReportScreen> {
           final dayMap = rowsByDay.putIfAbsent(punchedAt.day, () => <int, _AttendanceDayRow>{});
           final current = dayMap.putIfAbsent(
             userId,
-            () => _AttendanceDayRow(name: row['nama']?.toString() ?? '-', firstPunch: punchedAt),
+            () => _AttendanceDayRow(
+              name: row['nama']?.toString() ?? '-',
+              noPk: row['no_pk']?.toString() ?? '',
+              firstPunch: punchedAt,
+            ),
           );
           if (punchedAt.isBefore(current.firstPunch)) current.firstPunch = punchedAt;
           if (row['punch_type'] == 'IN' &&
@@ -255,9 +259,12 @@ class _ReportScreenState extends State<ReportScreen> {
         }
 
         final document = pw.Document();
-        document.addPage(_pkk2Page(document, department['name']?.toString() ?? '', 1, 12, rowsByDay));
-        document.addPage(_pkk2Page(document, department['name']?.toString() ?? '', 13, 24, rowsByDay));
-        document.addPage(_pkk2Page(document, department['name']?.toString() ?? '', 25, 31, rowsByDay));
+        final institution = department['name']?.toString() ?? '';
+        final companyName = department['companyName']?.toString() ?? '';
+        final zone = department['zone']?.toString() ?? '';
+        document.addPage(_pkk2Page(document, institution, companyName, zone, 1, 12, rowsByDay));
+        document.addPage(_pkk2Page(document, institution, companyName, zone, 13, 24, rowsByDay));
+        document.addPage(_pkk2Page(document, institution, companyName, zone, 25, 31, rowsByDay));
 
         await Printing.sharePdf(
           bytes: await document.save(),
@@ -268,6 +275,8 @@ class _ReportScreenState extends State<ReportScreen> {
   pw.Page _pkk2Page(
     pw.Document document,
     String institution,
+    String companyName,
+    String zone,
     int startDay,
     int endDay,
     Map<int, Map<int, _AttendanceDayRow>> rowsByDay,
@@ -301,8 +310,8 @@ class _ReportScreenState extends State<ReportScreen> {
                 children: [
                   _cell(slot == 0 ? '$day' : '', align: pw.Alignment.center, height: 10.6),
                   _cell('${String.fromCharCode(97 + slot)}. ${guard?.name ?? ''}', height: 10.6),
-                  _cell('', height: 10.6),
-                  _cell('', align: pw.Alignment.center, height: 10.6),
+                  _cell(guard?.noPk ?? '', height: 10.6),
+                  _cell(guard == null ? '' : _shiftCode(guard.firstPunch), align: pw.Alignment.center, height: 10.6),
                   _cell(guard?.inTime == null ? '' : _time(guard!.inTime!), align: pw.Alignment.center, height: 10.6),
                   _cell(guard?.outTime == null ? '' : _time(guard!.outTime!), align: pw.Alignment.center, height: 10.6),
                   _cell('', height: 10.6),
@@ -338,9 +347,9 @@ class _ReportScreenState extends State<ReportScreen> {
             pw.SizedBox(height: 6),
             pw.Row(
               children: [
-                pw.Expanded(child: _fieldLine('NAMA SYARIKAT :', '')),
+                pw.Expanded(child: _fieldLine('NAMA SYARIKAT :', companyName)),
                 pw.SizedBox(width: 80),
-                pw.Expanded(child: _fieldLine('ZON :', '')),
+                pw.Expanded(child: _fieldLine('ZON :', zone)),
               ],
             ),
             pw.SizedBox(height: 8),
@@ -408,6 +417,8 @@ class _ReportScreenState extends State<ReportScreen> {
           document.addPage(
             _pkk3Page(
               department['name']?.toString() ?? '',
+              department['companyName']?.toString() ?? '',
+              department['zone']?.toString() ?? '',
               monday,
               weekNo,
               scansByDay,
@@ -425,6 +436,8 @@ class _ReportScreenState extends State<ReportScreen> {
 
   pw.Page _pkk3Page(
     String institution,
+    String companyName,
+    String zone,
     DateTime monday,
     int weekNo,
     Map<String, List<Map<String, dynamic>>> scansByDay,
@@ -482,9 +495,9 @@ class _ReportScreenState extends State<ReportScreen> {
             pw.SizedBox(height: 9),
             pw.Row(
               children: [
-                pw.Expanded(child: _fieldLine('NAMA SYARIKAT :', '')),
+                pw.Expanded(child: _fieldLine('NAMA SYARIKAT :', companyName)),
                 pw.SizedBox(width: 55),
-                pw.Expanded(child: _fieldLine('ZON :', '')),
+                pw.Expanded(child: _fieldLine('ZON :', zone)),
               ],
             ),
             pw.SizedBox(height: 8),
@@ -527,6 +540,10 @@ class _ReportScreenState extends State<ReportScreen> {
         );
       },
     );
+  }
+
+  String _shiftCode(DateTime clocking) {
+    return clocking.hour >= 7 && clocking.hour < 19 ? '1' : '2';
   }
 
   String _checkpointLine(Map<String, dynamic> row) {
@@ -734,7 +751,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Nota: Borang BPPA memerlukan satu Jabatan. Medan NAMA SYARIKAT, ZON, NO. PK dan SYIF dibiarkan kosong kerana RimbaKawal belum mempunyai medan khusus tersebut.',
+                    'Nota: NAMA SYARIKAT dan ZON diambil daripada Tetapan Jabatan. NO. PK diambil daripada Profil Pengguna. SYIF ditentukan automatik: 1-SIANG bagi 07:00–18:59 dan 2-MALAM bagi 19:00–06:59.',
                     style: TextStyle(fontSize: 12),
                   ),
                 ],
@@ -748,9 +765,10 @@ class _ReportScreenState extends State<ReportScreen> {
 }
 
 class _AttendanceDayRow {
-  _AttendanceDayRow({required this.name, required this.firstPunch});
+  _AttendanceDayRow({required this.name, required this.noPk, required this.firstPunch});
 
   final String name;
+  final String noPk;
   DateTime firstPunch;
   DateTime? inTime;
   DateTime? outTime;

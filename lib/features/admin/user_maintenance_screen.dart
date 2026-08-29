@@ -125,7 +125,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                   subtitle: Text(
-                    '${user.noKadPengenalan}\n${user.jawatanPaparan} • ${user.jabatan}',
+                    '${user.noKadPengenalan}${user.noPk.isEmpty ? '' : ' • No. PK ${user.noPk}'}\n${user.jawatanPaparan} • ${user.jabatan}',
                   ),
                   isThreeLine: true,
                   trailing: const Icon(Icons.edit_rounded),
@@ -166,6 +166,7 @@ class _EditUserDialog extends StatefulWidget {
 
 class _EditUserDialogState extends State<_EditUserDialog> {
   late final TextEditingController _nameController;
+  late final TextEditingController _noPkController;
   late String _jawatan;
   int? _departmentId;
   String? _newProfilePicture;
@@ -178,6 +179,7 @@ class _EditUserDialogState extends State<_EditUserDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.user.nama);
+    _noPkController = TextEditingController(text: widget.user.noPk);
     _jawatan = widget.user.jawatan;
     _departmentId = widget.user.departmentId;
   }
@@ -185,6 +187,7 @@ class _EditUserDialogState extends State<_EditUserDialog> {
   @override
   void dispose() {
     _nameController.dispose();
+    _noPkController.dispose();
     super.dispose();
   }
 
@@ -263,6 +266,7 @@ class _EditUserDialogState extends State<_EditUserDialog> {
         nama: nama,
         jawatan: _jawatan,
         departmentId: _departmentId!,
+        noPk: _noPkController.text.trim(),
         profilePicture: _newProfilePicture,
         clearProfilePicture: _clearProfilePicture,
       );
@@ -352,6 +356,23 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                 ),
               ),
               const SizedBox(height: 12),
+              TextField(
+                controller: _noPkController,
+                decoration: const InputDecoration(
+                  labelText: 'No. PK',
+                  prefixIcon: Icon(Icons.numbers_rounded),
+                  helperText: 'Nombor pengawal untuk borang BPPA PKK 2.',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _noPkController,
+                decoration: const InputDecoration(
+                  labelText: 'No. PK',
+                  prefixIcon: Icon(Icons.numbers_rounded),
+                ),
+              ),
+              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _jawatan,
                 decoration: const InputDecoration(
@@ -433,6 +454,7 @@ class _AddUserDialog extends StatefulWidget {
 class _AddUserDialogState extends State<_AddUserDialog> {
   final _nameController = TextEditingController();
   final _icController = TextEditingController();
+  final _noPkController = TextEditingController();
   String _jawatan = 'Patrol';
   int? _departmentId;
   bool _saving = false;
@@ -449,6 +471,7 @@ class _AddUserDialogState extends State<_AddUserDialog> {
   void dispose() {
     _nameController.dispose();
     _icController.dispose();
+    _noPkController.dispose();
     super.dispose();
   }
 
@@ -469,6 +492,7 @@ class _AddUserDialogState extends State<_AddUserDialog> {
         noKadPengenalan: ic,
         jawatan: _jawatan,
         departmentId: _departmentId!,
+        noPk: _noPkController.text.trim(),
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
