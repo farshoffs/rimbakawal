@@ -44,6 +44,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   late AppUser _user;
   late int _sessionIntervalMinutes;
+  late int _sessionStartMinutes;
   Timer? _sessionTimer;
   Timer? _configTimer;
   String? _lastSessionKey;
@@ -57,6 +58,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _sync.addListener(_changed);
     _user = widget.user;
     _sessionIntervalMinutes = widget.user.sessionIntervalMinutes;
+    _sessionStartMinutes = widget.user.sessionStartMinutes;
     _lastSessionKey = _sessionKey(DateTime.now());
     _sessionTimer = Timer.periodic(
       const Duration(seconds: 15),
@@ -98,26 +100,39 @@ class _DashboardScreenState extends State<DashboardScreen>
     try {
       final bootstrap = await widget.api.getOfflineBootstrap();
       if (!mounted) return;
-      if (_sessionIntervalMinutes != bootstrap.sessionIntervalMinutes) {
-        setState(() => _sessionIntervalMinutes = bootstrap.sessionIntervalMinutes);
+      if (_sessionIntervalMinutes != bootstrap.sessionIntervalMinutes ||
+          _sessionStartMinutes != bootstrap.sessionStartMinutes) {
+        setState(() {
+          _sessionIntervalMinutes = bootstrap.sessionIntervalMinutes;
+          _sessionStartMinutes = bootstrap.sessionStartMinutes;
+        });
         _lastSessionKey = _sessionKey(DateTime.now());
       }
     } catch (_) {
       final cached = _store.cachedBootstrap();
-      if (cached != null &&
-          _sessionIntervalMinutes != cached.sessionIntervalMinutes &&
-          mounted) {
-        setState(() => _sessionIntervalMinutes = cached.sessionIntervalMinutes);
+      if (cached != null && mounted &&
+          (_sessionIntervalMinutes != cached.sessionIntervalMinutes ||
+              _sessionStartMinutes != cached.sessionStartMinutes)) {
+        setState(() {
+          _sessionIntervalMinutes = cached.sessionIntervalMinutes;
+          _sessionStartMinutes = cached.sessionStartMinutes;
+        });
       }
     }
   }
 
   String _sessionKey(DateTime value) {
     final local = value.toLocal();
-    final interval = _sessionIntervalMinutes <= 0 ? 120 : _sessionIntervalMinutes;
-    final index = (local.hour * 60 + local.minute) ~/ interval;
+    final interval = _sessionIntervalMinutes.clamp(15, 1440);
+    final startMinutes = _sessionStartMinutes.clamp(0, 1439);
+    final minuteOfDay = local.hour * 60 + local.minute;
+    final relativeMinutes = (minuteOfDay - startMinutes + 1440) % 1440;
+    final index = relativeMinutes ~/ interval;
+    final scheduleDay = minuteOfDay < startMinutes
+        ? local.subtract(const Duration(days: 1))
+        : local;
     String two(int v) => v.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)}-$index-$interval';
+    return '${scheduleDay.year}-${two(scheduleDay.month)}-${two(scheduleDay.day)}-$index-$interval-$startMinutes';
   }
 
   void _checkSessionBoundary() {

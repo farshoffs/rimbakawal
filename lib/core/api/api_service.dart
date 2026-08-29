@@ -226,12 +226,14 @@ class DepartmentRecord {
     required this.id,
     required this.name,
     required this.sessionIntervalMinutes,
+    this.sessionStartMinutes = 420,
     required this.active,
     required this.checkpointCount,
   });
   final int id;
   final String name;
   final int sessionIntervalMinutes;
+  final int sessionStartMinutes;
   final bool active;
   final int checkpointCount;
 
@@ -241,6 +243,8 @@ class DepartmentRecord {
         name: json['name'] as String,
         sessionIntervalMinutes:
             (json['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,
+        sessionStartMinutes:
+            (json['sessionStartMinutes'] as num?)?.toInt() ?? 420,
         active: json['active'] as bool? ?? true,
         checkpointCount: (json['checkpointCount'] as num?)?.toInt() ?? 0,
       );
@@ -692,6 +696,7 @@ class ApiService {
   Future<DepartmentRecord> createDepartment({
     required String name,
     required int sessionIntervalMinutes,
+    int sessionStartMinutes = 420,
   }) async {
     final data = _decode(
       await http.post(
@@ -700,6 +705,7 @@ class ApiService {
         body: jsonEncode({
           'name': name,
           'sessionIntervalMinutes': sessionIntervalMinutes,
+          'sessionStartMinutes': sessionStartMinutes,
         }),
       ),
     );
@@ -716,6 +722,7 @@ class ApiService {
         body: jsonEncode({
           'name': department.name,
           'sessionIntervalMinutes': department.sessionIntervalMinutes,
+          'sessionStartMinutes': department.sessionStartMinutes,
           'active': department.active,
         }),
       ),

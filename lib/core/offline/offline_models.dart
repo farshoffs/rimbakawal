@@ -40,6 +40,7 @@ class OfflineBootstrap {
     required this.departmentId,
     required this.departmentName,
     required this.sessionIntervalMinutes,
+    this.sessionStartMinutes = 420,
     required this.routeOrderEnforced,
     required this.checkpoints,
   });
@@ -49,6 +50,7 @@ class OfflineBootstrap {
   final int departmentId;
   final String departmentName;
   final int sessionIntervalMinutes;
+  final int sessionStartMinutes;
   final bool routeOrderEnforced;
   final List<CachedCheckpoint> checkpoints;
 
@@ -69,6 +71,7 @@ class OfflineBootstrap {
           'id': departmentId,
           'name': departmentName,
           'sessionIntervalMinutes': sessionIntervalMinutes,
+          'sessionStartMinutes': sessionStartMinutes,
           'routeOrderEnforced': routeOrderEnforced,
         },
         'checkpoints': checkpoints.map((item) => item.toJson()).toList(),
@@ -85,6 +88,8 @@ class OfflineBootstrap {
       departmentName: department['name'] as String,
       sessionIntervalMinutes:
           (department['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,
+      sessionStartMinutes:
+          (department['sessionStartMinutes'] as num?)?.toInt() ?? 420,
       routeOrderEnforced:
           department['routeOrderEnforced'] as bool? ?? true,
       checkpoints: rows

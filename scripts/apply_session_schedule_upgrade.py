@@ -526,6 +526,10 @@ t = t.replace(
     "_dayKey(DateTime.now())",
     "_scheduleDayKey(DateTime.now(), bootstrap.sessionStartMinutes)",
 )
+t = t.replace(
+    "              bootstrap.sessionIntervalMinutes,\n            ),",
+    "              bootstrap.sessionIntervalMinutes,\n              bootstrap.sessionStartMinutes,\n            ),",
+)
 t = once(
     t,
     """  int _sessionIndex(DateTime value, int interval) {

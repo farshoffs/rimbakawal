@@ -47,7 +47,7 @@ async function offlineBootstrap(request, env) {
   }
 
   const department = await env.DB.prepare(
-    `SELECT id, name, session_interval_minutes, route_order_enforced
+    `SELECT id, name, session_interval_minutes, session_start_minutes, route_order_enforced
      FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
   ).bind(auth.user.department_id).first();
   if (!department) return json({ error: 'Jabatan tidak aktif.' }, 409);
@@ -66,6 +66,7 @@ async function offlineBootstrap(request, env) {
       id: Number(department.id),
       name: department.name,
       sessionIntervalMinutes: Number(department.session_interval_minutes || 120),
+      sessionStartMinutes: Number(department.session_start_minutes ?? 420),
       routeOrderEnforced: Boolean(department.route_order_enforced),
     },
     checkpoints: (checkpointsResult.results ?? []).map((row) => ({
@@ -191,7 +192,7 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
   if (!uid || uid.length > 128) throw new SyncError('UID NFC tidak sah.');
 
   const department = await env.DB.prepare(
-    `SELECT id, session_interval_minutes, route_order_enforced
+    `SELECT id, session_interval_minutes, session_start_minutes, route_order_enforced
      FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
   ).bind(user.department_id).first();
   if (!department) throw new SyncError('Jabatan tidak aktif.');
@@ -205,10 +206,10 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
   if (!checkpoint) throw new SyncError('NFC tidak berdaftar untuk Jabatan ini.');
 
   const interval = Number(department.session_interval_minutes || 120);
-  const day = malaysiaDayBounds(malaysiaDateKey(occurredAt));
-  const sessionIndex = currentSessionIndex(occurredAt, interval);
-  const startMs = day.startMs + sessionIndex * interval * 60000;
-  const endMs = Math.min(day.endMs, startMs + interval * 60000);
+  const window = sessionWindow(occurredAt, interval, department.session_start_minutes);
+  const sessionIndex = window.index;
+  const startMs = window.startMs;
+  const endMs = window.endMs;
   const startIso = new Date(startMs).toISOString();
   const endIso = new Date(endMs).toISOString();
 
@@ -537,7 +538,8 @@ async function requireUser(request, env) {
   const user = await env.DB.prepare(
     `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
-            COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes
+            COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
+            COALESCE(d.session_start_minutes, 420) AS session_start_minutes
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      LEFT JOIN departments d ON d.id = u.department_id
@@ -559,6 +561,7 @@ function publicUser(user) {
     active: Boolean(user.active),
     departmentId: user.department_id == null ? null : Number(user.department_id),
     sessionIntervalMinutes: Number(user.session_interval_minutes || 120),
+    sessionStartMinutes: Number(user.session_start_minutes ?? 420),
   };
 }
 
@@ -608,10 +611,26 @@ function normalizeUid(value) {
   return String(value ?? '').trim().toUpperCase().replace(/\s+/g, '');
 }
 
-function currentSessionIndex(value, interval) {
+function scheduleDayWindow(value, startMinutes = 420) {
   const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);
   const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
-  return Math.floor(minuteOfDay / Math.max(15, Math.min(1440, Number(interval || 120))));
+  const safeStart = Math.max(0, Math.min(1439, Number(startMinutes ?? 420)));
+  const localMidnightUtc = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());
+  let startMs = localMidnightUtc - MALAYSIA_OFFSET_MS + safeStart * 60000;
+  if (minuteOfDay < safeStart) startMs -= 86400000;
+  return { startMs, endMs: startMs + 86400000 };
+}
+
+function sessionWindow(value, interval, startMinutes = 420) {
+  const day = scheduleDayWindow(value, startMinutes);
+  const safeInterval = Math.max(15, Math.min(1440, Number(interval || 120)));
+  const index = Math.floor((value.getTime() - day.startMs) / 60000 / safeInterval);
+  const startMs = day.startMs + index * safeInterval * 60000;
+  return { index, startMs, endMs: Math.min(day.endMs, startMs + safeInterval * 60000) };
+}
+
+function currentSessionIndex(value, interval, startMinutes = 420) {
+  return sessionWindow(value, interval, startMinutes).index;
 }
 
 function malaysiaDateKey(value) {

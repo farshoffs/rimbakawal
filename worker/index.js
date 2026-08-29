@@ -145,6 +145,7 @@ async function patrolConfig(request, env) {
       id: auth.user.department_id,
       name: auth.user.jabatan,
       sessionIntervalMinutes: Number(auth.user.session_interval_minutes || 120),
+      sessionStartMinutes: Number(auth.user.session_start_minutes ?? 420),
     },
     checkpoints: checkpoints.results ?? [],
   });
@@ -184,8 +185,15 @@ async function getScans(request, env, url) {
     return json({ error: 'Tarikh tidak sah.' }, 400);
   }
 
-  const bounds = malaysiaDayBounds(requestedDate);
-  if (!bounds) return json({ error: 'Tarikh tidak sah.' }, 400);
+  const calendarBounds = malaysiaDayBounds(requestedDate);
+  if (!calendarBounds) return json({ error: 'Tarikh tidak sah.' }, 400);
+  const sessionStartMinutes = Math.max(0, Math.min(1439, Number(auth.user.session_start_minutes ?? 420)));
+  const bounds = {
+    startMs: calendarBounds.startMs + sessionStartMinutes * 60000,
+    endMs: calendarBounds.startMs + sessionStartMinutes * 60000 + 86400000,
+  };
+  bounds.startIso = new Date(bounds.startMs).toISOString();
+  bounds.endIso = new Date(bounds.endMs).toISOString();
 
   const checkpointResult = await env.DB.prepare(
     `SELECT id, name, position
@@ -225,7 +233,7 @@ async function getScans(request, env, url) {
   const scans = scanResult.results ?? [];
   const interval = Math.max(15, Math.min(1440, Number(auth.user.session_interval_minutes || 120)));
   const nowMs = Date.now();
-  const todayKey = malaysiaDateKey(new Date());
+  const todayKey = scheduleDateKey(new Date(), sessionStartMinutes);
   const isPastDay = requestedDate < todayKey;
   const isFutureDay = requestedDate > todayKey;
   const sessions = [];
@@ -290,6 +298,7 @@ async function getScans(request, env, url) {
     date: requestedDate,
     department: auth.user.jabatan,
     sessionIntervalMinutes: interval,
+    sessionStartMinutes,
     checkpoints,
     sessions,
   });
@@ -324,9 +333,7 @@ async function createScan(request, env) {
 
   const scannedAt = new Date().toISOString();
   const interval = Math.max(15, Math.min(1440, Number(auth.user.session_interval_minutes || 120)));
-  const malaysiaNow = new Date(Date.now() + MALAYSIA_OFFSET_MS);
-  const minuteOfDay = malaysiaNow.getUTCHours() * 60 + malaysiaNow.getUTCMinutes();
-  const sessionIndex = Math.floor(minuteOfDay / interval);
+  const sessionIndex = currentSessionIndex(new Date(), interval, auth.user.session_start_minutes);
 
   const result = await env.DB.prepare(
     `INSERT INTO nfc_scans (user_id, nfc_uid, scanned_at, checkpoint_id, session_index)
@@ -361,7 +368,7 @@ async function adminDepartments(request, env) {
   if (auth.response) return auth.response;
 
   const result = await env.DB.prepare(
-    `SELECT d.id, d.name, d.session_interval_minutes, d.active,
+    `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
      LEFT JOIN checkpoints c ON c.department_id = d.id
@@ -379,7 +386,8 @@ async function createDepartment(request, env) {
   const body = await readJson(request);
   const name = String(body.name ?? '').trim();
   const interval = Number(body.sessionIntervalMinutes ?? 120);
-  const validation = validateDepartment(name, interval);
+  const startMinutes = Number(body.sessionStartMinutes ?? 420);
+  const validation = validateDepartment(name, interval, startMinutes);
   if (validation) return json({ error: validation }, 400);
 
   const duplicate = await env.DB.prepare('SELECT id FROM departments WHERE LOWER(name) = LOWER(?) LIMIT 1')
@@ -388,9 +396,9 @@ async function createDepartment(request, env) {
   if (duplicate) return json({ error: 'Jabatan dengan nama ini sudah wujud.' }, 409);
 
   const result = await env.DB.prepare(
-    `INSERT INTO departments (name, session_interval_minutes, active, updated_at)
-     VALUES (?, ?, 1, CURRENT_TIMESTAMP)`,
-  ).bind(name, interval).run();
+    `INSERT INTO departments (name, session_interval_minutes, session_start_minutes, active, updated_at)
+     VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+  ).bind(name, interval, startMinutes).run();
   const department = await getDepartmentById(env, result.meta?.last_row_id);
   return json({ department: departmentJson(department) }, 201);
 }
@@ -402,8 +410,9 @@ async function updateDepartment(request, env, departmentId) {
   const body = await readJson(request);
   const name = String(body.name ?? '').trim();
   const interval = Number(body.sessionIntervalMinutes ?? 120);
+  const startMinutes = Number(body.sessionStartMinutes ?? 420);
   const active = body.active === false ? 0 : 1;
-  const validation = validateDepartment(name, interval);
+  const validation = validateDepartment(name, interval, startMinutes);
   if (validation) return json({ error: validation }, 400);
 
   const duplicate = await env.DB.prepare(
@@ -417,9 +426,9 @@ async function updateDepartment(request, env, departmentId) {
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE departments
-       SET name = ?, session_interval_minutes = ?, active = ?, updated_at = CURRENT_TIMESTAMP
+       SET name = ?, session_interval_minutes = ?, session_start_minutes = ?, active = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-    ).bind(name, interval, active, departmentId),
+    ).bind(name, interval, startMinutes, active, departmentId),
     env.DB.prepare('UPDATE users SET jabatan = ? WHERE department_id = ?').bind(name, departmentId),
   ]);
 
@@ -553,7 +562,8 @@ function userSelect() {
   return `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
                  u.jabatan, u.department_id, u.active,
                  COALESCE(d.name, u.jabatan) AS department_name,
-                 COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes
+                 COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
+                 COALESCE(d.session_start_minutes, 420) AS session_start_minutes
           FROM users u
           LEFT JOIN departments d ON d.id = u.department_id`;
 }
@@ -565,7 +575,7 @@ async function getUserById(env, id) {
 async function getDepartmentById(env, id) {
   if (!Number.isInteger(Number(id)) || Number(id) <= 0) return null;
   return env.DB.prepare(
-    `SELECT d.id, d.name, d.session_interval_minutes, d.active,
+    `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
      LEFT JOIN checkpoints c ON c.department_id = d.id
@@ -608,6 +618,7 @@ function publicUser(user) {
     jabatan: user.department_name || user.jabatan || 'Belum ditetapkan',
     departmentId: user.department_id == null ? null : Number(user.department_id),
     sessionIntervalMinutes: Number(user.session_interval_minutes || 120),
+    sessionStartMinutes: Number(user.session_start_minutes ?? 420),
     active: user.active === undefined ? true : Boolean(user.active),
   };
 }
@@ -617,6 +628,7 @@ function departmentJson(row) {
     id: Number(row.id),
     name: row.name,
     sessionIntervalMinutes: Number(row.session_interval_minutes || 120),
+    sessionStartMinutes: Number(row.session_start_minutes ?? 420),
     active: Boolean(row.active),
     checkpointCount: Number(row.checkpoint_count || 0),
   };
@@ -647,10 +659,13 @@ function scanJson(scan) {
   };
 }
 
-function validateDepartment(name, interval) {
+function validateDepartment(name, interval, startMinutes) {
   if (name.length < 2 || name.length > 150) return 'Nama Jabatan mesti antara 2 hingga 150 aksara.';
   if (!Number.isInteger(interval) || interval < 15 || interval > 1440) {
     return 'Tempoh sesi mesti antara 15 hingga 1440 minit.';
+  }
+  if (!Number.isInteger(startMinutes) || startMinutes < 0 || startMinutes > 1439) {
+    return 'Jam mula rondaan tidak sah.';
   }
   return null;
 }
@@ -665,6 +680,27 @@ function validateCheckpoint(departmentId, name, nfcUid, position) {
 
 function normalizeUid(value) {
   return String(value ?? '').trim().toUpperCase();
+}
+
+function scheduleDayWindow(value, startMinutes = 420) {
+  const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);
+  const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+  const safeStart = Math.max(0, Math.min(1439, Number(startMinutes ?? 420)));
+  const localMidnightUtc = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());
+  let startMs = localMidnightUtc - MALAYSIA_OFFSET_MS + safeStart * 60000;
+  if (minuteOfDay < safeStart) startMs -= 86400000;
+  return { startMs, endMs: startMs + 86400000 };
+}
+
+function currentSessionIndex(value, interval, startMinutes = 420) {
+  const day = scheduleDayWindow(value, startMinutes);
+  const safeInterval = Math.max(15, Math.min(1440, Number(interval || 120)));
+  return Math.floor((value.getTime() - day.startMs) / 60000 / safeInterval);
+}
+
+function scheduleDateKey(value, startMinutes = 420) {
+  const day = scheduleDayWindow(value, startMinutes);
+  return malaysiaDateKey(new Date(day.startMs));
 }
 
 function malaysiaDateKey(date) {

@@ -8,6 +8,7 @@ class AppUser {
     required this.profilePicture,
     required this.departmentId,
     required this.sessionIntervalMinutes,
+    this.sessionStartMinutes = 420,
     this.active = true,
   });
 
@@ -19,6 +20,7 @@ class AppUser {
   final String? profilePicture;
   final int? departmentId;
   final int sessionIntervalMinutes;
+  final int sessionStartMinutes;
   final bool active;
 
   bool get isManagement => jawatan.toLowerCase() == 'management';
@@ -36,6 +38,8 @@ class AppUser {
       departmentId: (json['departmentId'] as num?)?.toInt(),
       sessionIntervalMinutes:
           (json['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,
+      sessionStartMinutes:
+          (json['sessionStartMinutes'] as num?)?.toInt() ?? 420,
       active: json['active'] as bool? ?? true,
     );
   }

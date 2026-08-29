@@ -106,7 +106,7 @@ async function startPatrolSession(request, env) {
   const now = new Date();
   const startedAt = now.toISOString();
   const interval = Number(auth.user.session_interval_minutes || 120);
-  const sessionIndex = currentSessionIndex(now, interval);
+  const sessionIndex = currentSessionIndex(now, interval, auth.user.session_start_minutes);
   await env.DB.prepare(
     `UPDATE patrol_sessions
      SET status = 'ended', ended_at = COALESCE(ended_at, ?)
@@ -187,7 +187,7 @@ async function smartPatrolConfig(request, env) {
   }
 
   const department = await env.DB.prepare(
-    `SELECT id, name, session_interval_minutes, route_order_enforced
+    `SELECT id, name, session_interval_minutes, session_start_minutes, route_order_enforced
      FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
   ).bind(auth.user.department_id).first();
   if (!department) return json({ error: 'Jabatan tidak aktif.' }, 409);
@@ -202,10 +202,10 @@ async function smartPatrolConfig(request, env) {
 
   const interval = Number(department.session_interval_minutes || 120);
   const now = new Date();
-  const day = malaysiaDayBounds(malaysiaDateKey(now));
-  const sessionIndex = currentSessionIndex(now, interval);
-  const sessionStart = day.startMs + sessionIndex * interval * 60000;
-  const sessionEnd = Math.min(day.endMs, sessionStart + interval * 60000);
+  const window = sessionWindow(now, interval, department.session_start_minutes);
+  const sessionIndex = window.index;
+  const sessionStart = window.startMs;
+  const sessionEnd = window.endMs;
 
   const scanned = await env.DB.prepare(
     `SELECT DISTINCT checkpoint_id FROM nfc_scans
@@ -219,6 +219,7 @@ async function smartPatrolConfig(request, env) {
       id: Number(department.id),
       name: department.name,
       sessionIntervalMinutes: interval,
+      sessionStartMinutes: Number(department.session_start_minutes ?? 420),
       routeOrderEnforced: Boolean(department.route_order_enforced),
     },
     sessionIndex,
@@ -254,7 +255,7 @@ async function createSmartScan(request, env) {
   }
 
   const department = await env.DB.prepare(
-    `SELECT id, session_interval_minutes, route_order_enforced
+    `SELECT id, session_interval_minutes, session_start_minutes, route_order_enforced
      FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
   ).bind(auth.user.department_id).first();
   if (!department) return json({ error: 'Jabatan tidak aktif.' }, 409);
@@ -272,10 +273,10 @@ async function createSmartScan(request, env) {
   const now = new Date();
   const scannedAt = now.toISOString();
   const interval = Number(department.session_interval_minutes || 120);
-  const day = malaysiaDayBounds(malaysiaDateKey(now));
-  const sessionIndex = currentSessionIndex(now, interval);
-  const sessionStart = day.startMs + sessionIndex * interval * 60000;
-  const sessionEnd = Math.min(day.endMs, sessionStart + interval * 60000);
+  const window = sessionWindow(now, interval, department.session_start_minutes);
+  const sessionIndex = window.index;
+  const sessionStart = window.startMs;
+  const sessionEnd = window.endMs;
 
   const activeResult = await env.DB.prepare(
     `SELECT id, name, position FROM checkpoints
@@ -454,8 +455,10 @@ async function commandCenter(request, env) {
   if (auth.response) return auth.response;
 
   const now = new Date();
-  const today = malaysiaDateKey(now);
-  const bounds = malaysiaDayBounds(today);
+  const bounds = {
+    startIso: new Date(now.getTime() - 86400000).toISOString(),
+    endIso: new Date(now.getTime() + 60000).toISOString(),
+  };
   const liveSince = new Date(now.getTime() - 2 * 60 * 1000).toISOString();
 
   const [
@@ -469,7 +472,8 @@ async function commandCenter(request, env) {
     env.DB.prepare(
       `SELECT u.id, u.nama, u.department_id, COALESCE(d.name, u.jabatan) AS jabatan,
               u.profile_picture,
-              COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes
+              COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
+            COALESCE(d.session_start_minutes, 420) AS session_start_minutes
        FROM users u
        LEFT JOIN departments d ON d.id = u.department_id
        WHERE u.active = 1 AND LOWER(u.jawatan) IN ('patrol', 'supervisor')
@@ -534,26 +538,32 @@ async function commandCenter(request, env) {
 
   for (const user of usersResult.results ?? []) {
     const interval = Number(user.session_interval_minutes || 120);
-    const currentIndex = currentSessionIndex(now, interval);
+    const sessionStartMinutes = Number(user.session_start_minutes ?? 420);
+    const currentWindow = sessionWindow(now, interval, sessionStartMinutes);
+    const currentIndex = currentWindow.index;
+    const scheduleDay = scheduleDayWindow(now, sessionStartMinutes);
     const expected = checkpointCounts.get(Number(user.department_id)) ?? 0;
-    const currentScans = scans.filter((row) =>
-      Number(row.user_id) === Number(user.id) && Number(row.session_index) === currentIndex
-    );
+    const userDayScans = scans.filter((row) => {
+      const time = Date.parse(row.scanned_at);
+      return Number(row.user_id) === Number(user.id) && time >= scheduleDay.startMs && time < scheduleDay.endMs;
+    });
+    const currentScans = userDayScans.filter((row) => {
+      const time = Date.parse(row.scanned_at);
+      return time >= currentWindow.startMs && time < currentWindow.endMs;
+    });
     const uniqueCurrent = new Set(currentScans.map((row) => Number(row.checkpoint_id)).filter((id) => id > 0));
-    const lastScan = scans.filter((row) => Number(row.user_id) === Number(user.id)).at(-1) ?? null;
+    const lastScan = userDayScans.at(-1) ?? null;
     const activePatrol = activePatrols.get(Number(user.id)) ?? null;
 
     let missedSessions = 0;
     for (let index = 0; index < currentIndex; index += 1) {
-      const unique = new Set(scans
-        .filter((row) => Number(row.user_id) === Number(user.id) && Number(row.session_index) === index)
+      const unique = new Set(userDayScans
+        .filter((row) => Number(row.session_index) === index)
         .map((row) => Number(row.checkpoint_id)).filter((id) => id > 0));
       if (expected > 0 && unique.size < expected) missedSessions += 1;
     }
 
-    const shifted = new Date(now.getTime() + MALAYSIA_OFFSET_MS);
-    const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
-    const minutesIntoSession = minuteOfDay - currentIndex * interval;
+    const minutesIntoSession = Math.max(0, Math.floor((now.getTime() - currentWindow.startMs) / 60000));
     const grace = Math.max(10, Math.min(30, Math.floor(interval / 4)));
 
     let status = 'waiting';
@@ -746,7 +756,8 @@ async function requireUser(request, env) {
   const user = await env.DB.prepare(
     `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
-            COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes
+            COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
+            COALESCE(d.session_start_minutes, 420) AS session_start_minutes
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      LEFT JOIN departments d ON d.id = u.department_id
@@ -762,7 +773,8 @@ async function getUserById(env, id) {
   return env.DB.prepare(
     `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
-            COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes
+            COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
+            COALESCE(d.session_start_minutes, 420) AS session_start_minutes
      FROM users u
      LEFT JOIN departments d ON d.id = u.department_id
      WHERE u.id = ? LIMIT 1`,
@@ -780,6 +792,7 @@ function publicUser(user) {
     active: Boolean(user.active),
     departmentId: user.department_id == null ? null : Number(user.department_id),
     sessionIntervalMinutes: Number(user.session_interval_minutes || 120),
+    sessionStartMinutes: Number(user.session_start_minutes ?? 420),
   };
 }
 
@@ -798,10 +811,26 @@ function normalizeUid(value) {
   return String(value ?? '').trim().toUpperCase().replace(/\s+/g, '');
 }
 
-function currentSessionIndex(value, interval) {
+function scheduleDayWindow(value, startMinutes = 420) {
   const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);
   const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
-  return Math.floor(minuteOfDay / Math.max(15, Math.min(1440, interval)));
+  const safeStart = Math.max(0, Math.min(1439, Number(startMinutes ?? 420)));
+  const localMidnightUtc = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());
+  let startMs = localMidnightUtc - MALAYSIA_OFFSET_MS + safeStart * 60000;
+  if (minuteOfDay < safeStart) startMs -= 86400000;
+  return { startMs, endMs: startMs + 86400000 };
+}
+
+function sessionWindow(value, interval, startMinutes = 420) {
+  const day = scheduleDayWindow(value, startMinutes);
+  const safeInterval = Math.max(15, Math.min(1440, Number(interval || 120)));
+  const index = Math.floor((value.getTime() - day.startMs) / 60000 / safeInterval);
+  const startMs = day.startMs + index * safeInterval * 60000;
+  return { index, startMs, endMs: Math.min(day.endMs, startMs + safeInterval * 60000) };
+}
+
+function currentSessionIndex(value, interval, startMinutes = 420) {
+  return sessionWindow(value, interval, startMinutes).index;
 }
 
 async function readJson(request) {

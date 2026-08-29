@@ -115,6 +115,7 @@ class _DepartmentMaintenanceScreenState
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                   subtitle: Text(
+                    'Mula ${TimeOfDay(hour: department.sessionStartMinutes ~/ 60, minute: department.sessionStartMinutes % 60).format(context)} • '
                     'Sesi setiap ${department.sessionIntervalMinutes} minit • '
                     '${department.checkpointCount} checkpoint aktif'
                     '${department.active ? '' : ' • TIDAK AKTIF'}',
@@ -221,6 +222,7 @@ class _DepartmentDialog extends StatefulWidget {
 class _DepartmentDialogState extends State<_DepartmentDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _intervalController;
+  late TimeOfDay _startTime;
   late bool _active;
   bool _saving = false;
   String? _error;
@@ -232,6 +234,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     _intervalController = TextEditingController(
       text: (widget.department?.sessionIntervalMinutes ?? 120).toString(),
     );
+    final startMinutes = widget.department?.sessionStartMinutes ?? 420;
+    _startTime = TimeOfDay(hour: startMinutes ~/ 60, minute: startMinutes % 60);
     _active = widget.department?.active ?? true;
   }
 
@@ -242,9 +246,19 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     super.dispose();
   }
 
+  Future<void> _pickStartTime() async {
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: _startTime,
+      helpText: 'Jam mula sesi rondaan',
+    );
+    if (selected != null && mounted) setState(() => _startTime = selected);
+  }
+
   Future<void> _save() async {
     final name = _nameController.text.trim();
     final interval = int.tryParse(_intervalController.text.trim());
+    final startMinutes = _startTime.hour * 60 + _startTime.minute;
     if (name.length < 2 || interval == null) {
       setState(() => _error = 'Masukkan nama Jabatan dan kadar sesi yang sah.');
       return;
@@ -259,6 +273,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
         await widget.api.createDepartment(
           name: name,
           sessionIntervalMinutes: interval,
+          sessionStartMinutes: startMinutes,
         );
       } else {
         await widget.api.updateDepartment(
@@ -266,6 +281,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
             id: existing.id,
             name: name,
             sessionIntervalMinutes: interval,
+            sessionStartMinutes: startMinutes,
             active: _active,
             checkpointCount: existing.checkpointCount,
           ),
@@ -306,6 +322,17 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                   labelText: 'Tempoh satu sesi (minit)',
                   helperText: 'Default: 120 minit (2 jam)',
                   prefixIcon: Icon(Icons.timer_outlined),
+                ),
+              ),
+              const SizedBox(height: 14),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                leading: const Icon(Icons.schedule_rounded),
+                title: const Text('Jam mula rondaan'),
+                subtitle: Text('Sesi 1 bermula pada ${_startTime.format(context)}'),
+                trailing: FilledButton.tonal(
+                  onPressed: _pickStartTime,
+                  child: Text(_startTime.format(context)),
                 ),
               ),
               if (widget.department != null) ...[

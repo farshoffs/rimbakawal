@@ -247,8 +247,8 @@ class _PatrolScreenState extends State<PatrolScreen>
       }
 
       final sessionIndex =
-          _sessionIndex(DateTime.now(), bootstrap.sessionIntervalMinutes);
-      final dayKey = _dayKey(DateTime.now());
+          _sessionIndex(DateTime.now(), bootstrap.sessionIntervalMinutes, bootstrap.sessionStartMinutes);
+      final dayKey = _scheduleDayKey(DateTime.now(), bootstrap.sessionStartMinutes);
       final localScans = _currentSessionScanEvents(
         sessionIndex: sessionIndex,
         dayKey: dayKey,
@@ -627,8 +627,9 @@ class _PatrolScreenState extends State<PatrolScreen>
     final index = _sessionIndex(
       DateTime.now(),
       bootstrap.sessionIntervalMinutes,
+      bootstrap.sessionStartMinutes,
     );
-    final day = _dayKey(DateTime.now());
+    final day = _scheduleDayKey(DateTime.now(), bootstrap.sessionStartMinutes);
     final scannedIds = _currentSessionScanEvents(
       sessionIndex: index,
       dayKey: day,
@@ -645,8 +646,9 @@ class _PatrolScreenState extends State<PatrolScreen>
     final index = _sessionIndex(
       DateTime.now(),
       bootstrap.sessionIntervalMinutes,
+      bootstrap.sessionStartMinutes,
     );
-    final day = _dayKey(DateTime.now());
+    final day = _scheduleDayKey(DateTime.now(), bootstrap.sessionStartMinutes);
     return _currentSessionScanEvents(sessionIndex: index, dayKey: day)
         .map((event) => (event.payload['checkpointId'] as num?)?.toInt())
         .whereType<int>()
@@ -654,16 +656,38 @@ class _PatrolScreenState extends State<PatrolScreen>
         .length;
   }
 
-  int _sessionIndex(DateTime value, int interval) {
+  _SessionWindow _sessionWindow(DateTime value, int interval, int startMinutes) {
     final local = value.toLocal();
     final safeInterval = interval.clamp(15, 1440);
-    return (local.hour * 60 + local.minute) ~/ safeInterval;
+    final safeStart = startMinutes.clamp(0, 1439);
+    var anchor = DateTime(local.year, local.month, local.day)
+        .add(Duration(minutes: safeStart));
+    if (local.isBefore(anchor)) anchor = anchor.subtract(const Duration(days: 1));
+    final index = local.difference(anchor).inMinutes ~/ safeInterval;
+    final start = anchor.add(Duration(minutes: index * safeInterval));
+    final dayEnd = anchor.add(const Duration(days: 1));
+    final rawEnd = start.add(Duration(minutes: safeInterval));
+    final end = rawEnd.isAfter(dayEnd) ? dayEnd : rawEnd;
+    return _SessionWindow(index: index, start: start, end: end);
   }
 
-  String _dayKey(DateTime value) {
+  int _sessionIndex(DateTime value, int interval, int startMinutes) =>
+      _sessionWindow(value, interval, startMinutes).index;
+
+  String _scheduleDayKey(DateTime value, int startMinutes) {
+    final local = value.toLocal();
+    final safeStart = startMinutes.clamp(0, 1439);
+    var anchor = DateTime(local.year, local.month, local.day)
+        .add(Duration(minutes: safeStart));
+    if (local.isBefore(anchor)) anchor = anchor.subtract(const Duration(days: 1));
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${anchor.year}-${two(anchor.month)}-${two(anchor.day)}';
+  }
+
+  String _hm(DateTime value) {
     final local = value.toLocal();
     String two(int value) => value.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)}';
+    return '${two(local.hour)}:${two(local.minute)}';
   }
 
   String _clock(DateTime value) {
@@ -703,14 +727,21 @@ class _PatrolScreenState extends State<PatrolScreen>
     final total = bootstrap?.checkpoints.length ?? 0;
     final progress = total == 0 ? 0.0 : completed / total;
     final next = bootstrap == null ? null : _nextCheckpoint(bootstrap);
+    final activeSession = bootstrap == null
+        ? null
+        : _sessionWindow(DateTime.now(), bootstrap.sessionIntervalMinutes, bootstrap.sessionStartMinutes);
+    final sessionLabel = activeSession == null
+        ? 'Sesi Rondaan belum tersedia'
+        : 'Sesi Rondaan ${activeSession.index + 1} • ${_hm(activeSession.start)} – ${_hm(activeSession.end)}';
     final sessionEvents = bootstrap == null
         ? const <OfflineEvent>[]
         : _currentSessionScanEvents(
             sessionIndex: _sessionIndex(
               DateTime.now(),
               bootstrap.sessionIntervalMinutes,
+              bootstrap.sessionStartMinutes,
             ),
-            dayKey: _dayKey(DateTime.now()),
+            dayKey: _scheduleDayKey(DateTime.now(), bootstrap.sessionStartMinutes),
           );
 
     return Scaffold(
@@ -722,12 +753,29 @@ class _PatrolScreenState extends State<PatrolScreen>
             onPressed: _welfareCheck,
             icon: const Icon(Icons.health_and_safety_rounded),
           ),
-          IconButton(
-            tooltip: 'Tamat rondaan',
-            onPressed: _ending ? null : _finishPatrol,
-            icon: const Icon(Icons.stop_circle_outlined),
-          ),
         ],
+      ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: SizedBox(
+          height: 66,
+          child: FilledButton.icon(
+            onPressed: _ending ? null : _finishPatrol,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFC0392B),
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: const Color(0xFF6F2A25),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            icon: const Icon(Icons.stop_circle_rounded, size: 30),
+            label: Text(
+              _ending ? 'MENAMATKAN RONDAAN…' : 'TAMAT RONDAAN',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+          ),
+        ),
       ),
       body: SafeArea(
         child: RefreshIndicator(
@@ -758,6 +806,7 @@ class _PatrolScreenState extends State<PatrolScreen>
                 next: next,
                 interval: bootstrap?.sessionIntervalMinutes ??
                     widget.user.sessionIntervalMinutes,
+                sessionLabel: sessionLabel,
               ),
               const SizedBox(height: 14),
               _ScanCard(
@@ -832,6 +881,18 @@ class _PatrolScreenState extends State<PatrolScreen>
       ),
     );
   }
+}
+
+class _SessionWindow {
+  const _SessionWindow({
+    required this.index,
+    required this.start,
+    required this.end,
+  });
+
+  final int index;
+  final DateTime start;
+  final DateTime end;
 }
 
 class _LiveHero extends StatelessWidget {
@@ -1028,6 +1089,7 @@ class _RouteCard extends StatelessWidget {
     required this.progress,
     required this.next,
     required this.interval,
+    required this.sessionLabel,
   });
   final String department;
   final int completed;
@@ -1035,6 +1097,7 @@ class _RouteCard extends StatelessWidget {
   final double progress;
   final CachedCheckpoint? next;
   final int interval;
+  final String sessionLabel;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -1055,7 +1118,15 @@ class _RouteCard extends StatelessWidget {
                                 fontWeight: FontWeight.w900,
                               ),
                         ),
-                        Text('Sesi setiap $interval minit'),
+                        Text(
+                          sessionLabel,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFFA29BFE),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text('Kadar: setiap $interval minit'),
                       ],
                     ),
                   ),
