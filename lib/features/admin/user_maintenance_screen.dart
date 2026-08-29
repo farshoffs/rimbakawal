@@ -365,14 +365,6 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                 ),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _noPkController,
-                decoration: const InputDecoration(
-                  labelText: 'No. PK',
-                  prefixIcon: Icon(Icons.numbers_rounded),
-                ),
-              ),
-              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _jawatan,
                 decoration: const InputDecoration(
@@ -531,6 +523,15 @@ class _AddUserDialogState extends State<_AddUserDialog> {
                 decoration: const InputDecoration(
                   labelText: 'No. Kad Pengenalan',
                   prefixIcon: Icon(Icons.badge_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _noPkController,
+                decoration: const InputDecoration(
+                  labelText: 'No. PK',
+                  prefixIcon: Icon(Icons.numbers_rounded),
+                  helperText: 'Nombor pengawal untuk borang BPPA PKK 2.',
                 ),
               ),
               const SizedBox(height: 12),

@@ -810,7 +810,7 @@ async function requireUser(request, env) {
 
 async function getUserById(env, id) {
   return env.DB.prepare(
-    `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
+    `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
             COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
             COALESCE(d.session_start_minutes, 420) AS session_start_minutes
