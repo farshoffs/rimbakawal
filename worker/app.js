@@ -66,6 +66,7 @@ async function createUser(request, env) {
   const identityCard = String(body.noKadPengenalan ?? '').replace(/\D/g, '');
   const jawatan = String(body.jawatan ?? 'Patrol').trim();
   const departmentId = Number(body.departmentId ?? 0);
+  const noPk = String(body.noPk ?? '').trim().slice(0, 50);
 
   if (nama.length < 3) return json({ error: 'Nama pengguna tidak sah.' }, 400);
   if (!/^\d{12}$/.test(identityCard)) {
@@ -89,9 +90,9 @@ async function createUser(request, env) {
   if (duplicate) return json({ error: 'No. Kad Pengenalan ini sudah berdaftar.' }, 409);
 
   const result = await env.DB.prepare(
-    `INSERT INTO users (nama, no_kad_pengenalan, jawatan, profile_picture, jabatan, active, department_id)
-     VALUES (?, ?, ?, NULL, ?, 1, ?)`,
-  ).bind(nama, identityCard, jawatan, department.name, departmentId).run();
+    `INSERT INTO users (nama, no_kad_pengenalan, no_pk, jawatan, profile_picture, jabatan, active, department_id)
+     VALUES (?, ?, ?, ?, NULL, ?, 1, ?)`,
+  ).bind(nama, identityCard, noPk || null, jawatan, department.name, departmentId).run();
 
   const user = await getUserById(env, result.meta?.last_row_id);
   return json({ user: publicUser(user) }, 201);
@@ -792,7 +793,7 @@ async function requireUser(request, env) {
   if (!token) return { response: json({ error: 'Sesi tidak sah. Sila log masuk.' }, 401) };
 
   const user = await env.DB.prepare(
-    `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
+    `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
             COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
             COALESCE(d.session_start_minutes, 420) AS session_start_minutes
@@ -809,7 +810,7 @@ async function requireUser(request, env) {
 
 async function getUserById(env, id) {
   return env.DB.prepare(
-    `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
+    `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
             COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
             COALESCE(d.session_start_minutes, 420) AS session_start_minutes
@@ -824,6 +825,7 @@ function publicUser(user) {
     id: user.id,
     nama: user.nama,
     noKadPengenalan: user.no_kad_pengenalan,
+    noPk: user.no_pk || '',
     jawatan: user.jawatan,
     profilePicture: user.profile_picture,
     jabatan: user.jabatan,

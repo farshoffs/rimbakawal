@@ -349,6 +349,8 @@ class DepartmentRecord {
     this.attendanceLongitude,
     this.attendanceRadiusMeters = 150,
     this.attendanceLocationLabel = '',
+    this.companyName = '',
+    this.zone = '',
   });
   final int id;
   final String name;
@@ -360,6 +362,8 @@ class DepartmentRecord {
   final double? attendanceLongitude;
   final int attendanceRadiusMeters;
   final String attendanceLocationLabel;
+  final String companyName;
+  final String zone;
 
   factory DepartmentRecord.fromJson(Map<String, dynamic> json) => DepartmentRecord(
         id: (json['id'] as num).toInt(),
@@ -372,6 +376,8 @@ class DepartmentRecord {
         attendanceLongitude: (json['attendanceLongitude'] as num?)?.toDouble(),
         attendanceRadiusMeters: (json['attendanceRadiusMeters'] as num?)?.toInt() ?? 150,
         attendanceLocationLabel: json['attendanceLocationLabel'] as String? ?? '',
+        companyName: json['companyName'] as String? ?? '',
+        zone: json['zone'] as String? ?? '',
       );
 }
 
@@ -912,6 +918,7 @@ class ApiService {
     required String noKadPengenalan,
     required String jawatan,
     required int departmentId,
+    String noPk = '',
   }) async {
     final data = _decode(
       await http.post(
@@ -922,6 +929,7 @@ class ApiService {
           'noKadPengenalan': noKadPengenalan,
           'jawatan': jawatan,
           'departmentId': departmentId,
+          'noPk': noPk,
         }),
       ),
     );
@@ -973,6 +981,8 @@ class ApiService {
     required double attendanceLongitude,
     int attendanceRadiusMeters = 150,
     String attendanceLocationLabel = '',
+    String companyName = '',
+    String zone = '',
   }) async {
     final data = _decode(
       await http.post(
@@ -986,6 +996,8 @@ class ApiService {
           'attendanceLongitude': attendanceLongitude,
           'attendanceRadiusMeters': attendanceRadiusMeters,
           'attendanceLocationLabel': attendanceLocationLabel,
+          'companyName': companyName,
+          'zone': zone,
         }),
       ),
     );
@@ -1006,6 +1018,8 @@ class ApiService {
           'attendanceLongitude': department.attendanceLongitude,
           'attendanceRadiusMeters': department.attendanceRadiusMeters,
           'attendanceLocationLabel': department.attendanceLocationLabel,
+          'companyName': department.companyName,
+          'zone': department.zone,
         }),
       ),
     );
@@ -1076,6 +1090,7 @@ class ApiService {
     required String nama,
     required String jawatan,
     required int departmentId,
+    String noPk = '',
     String? profilePicture,
     bool clearProfilePicture = false,
   }) async {
@@ -1083,6 +1098,7 @@ class ApiService {
       'nama': nama,
       'jawatan': jawatan,
       'departmentId': departmentId,
+      'noPk': noPk,
     };
     if (profilePicture != null) body['profilePicture'] = profilePicture;
     if (clearProfilePicture) body['clearProfilePicture'] = true;

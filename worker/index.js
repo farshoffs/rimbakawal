@@ -685,6 +685,7 @@ async function updateAdminUser(request, env, userId) {
   const nama = String(body.nama ?? '').trim().toUpperCase();
   const jawatan = String(body.jawatan ?? '').trim();
   const departmentId = Number(body.departmentId);
+  const noPk = String(body.noPk ?? '').trim().slice(0, 50);
 
   if (nama.length < 3) return json({ error: 'Nama pengguna tidak sah.' }, 400);
   if (!['Patrol', 'Supervisor', 'Management'].includes(jawatan)) {
@@ -720,9 +721,9 @@ async function updateAdminUser(request, env, userId) {
 
   await env.DB.prepare(
     `UPDATE users
-     SET nama = ?, jawatan = ?, department_id = ?, jabatan = ?, profile_picture = ?
+     SET nama = ?, jawatan = ?, department_id = ?, jabatan = ?, profile_picture = ?, no_pk = ?
      WHERE id = ?`,
-  ).bind(nama, jawatan, departmentId, department.name, profilePicture, userId).run();
+  ).bind(nama, jawatan, departmentId, department.name, profilePicture, noPk || null, userId).run();
 
   const updated = await getUserById(env, userId);
   return json({ user: publicUser(updated) });
@@ -801,7 +802,7 @@ async function requireUser(request, env) {
 }
 
 function userSelect() {
-  return `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
+  return `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan, u.profile_picture,
                  u.jabatan, u.department_id, u.active,
                  COALESCE(d.name, u.jabatan) AS department_name,
                  COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
@@ -855,6 +856,7 @@ function publicUser(user) {
     id: Number(user.id),
     nama: user.nama,
     noKadPengenalan: user.no_kad_pengenalan,
+    noPk: user.no_pk || '',
     jawatan: user.jawatan,
     profilePicture: user.profile_picture,
     jabatan: user.department_name || user.jabatan || 'Belum ditetapkan',

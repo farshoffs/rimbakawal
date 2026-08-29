@@ -141,6 +141,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 24),
           _InfoTile(label: 'Nama', value: _user.nama),
           _InfoTile(label: 'No. Kad Pengenalan', value: _user.noKadPengenalan),
+          _InfoTile(label: 'No. PK', value: _user.noPk.isEmpty ? '-' : _user.noPk),
           _InfoTile(label: 'Jawatan', value: _user.jawatanPaparan),
           _InfoTile(label: 'Jabatan', value: _user.jabatan),
           _InfoTile(
