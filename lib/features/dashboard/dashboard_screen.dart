@@ -17,7 +17,6 @@ import '../auth/login_screen.dart';
 import '../history/clocking_history_screen.dart';
 import '../patrol/patrol_screen.dart';
 import '../profile/profile_screen.dart';
-import '../sync/sync_center_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -169,7 +168,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                       gradient: const LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [Color(0xFF331315), Color(0xFF171827), Color(0xFF251A4F)],
+                        colors: [
+                          Color(0xFF331315),
+                          Color(0xFF171827),
+                          Color(0xFF251A4F),
+                        ],
                       ),
                     ),
                     child: Column(
@@ -250,7 +253,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       builder: (context) => AlertDialog(
         title: const Text('Rekod SOS?'),
         content: const Text(
-          'SOS akan disimpan pada telefon dahulu dan dihantar ke Command Center apabila ada internet. Ia tidak menghubungi talian kecemasan secara automatik.',
+          'SOS akan disimpan pada telefon dahulu dan dihantar secara automatik apabila ada internet. Ia tidak menghubungi talian kecemasan secara automatik.',
         ),
         actions: [
           TextButton(
@@ -288,7 +291,11 @@ class _DashboardScreenState extends State<DashboardScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.sos_rounded, size: 110, color: Colors.redAccent),
+                  const Icon(
+                    Icons.sos_rounded,
+                    size: 110,
+                    color: Colors.redAccent,
+                  ),
                   const SizedBox(height: 20),
                   Text(
                     'SOS DISIMPAN',
@@ -298,7 +305,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                   const SizedBox(height: 14),
                   const Text(
-                    'Event selamat dalam telefon dan akan sync automatik. Jika ini kecemasan sebenar, hubungi pihak bertanggungjawab atau perkhidmatan kecemasan secara terus.',
+                    'Event selamat dalam telefon dan akan dihantar secara automatik apabila sambungan tersedia.',
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 24),
@@ -337,7 +344,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.sos_rounded)),
                 title: const Text('SOS'),
-                subtitle: const Text('Simpan SOS lokal dahulu.'),
+                subtitle: const Text('Simpan SOS pada telefon dahulu.'),
                 onTap: () {
                   Navigator.of(context).pop();
                   unawaited(_triggerSos());
@@ -351,29 +358,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _logout() async {
-    final pending = _store.pendingCount(_user.id);
-    if (pending > 0) {
-      final proceed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Masih ada data belum sync'),
-          content: Text(
-            '$pending event masih disimpan lokal. Data tidak dipadam, tetapi ia hanya boleh sync selepas pengguna ini log masuk semula.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Batal'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Log keluar'),
-            ),
-          ],
-        ),
-      );
-      if (proceed != true) return;
-    }
+    // Best-effort automatic flush before removing the cloud session.
+    await _sync.syncNow();
     await widget.api.logout();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -423,13 +409,17 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _refreshCurrentUser() async {
-    final refreshed = await widget.api.getSession();
-    if (refreshed == null || !mounted) return;
-    setState(() {
-      _user = refreshed;
-      _sessionIntervalMinutes = refreshed.sessionIntervalMinutes;
-    });
-    _lastSessionKey = _sessionKey(DateTime.now());
+    try {
+      final refreshed = await widget.api.getSession();
+      if (refreshed == null || !mounted) return;
+      setState(() {
+        _user = refreshed;
+        _sessionIntervalMinutes = refreshed.sessionIntervalMinutes;
+      });
+      _lastSessionKey = _sessionKey(DateTime.now());
+    } catch (_) {
+      // Offline mode keeps the locally cached identity and configuration.
+    }
   }
 
   ImageProvider<Object>? _avatar() {
@@ -445,11 +435,21 @@ class _DashboardScreenState extends State<DashboardScreen>
     return NetworkImage(picture);
   }
 
+  String _managementSyncLabel(int pending) {
+    if (_sync.isSyncing) return 'AUTO SYNC • SYNCING';
+    if (pending > 0) return 'AUTO SYNC • $pending PENDING';
+    final last = _sync.lastSyncAt;
+    if (last == null) return 'AUTO SYNC • READY';
+    final local = last.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return 'AUTO SYNC • ${two(local.hour)}:${two(local.minute)}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final pending = _store.pendingCount(_user.id);
-    final failed = _store.failedCount(_user.id);
     final image = _avatar();
+    final pending = _user.isManagement ? _store.pendingCount(_user.id) : 0;
+    final failed = _user.isManagement ? _store.failedCount(_user.id) : 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -472,7 +472,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           onRefresh: () async {
             await _refreshCurrentUser();
             await _refreshPatrolConfig();
-            await _sync.syncNow();
           },
           child: ListView(
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
@@ -484,7 +483,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                   gradient: const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Color(0xFF251A4F), Color(0xFF151827), Color(0xFF351315)],
+                    colors: [
+                      Color(0xFF251A4F),
+                      Color(0xFF151827),
+                      Color(0xFF351315),
+                    ],
                   ),
                   boxShadow: [
                     BoxShadow(
@@ -537,19 +540,20 @@ class _DashboardScreenState extends State<DashboardScreen>
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        _StatusPill(
+                        const _StatusPill(
                           icon: Icons.offline_bolt_rounded,
                           label: 'OFFLINE READY',
-                          color: const Color(0xFF74B9FF),
+                          color: Color(0xFF74B9FF),
                         ),
-                        _StatusPill(
-                          icon: _sync.isSyncing
-                              ? Icons.sync_rounded
-                              : Icons.cloud_upload_outlined,
-                          label: _sync.isSyncing ? 'SYNCING' : '$pending PENDING',
-                          color: const Color(0xFFA29BFE),
-                        ),
-                        if (failed > 0)
+                        if (_user.isManagement)
+                          _StatusPill(
+                            icon: _sync.isSyncing
+                                ? Icons.sync_rounded
+                                : Icons.cloud_done_outlined,
+                            label: _managementSyncLabel(pending),
+                            color: const Color(0xFFA29BFE),
+                          ),
+                        if (_user.isManagement && failed > 0)
                           _StatusPill(
                             icon: Icons.warning_amber_rounded,
                             label: '$failed FAILED',
@@ -558,20 +562,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ],
                     ),
                     const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Sesi rondaan setiap $_sessionIntervalMinutes minit',
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => _open(SyncCenterScreen(user: _user)),
-                          icon: const Icon(Icons.sync_rounded),
-                          label: const Text('Sync Center'),
-                        ),
-                      ],
+                    Text(
+                      'Sesi rondaan setiap $_sessionIntervalMinutes minit',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ],
                 ),
@@ -601,12 +594,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                       onTap: () => _open(ClockingHistoryScreen(api: widget.api)),
                     ),
                     _MenuData(
-                      icon: Icons.sync_rounded,
-                      title: 'Sync Center',
-                      subtitle: '$pending menunggu',
-                      onTap: () => _open(SyncCenterScreen(user: _user)),
-                    ),
-                    _MenuData(
                       icon: Icons.person_rounded,
                       title: 'Profil',
                       subtitle: _user.jawatan,
@@ -627,6 +614,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         onTap: () => _open(CommandCenterScreen(api: widget.api)),
                       ),
                   ];
+
                   return GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -635,7 +623,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                       crossAxisCount: columns,
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,
-                      childAspectRatio: constraints.maxWidth >= 760 ? 1.35 : 1.12,
+                      childAspectRatio:
+                          constraints.maxWidth >= 760 ? 1.35 : 1.12,
                     ),
                     itemBuilder: (context, index) => _MenuCard(data: items[index]),
                   );
@@ -650,7 +639,12 @@ class _DashboardScreenState extends State<DashboardScreen>
 }
 
 class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.icon, required this.label, required this.color});
+  const _StatusPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
   final IconData icon;
   final String label;
   final Color color;
@@ -688,6 +682,7 @@ class _MenuData {
     required this.subtitle,
     required this.onTap,
   });
+
   final IconData icon;
   final String title;
   final String subtitle;
@@ -696,6 +691,7 @@ class _MenuData {
 
 class _MenuCard extends StatelessWidget {
   const _MenuCard({required this.data});
+
   final _MenuData data;
 
   @override
