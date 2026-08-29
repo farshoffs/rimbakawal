@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -733,8 +731,9 @@ class _PatrolScreenState extends State<PatrolScreen> {
       local.month,
       local.day,
     ).add(Duration(minutes: safeStart));
-    if (local.isBefore(anchor))
+    if (local.isBefore(anchor)) {
       anchor = anchor.subtract(const Duration(days: 1));
+    }
     final index = local.difference(anchor).inMinutes ~/ safeInterval;
     final start = anchor.add(Duration(minutes: index * safeInterval));
     final dayEnd = anchor.add(const Duration(days: 1));
@@ -754,8 +753,9 @@ class _PatrolScreenState extends State<PatrolScreen> {
       local.month,
       local.day,
     ).add(Duration(minutes: safeStart));
-    if (local.isBefore(anchor))
+    if (local.isBefore(anchor)) {
       anchor = anchor.subtract(const Duration(days: 1));
+    }
     String two(int value) => value.toString().padLeft(2, '0');
     return '${anchor.year}-${two(anchor.month)}-${two(anchor.day)}';
   }
