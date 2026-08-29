@@ -464,6 +464,9 @@ class AttendanceRecord {
     this.department,
     this.profilePicture,
     this.selfieData,
+    this.reviewedAt,
+    this.reviewedBy,
+    this.reviewedByName,
   });
   final int id;
   final String punchType;
@@ -482,6 +485,10 @@ class AttendanceRecord {
   final String? department;
   final String? profilePicture;
   final String? selfieData;
+  final DateTime? reviewedAt;
+  final int? reviewedBy;
+  final String? reviewedByName;
+  bool get isReviewed => reviewedAt != null;
 
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) => AttendanceRecord(
         id: (json['id'] as num?)?.toInt() ?? 0,
@@ -501,6 +508,9 @@ class AttendanceRecord {
         department: json['department'] as String?,
         profilePicture: json['profilePicture'] as String?,
         selfieData: json['selfieData'] as String?,
+        reviewedAt: json['reviewedAt'] == null ? null : DateTime.parse(json['reviewedAt'] as String),
+        reviewedBy: (json['reviewedBy'] as num?)?.toInt(),
+        reviewedByName: json['reviewedByName'] as String?,
       );
 }
 
@@ -1135,6 +1145,19 @@ class ApiService {
           ),
         ),
       );
+
+  Future<AttendanceRecord> reviewAttendanceRecord(int id) async {
+    final data = _decode(
+      await http.post(
+        _uri('/api/admin/attendance/$id/review'),
+        headers: _headers(jsonBody: true),
+        body: '{}',
+      ),
+    );
+    return AttendanceRecord.fromJson(
+      Map<String, dynamic>.from(data['record'] as Map),
+    );
+  }
 
   String _dateKey(DateTime value) {
     final local = value.toLocal();

@@ -18,6 +18,10 @@ export default {
       if (url.pathname === '/api/admin/attendance' && request.method === 'GET') {
         return adminAttendance(request, env, url);
       }
+      const attendanceReviewMatch = url.pathname.match(/^\/api\/admin\/attendance\/(\d+)\/review$/);
+      if (attendanceReviewMatch && request.method === 'POST') {
+        return reviewAttendance(request, env, Number(attendanceReviewMatch[1]));
+      }
       if (url.pathname === '/api/admin/departments' && request.method === 'GET') {
         return adminDepartments(request, env);
       }
@@ -296,6 +300,34 @@ function parseAiJson(result) {
   return null;
 }
 
+async function reviewAttendance(request, env, attendanceId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  if (!Number.isInteger(attendanceId) || attendanceId <= 0) {
+    return json({ error: 'Rekod kehadiran tidak sah.' }, 400);
+  }
+  const existing = await env.DB.prepare(
+    'SELECT id, reviewed_at FROM attendance_records WHERE id = ? LIMIT 1',
+  ).bind(attendanceId).first();
+  if (!existing) return json({ error: 'Rekod kehadiran tidak ditemui.' }, 404);
+  if (!existing.reviewed_at) {
+    await env.DB.prepare(
+      'UPDATE attendance_records SET reviewed_at = ?, reviewed_by = ? WHERE id = ?',
+    ).bind(new Date().toISOString(), auth.user.id, attendanceId).run();
+  }
+  const row = await env.DB.prepare(
+    `SELECT a.*, u.nama, u.jawatan, u.profile_picture,
+            COALESCE(d.name, u.jabatan) AS department_name,
+            reviewer.nama AS reviewed_by_name
+     FROM attendance_records a
+     JOIN users u ON u.id = a.user_id
+     LEFT JOIN departments d ON d.id = a.department_id
+     LEFT JOIN users reviewer ON reviewer.id = a.reviewed_by
+     WHERE a.id = ? LIMIT 1`,
+  ).bind(attendanceId).first();
+  return json({ record: adminAttendanceJson(row) });
+}
+
 async function adminAttendance(request, env, url) {
   const auth = await requireManagement(request, env);
   if (auth.response) return auth.response;
@@ -311,10 +343,12 @@ async function adminAttendance(request, env, url) {
   }
   const result = await env.DB.prepare(
     `SELECT a.*, u.nama, u.jawatan, u.profile_picture,
-            COALESCE(d.name, u.jabatan) AS department_name
+            COALESCE(d.name, u.jabatan) AS department_name,
+            reviewer.nama AS reviewed_by_name
      FROM attendance_records a
      JOIN users u ON u.id = a.user_id
      LEFT JOIN departments d ON d.id = a.department_id
+     LEFT JOIN users reviewer ON reviewer.id = a.reviewed_by
      WHERE ${where.join(' AND ')}
      ORDER BY a.punched_at DESC, a.id DESC
      LIMIT 500`,
@@ -377,7 +411,7 @@ async function attendanceSummary(env, date, departmentId = null) {
   ).bind(...bindings).first();
   const reviews = await env.DB.prepare(
     `SELECT COUNT(*) AS total FROM attendance_records
-     WHERE work_date = ? ${scope} AND face_status = 'review_required'`,
+     WHERE work_date = ? ${scope} AND face_status = 'review_required' AND reviewed_at IS NULL`,
   ).bind(...bindings).first();
   const currentlyInResult = await env.DB.prepare(
     `SELECT COUNT(*) AS total FROM (
@@ -563,6 +597,9 @@ function adminAttendanceJson(row) {
     department: row.department_name,
     profilePicture: row.profile_picture || null,
     selfieData: row.selfie_data,
+    reviewedAt: row.reviewed_at || null,
+    reviewedBy: row.reviewed_by == null ? null : Number(row.reviewed_by),
+    reviewedByName: row.reviewed_by_name || null,
   };
 }
 
