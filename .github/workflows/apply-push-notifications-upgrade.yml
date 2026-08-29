@@ -1,0 +1,58 @@
+name: Apply Push Notifications Upgrade
+
+on:
+  push:
+    branches:
+      - push-notifications-upgrade
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rimbakawal-push-notifications-upgrade
+  cancel-in-progress: true
+
+jobs:
+  upgrade:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out upgrade branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply push notification source upgrade
+        run: python3 scripts/apply_push_notifications_upgrade.py
+
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter
+        run: flutter analyze
+
+      - name: Validate Worker JavaScript
+        run: |
+          node --check worker/index.js
+          node --check worker/app.js
+          node --check worker/offline.js
+          node --check worker/push.js
+          node --check worker/sos.js
+
+      - name: Build Flutter web
+        run: flutter build web --release --dart-define=USE_MOCK_NFC=true
+
+      - name: Commit validated upgrade
+        run: |
+          git config user.name "RimbaKawal Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add .
+          git commit -m "Add cross-platform push notifications"
+          git push origin HEAD:push-notifications-upgrade
