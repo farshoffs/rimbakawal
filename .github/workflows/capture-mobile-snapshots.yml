@@ -68,26 +68,26 @@ jobs:
           });
           const page = await context.newPage();
           page.setDefaultTimeout(12000);
-          const wait = (ms = 1400) => page.waitForTimeout(ms);
+          const wait = (ms = 1200) => page.waitForTimeout(ms);
 
           async function enableSemantics() {
             try {
               const roleButton = page.getByRole('button', { name: /Enable accessibility/i });
               if (await roleButton.count()) {
                 await roleButton.first().click({ timeout: 1500 });
-                await wait(400);
+                await wait(350);
               }
             } catch (_) {}
             try {
               const placeholder = page.locator('flt-semantics-placeholder');
               if (await placeholder.count()) {
                 await placeholder.first().click({ timeout: 1500 });
-                await wait(400);
+                await wait(350);
               }
             } catch (_) {}
           }
 
-          async function snap(name, delay = 1400) {
+          async function snap(name, delay = 1200) {
             await wait(delay);
             await page.screenshot({ path: `${output}/${name}.png`, fullPage: false });
             console.log(`Captured ${name}`);
@@ -115,7 +115,36 @@ jobs:
               await wait();
               return true;
             }
-            console.warn(`Could not find text: ${text}`);
+            return false;
+          }
+
+          async function scrollBy(amount) {
+            await page.mouse.move(215, 760);
+            await page.mouse.wheel(0, amount);
+            await wait(500);
+          }
+
+          async function scrollToTop() {
+            for (let i = 0; i < 5; i++) await scrollBy(-700);
+          }
+
+          async function tapTextWithScroll(text, { fallback = null, attempts = 7, step = 430 } = {}) {
+            for (let i = 0; i < attempts; i++) {
+              const locator = await visibleText(text);
+              if (locator) {
+                try { await locator.scrollIntoViewIfNeeded(); } catch (_) {}
+                await locator.click({ timeout: 7000 });
+                await wait();
+                return true;
+              }
+              await scrollBy(step);
+            }
+            if (fallback) {
+              await page.mouse.click(fallback.x, fallback.y);
+              await wait();
+              return true;
+            }
+            console.warn(`Could not find text after scrolling: ${text}`);
             return false;
           }
 
@@ -133,11 +162,16 @@ jobs:
             await wait();
           }
 
-          async function captureRoute(text, name, fallback = null, delay = 1500) {
+          async function captureRoute(text, name, fallback = null, delay = 1400) {
             if (await tapText(text, fallback)) {
               await snap(name, delay);
               await back();
             }
+          }
+
+          async function openAdminRoute(label) {
+            await scrollToTop();
+            return tapTextWithScroll(label, { attempts: 8, step: 380 });
           }
 
           try {
@@ -157,32 +191,40 @@ jobs:
             if (!(await tapText('Teruskan', { x: 215, y: 690 }))) {
               throw new Error('Login button not found');
             }
-            await wait(4500);
+            await wait(4200);
             await enableSemantics();
-            await snap('02-dashboard', 500);
+            await snap('02-dashboard', 400);
 
             await captureRoute('Mula Rondaan', '03-mula-rondaan', { x: 115, y: 650 });
             await captureRoute('Kehadiran', '04-kehadiran', { x: 320, y: 650 });
-            await captureRoute('Sejarah', '05-sejarah-rondaan', { x: 115, y: 820 }, 2600);
+            await captureRoute('Sejarah', '05-sejarah-rondaan', { x: 115, y: 820 }, 2400);
             await captureRoute('Profil', '06-profil', { x: 320, y: 820 });
-            await captureRoute('Pemantauan', '07-pusat-pemantauan', null, 3200);
 
-            const openedAdmin = await tapText('Pentadbiran');
+            // Management tiles occupy the next row below the initial mobile viewport.
+            await scrollBy(650);
+            await snap('02b-dashboard-pengurusan', 300);
+            if (await tapTextWithScroll('Pemantauan', { attempts: 3, step: 300, fallback: { x: 320, y: 760 } })) {
+              await snap('07-pusat-pemantauan', 3000);
+              await back();
+            }
+
+            await scrollBy(650);
+            const openedAdmin = await tapTextWithScroll('Pentadbiran', { attempts: 3, step: 300, fallback: { x: 110, y: 760 } });
             if (!openedAdmin) throw new Error('Pentadbiran tile not found');
             await snap('08-pentadbiran');
 
             const adminRoutes = [
-              ['Peta Rondaan Langsung', '09-peta-rondaan-langsung', 3500],
-              ['Pusat Pemantauan', '10-pusat-pemantauan-admin', 3500],
-              ['Sejarah Kehadiran', '11-sejarah-kehadiran', 2600],
-              ['Pengurusan SOS', '12-pengurusan-sos', 2200],
-              ['Senarai Pengguna', '13-senarai-pengguna', 2200],
-              ['Jabatan dan Checkpoint', '14-jabatan-checkpoint', 2800],
-              ['Laporan', '15-laporan', 2200],
+              ['Peta Rondaan Langsung', '09-peta-rondaan-langsung', 3200],
+              ['Pusat Pemantauan', '10-pusat-pemantauan-admin', 3200],
+              ['Sejarah Kehadiran', '11-sejarah-kehadiran', 2400],
+              ['Pengurusan SOS', '12-pengurusan-sos', 2000],
+              ['Senarai Pengguna', '13-senarai-pengguna', 2000],
+              ['Jabatan dan Checkpoint', '14-jabatan-checkpoint', 2600],
+              ['Laporan', '15-laporan', 2000],
             ];
 
             for (const [label, filename, delay] of adminRoutes) {
-              const ok = await tapText(label);
+              const ok = await openAdminRoute(label);
               if (!ok) {
                 console.warn(`Skipping ${filename}`);
                 continue;
@@ -198,10 +240,10 @@ jobs:
                     const labelText = (await node.getAttribute('aria-label')) || '';
                     if (/MASUK|KELUAR/i.test(labelText) && !/tarikh/i.test(labelText)) {
                       await node.click();
-                      await wait(1000);
+                      await wait(900);
                       const detail = await visibleText('Detail Kehadiran');
                       if (detail) {
-                        await snap('11b-detail-kehadiran', 500);
+                        await snap('11b-detail-kehadiran', 400);
                         await page.keyboard.press('Escape');
                         await wait(500);
                       }
