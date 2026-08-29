@@ -773,6 +773,37 @@ class _PatrolScreenState extends State<PatrolScreen> {
           ),
         ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: SizedBox(
+        width: 270,
+        height: 62,
+        child: FloatingActionButton.extended(
+          heroTag: 'scan-checkpoint-fab',
+          onPressed: _scanning || _ending ? null : _scanCheckpoint,
+          elevation: 10,
+          backgroundColor: const Color(0xFFFFD54F),
+          foregroundColor: const Color(0xFF181818),
+          disabledElevation: 3,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(
+              color: Colors.white.withValues(alpha: 0.22),
+            ),
+          ),
+          icon: Icon(
+            _scanning ? Icons.radar_rounded : Icons.nfc_rounded,
+            size: 28,
+          ),
+          label: Text(
+            _scanning ? 'MENGIMBAS…' : 'IMBAS CHECKPOINT',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ),
+      ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
@@ -780,7 +811,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
             await _sync.syncNow();
           },
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 118),
             children: [
               _LiveHero(
                 user: widget.user,
@@ -802,13 +833,6 @@ class _PatrolScreenState extends State<PatrolScreen> {
                 interval: bootstrap?.sessionIntervalMinutes ??
                     widget.user.sessionIntervalMinutes,
                 sessionLabel: sessionLabel,
-              ),
-              const SizedBox(height: 14),
-              _ScanCard(
-                scanning: _scanning,
-                mockMode: widget.mockMode,
-                nextName: next?.name,
-                onScan: _scanCheckpoint,
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
@@ -1178,82 +1202,6 @@ class _RouteCard extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      );
-}
-
-class _ScanCard extends StatelessWidget {
-  const _ScanCard({
-    required this.scanning,
-    required this.mockMode,
-    required this.nextName,
-    required this.onScan,
-  });
-  final bool scanning;
-  final bool mockMode;
-  final String? nextName;
-  final VoidCallback onScan;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          color: const Color(0xFF10131D),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-        ),
-        child: Column(
-          children: [
-            Container(
-              width: 92,
-              height: 92,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [
-                    const Color(0xFFC0392B).withValues(alpha: 0.75),
-                    const Color(0xFF4834D4).withValues(alpha: 0.85),
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF4834D4).withValues(alpha: 0.25),
-                    blurRadius: 32,
-                  ),
-                ],
-              ),
-              child: Icon(
-                scanning ? Icons.radar_rounded : Icons.nfc_rounded,
-                size: 48,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              scanning ? 'Dekatkan tag pada peranti…' : 'Imbas checkpoint',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              nextName == null
-                  ? 'Data akan disimpan pada peranti terlebih dahulu.'
-                  : 'Checkpoint seterusnya: $nextName',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: scanning ? null : onScan,
-              icon: const Icon(Icons.nfc_rounded),
-              label: Text(
-                scanning
-                    ? 'MENGIMBAS…'
-                    : mockMode
-                        ? 'IMBAS CHECKPOINT'
-                        : 'IMBAS CHECKPOINT',
-              ),
-            ),
-          ],
         ),
       );
 }
