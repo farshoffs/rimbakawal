@@ -322,9 +322,26 @@ new_block = """  const interval = Number(department.session_interval_minutes || 
   const sessionIndex = window.index;
   const sessionStart = window.startMs;
   const sessionEnd = window.endMs;"""
-if t.count(old_block) != 2:
-    raise RuntimeError(f"smart session blocks: expected 2, got {t.count(old_block)}")
-t = t.replace(old_block, new_block)
+if t.count(old_block) != 1:
+    raise RuntimeError(f"smart config session block: expected 1, got {t.count(old_block)}")
+t = t.replace(old_block, new_block, 1)
+scan_old_block = """  const now = new Date();
+  const scannedAt = now.toISOString();
+  const interval = Number(department.session_interval_minutes || 120);
+  const day = malaysiaDayBounds(malaysiaDateKey(now));
+  const sessionIndex = currentSessionIndex(now, interval);
+  const sessionStart = day.startMs + sessionIndex * interval * 60000;
+  const sessionEnd = Math.min(day.endMs, sessionStart + interval * 60000);"""
+scan_new_block = """  const now = new Date();
+  const scannedAt = now.toISOString();
+  const interval = Number(department.session_interval_minutes || 120);
+  const window = sessionWindow(now, interval, department.session_start_minutes);
+  const sessionIndex = window.index;
+  const sessionStart = window.startMs;
+  const sessionEnd = window.endMs;"""
+if t.count(scan_old_block) != 1:
+    raise RuntimeError(f"smart scan session block: expected 1, got {t.count(scan_old_block)}")
+t = t.replace(scan_old_block, scan_new_block, 1)
 t = once(
     t,
     "      sessionIntervalMinutes: interval,\n      routeOrderEnforced:",
