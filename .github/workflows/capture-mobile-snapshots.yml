@@ -26,13 +26,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install project dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm install --no-save playwright@1.55.0
 
       - name: Install Playwright Chromium
-        run: npx playwright@1.55.0 install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Create temporary production demo user
         shell: bash
@@ -44,7 +46,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p docs/screenshots/mobile
-          cat > /tmp/capture-rimbakawal.mjs <<'NODE'
+          cat > capture-rimbakawal.mjs <<'NODE'
           import { chromium } from 'playwright';
           import fs from 'node:fs';
 
@@ -66,7 +68,6 @@ jobs:
           });
           const page = await context.newPage();
           page.setDefaultTimeout(12000);
-
           const wait = (ms = 1400) => page.waitForTimeout(ms);
 
           async function enableSemantics() {
@@ -145,7 +146,7 @@ jobs:
             await enableSemantics();
             await snap('01-log-masuk', 400);
 
-            let input = page.locator('input').first();
+            const input = page.locator('input').first();
             if (await input.count()) {
               await input.fill(identity);
             } else {
@@ -164,11 +165,8 @@ jobs:
             await captureRoute('Kehadiran', '04-kehadiran', { x: 320, y: 650 });
             await captureRoute('Sejarah', '05-sejarah-rondaan', { x: 115, y: 820 }, 2600);
             await captureRoute('Profil', '06-profil', { x: 320, y: 820 });
-
-            // Direct monitoring tile on Management dashboard.
             await captureRoute('Pemantauan', '07-pusat-pemantauan', null, 3200);
 
-            // Management administration hub and each of its routes.
             const openedAdmin = await tapText('Pentadbiran');
             if (!openedAdmin) throw new Error('Pentadbiran tile not found');
             await snap('08-pentadbiran');
@@ -192,12 +190,11 @@ jobs:
               await snap(filename, delay);
 
               if (label === 'Sejarah Kehadiran') {
-                // Capture the first attendance detail dialog when production has records today.
                 try {
-                  const cards = page.locator('flt-semantics[role="button"]');
-                  const count = await cards.count();
+                  const nodes = page.locator('flt-semantics[role="button"]');
+                  const count = await nodes.count();
                   for (let i = 0; i < count; i++) {
-                    const node = cards.nth(i);
+                    const node = nodes.nth(i);
                     const labelText = (await node.getAttribute('aria-label')) || '';
                     if (/MASUK|KELUAR/i.test(labelText) && !/tarikh/i.test(labelText)) {
                       await node.click();
@@ -222,7 +219,7 @@ jobs:
             await browser.close();
           }
           NODE
-          npx -y -p playwright@1.55.0 node /tmp/capture-rimbakawal.mjs
+          node capture-rimbakawal.mjs
 
       - name: Upload screenshot artifact
         uses: actions/upload-artifact@v4
