@@ -138,25 +138,104 @@ class PatrolConfig {
   }
 }
 
+class HistoryTrailPoint {
+  const HistoryTrailPoint({
+    required this.latitude,
+    required this.longitude,
+    required this.recordedAt,
+    this.accuracy,
+  });
+  final double latitude;
+  final double longitude;
+  final double? accuracy;
+  final DateTime recordedAt;
+
+  factory HistoryTrailPoint.fromJson(Map<String, dynamic> json) =>
+      HistoryTrailPoint(
+        latitude: (json['latitude'] as num).toDouble(),
+        longitude: (json['longitude'] as num).toDouble(),
+        accuracy: (json['accuracy'] as num?)?.toDouble(),
+        recordedAt: DateTime.parse(json['recordedAt'] as String),
+      );
+}
+
+class HistoryPatrolRun {
+  const HistoryPatrolRun({
+    required this.userId,
+    required this.userName,
+    required this.clientSessionId,
+    required this.sessionIndex,
+    required this.startedAt,
+    required this.trailPointCount,
+    required this.trail,
+    this.profilePicture,
+    this.endedAt,
+    this.durationSeconds,
+  });
+  final int userId;
+  final String userName;
+  final String? profilePicture;
+  final String clientSessionId;
+  final int sessionIndex;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+  final int? durationSeconds;
+  final int trailPointCount;
+  final List<HistoryTrailPoint> trail;
+
+  factory HistoryPatrolRun.fromJson(Map<String, dynamic> json) {
+    final rows = json['trail'] as List<dynamic>? ?? const [];
+    return HistoryPatrolRun(
+      userId: (json['userId'] as num).toInt(),
+      userName: json['userName'] as String? ?? 'Pengawal',
+      profilePicture: json['profilePicture'] as String?,
+      clientSessionId: json['clientSessionId'] as String,
+      sessionIndex: (json['sessionIndex'] as num?)?.toInt() ?? 0,
+      startedAt: DateTime.parse(json['startedAt'] as String),
+      endedAt: json['endedAt'] == null
+          ? null
+          : DateTime.parse(json['endedAt'] as String),
+      durationSeconds: (json['durationSeconds'] as num?)?.toInt(),
+      trailPointCount: (json['trailPointCount'] as num?)?.toInt() ?? rows.length,
+      trail: rows
+          .map((item) => HistoryTrailPoint.fromJson(
+                Map<String, dynamic>.from(item as Map),
+              ))
+          .toList(),
+    );
+  }
+}
+
 class HistoryDay {
   const HistoryDay({
     required this.date,
+    required this.departmentId,
     required this.department,
     required this.sessionIntervalMinutes,
+    required this.patrolRuns,
     required this.sessions,
   });
   final String date;
+  final int departmentId;
   final String department;
   final int sessionIntervalMinutes;
+  final List<HistoryPatrolRun> patrolRuns;
   final List<HistorySession> sessions;
 
   factory HistoryDay.fromJson(Map<String, dynamic> json) {
+    final patrolRuns = json['patrolRuns'] as List<dynamic>? ?? const [];
     final sessions = json['sessions'] as List<dynamic>? ?? const [];
     return HistoryDay(
       date: json['date'] as String,
+      departmentId: (json['departmentId'] as num?)?.toInt() ?? 0,
       department: json['department'] as String? ?? '-',
       sessionIntervalMinutes:
           (json['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,
+      patrolRuns: patrolRuns
+          .map((item) => HistoryPatrolRun.fromJson(
+                Map<String, dynamic>.from(item as Map),
+              ))
+          .toList(),
       sessions: sessions
           .map((item) => HistorySession.fromJson(
                 Map<String, dynamic>.from(item as Map),
@@ -641,10 +720,17 @@ class ApiService {
     );
   }
 
-  Future<HistoryDay> getHistory(DateTime date) async => HistoryDay.fromJson(
+  Future<HistoryDay> getHistory(
+    DateTime date, {
+    int? departmentId,
+  }) async =>
+      HistoryDay.fromJson(
         _decode(
           await http.get(
-            _uri('/api/scans', {'date': _dateKey(date)}),
+            _uri('/api/scans', {
+              'date': _dateKey(date),
+              if (departmentId != null) 'departmentId': departmentId.toString(),
+            }),
             headers: _headers(),
           ),
         ),

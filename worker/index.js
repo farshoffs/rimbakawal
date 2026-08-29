@@ -181,30 +181,45 @@ async function getScans(request, env, url) {
   const auth = await requireUser(request, env);
   if (auth.response) return auth.response;
 
-  if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
-  }
-
   const requestedDate = url.searchParams.get('date') || malaysiaDateKey(new Date());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
     return json({ error: 'Tarikh tidak sah.' }, 400);
   }
+
+  const role = String(auth.user.jawatan || '').trim().toLowerCase();
+  const requestedDepartment = url.searchParams.get('departmentId');
+  let departmentId = Number(auth.user.department_id || 0);
+  if (requestedDepartment != null && requestedDepartment !== '') {
+    const parsed = Number(requestedDepartment);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return json({ error: 'Jabatan tidak sah.' }, 400);
+    }
+    if (role !== 'management' && parsed !== departmentId) {
+      return json({ error: 'Anda hanya boleh melihat Sejarah Rondaan Jabatan sendiri.' }, 403);
+    }
+    departmentId = parsed;
+  }
+  if (!departmentId) {
+    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+  }
+
+  const department = await env.DB.prepare(
+    `SELECT id, name, session_interval_minutes, session_start_minutes
+     FROM departments WHERE id = ? LIMIT 1`,
+  ).bind(departmentId).first();
+  if (!department) return json({ error: 'Jabatan tidak ditemui.' }, 404);
 
   const calendarBounds = malaysiaDayBounds(requestedDate);
   if (!calendarBounds) return json({ error: 'Tarikh tidak sah.' }, 400);
 
   const sessionStartMinutes = Math.max(
     0,
-    Math.min(1439, Number(auth.user.session_start_minutes ?? 420)),
+    Math.min(1439, Number(department.session_start_minutes ?? 420)),
   );
   const interval = Math.max(
     15,
-    Math.min(1440, Number(auth.user.session_interval_minutes || 120)),
+    Math.min(1440, Number(department.session_interval_minutes || 120)),
   );
-
-  // Query enough data to evaluate complete session windows at the edges of
-  // the selected Malaysia calendar date, while only displaying scans that
-  // actually happened on the selected date.
   const firstWindow = sessionWindow(
     new Date(calendarBounds.startMs),
     interval,
@@ -217,27 +232,86 @@ async function getScans(request, env, url) {
   );
   const queryStartIso = new Date(firstWindow.startMs).toISOString();
   const queryEndIso = new Date(lastWindow.endMs).toISOString();
+  const calendarStartIso = new Date(calendarBounds.startMs).toISOString();
+  const calendarEndIso = new Date(calendarBounds.endMs).toISOString();
 
-  const checkpointResult = await env.DB.prepare(
-    `SELECT id, name, position
-     FROM checkpoints
-     WHERE department_id = ? AND active = 1
-     ORDER BY position ASC, id ASC`,
-  ).bind(auth.user.department_id).all();
+  const [checkpointResult, scanResult, patrolResult, trailResult] = await Promise.all([
+    env.DB.prepare(
+      `SELECT id, name, position
+       FROM checkpoints
+       WHERE department_id = ? AND active = 1
+       ORDER BY position ASC, id ASC`,
+    ).bind(departmentId).all(),
+    env.DB.prepare(
+      `SELECT s.id, s.user_id, s.nfc_uid, s.scanned_at, s.checkpoint_id,
+              s.session_index, c.name AS checkpoint_name,
+              u.nama AS user_name, u.profile_picture
+       FROM nfc_scans s
+       JOIN users u ON u.id = s.user_id
+       LEFT JOIN checkpoints c ON c.id = s.checkpoint_id
+       WHERE COALESCE(c.department_id, u.department_id) = ?
+         AND s.scanned_at >= ? AND s.scanned_at < ?
+       ORDER BY s.scanned_at ASC, s.id ASC`,
+    ).bind(departmentId, queryStartIso, queryEndIso).all(),
+    env.DB.prepare(
+      `SELECT h.user_id, h.client_session_id, h.started_at, h.ended_at,
+              u.nama AS user_name, u.profile_picture
+       FROM patrol_session_history h
+       JOIN users u ON u.id = h.user_id
+       WHERE h.department_id = ?
+         AND h.started_at >= ? AND h.started_at < ?
+       ORDER BY h.started_at DESC, h.id DESC`,
+    ).bind(departmentId, calendarStartIso, calendarEndIso).all(),
+    env.DB.prepare(
+      `SELECT t.user_id, t.client_session_id, t.latitude, t.longitude,
+              t.accuracy, t.recorded_at
+       FROM live_patrol_trail t
+       JOIN patrol_session_history h
+         ON h.user_id = t.user_id
+        AND h.client_session_id = t.client_session_id
+       WHERE h.department_id = ?
+         AND h.started_at >= ? AND h.started_at < ?
+       ORDER BY t.user_id ASC, t.client_session_id ASC, t.recorded_at ASC`,
+    ).bind(departmentId, calendarStartIso, calendarEndIso).all(),
+  ]);
+
   const checkpoints = checkpointResult.results ?? [];
-
-  const scanResult = await env.DB.prepare(
-    `SELECT s.id, s.user_id, s.nfc_uid, s.scanned_at, s.checkpoint_id,
-            s.session_index, c.name AS checkpoint_name,
-            u.nama AS user_name, u.profile_picture
-     FROM nfc_scans s
-     JOIN users u ON u.id = s.user_id
-     LEFT JOIN checkpoints c ON c.id = s.checkpoint_id
-     WHERE u.department_id = ? AND s.scanned_at >= ? AND s.scanned_at < ?
-     ORDER BY s.scanned_at ASC, s.id ASC`,
-  ).bind(auth.user.department_id, queryStartIso, queryEndIso).all();
-
   const scans = scanResult.results ?? [];
+  const trails = new Map();
+  for (const row of trailResult.results ?? []) {
+    const key = `${Number(row.user_id)}:${row.client_session_id}`;
+    const list = trails.get(key) ?? [];
+    list.push({
+      latitude: Number(row.latitude),
+      longitude: Number(row.longitude),
+      accuracy: row.accuracy == null ? null : Number(row.accuracy),
+      recordedAt: row.recorded_at,
+    });
+    trails.set(key, list);
+  }
+
+  const patrolRuns = (patrolResult.results ?? []).map((row) => {
+    const key = `${Number(row.user_id)}:${row.client_session_id}`;
+    const allTrail = trails.get(key) ?? [];
+    const trail = compactTrail(allTrail, 500);
+    const startMs = Date.parse(row.started_at);
+    const endedAt = row.ended_at || null;
+    const endMs = endedAt ? Date.parse(endedAt) : null;
+    const runWindow = sessionWindow(new Date(startMs), interval, sessionStartMinutes);
+    return {
+      userId: Number(row.user_id),
+      userName: row.user_name,
+      profilePicture: row.profile_picture || null,
+      clientSessionId: row.client_session_id,
+      sessionIndex: runWindow.index,
+      startedAt: row.started_at,
+      endedAt,
+      durationSeconds: endMs == null ? null : Math.max(0, Math.floor((endMs - startMs) / 1000)),
+      trailPointCount: allTrail.length,
+      trail,
+    };
+  });
+
   const nowMs = Date.now();
   const todayKey = malaysiaDateKey(new Date());
   const isPastDay = requestedDate < todayKey;
@@ -265,7 +339,6 @@ async function getScans(request, env, url) {
         const time = Date.parse(scan.scanned_at);
         return time >= calendarBounds.startMs && time < calendarBounds.endMs;
       });
-
       const scannedCheckpointIds = new Set(
         fullSessionScans
           .map((scan) => Number(scan.checkpoint_id || 0))
@@ -322,12 +395,20 @@ async function getScans(request, env, url) {
 
   return json({
     date: requestedDate,
-    department: auth.user.jabatan,
+    departmentId: Number(department.id),
+    department: department.name,
     sessionIntervalMinutes: interval,
     sessionStartMinutes,
     checkpoints,
+    patrolRuns,
     sessions,
   });
+}
+
+function compactTrail(points, maxPoints = 500) {
+  if (points.length <= maxPoints) return points;
+  const step = Math.ceil(points.length / maxPoints);
+  return points.filter((_, index) => index === 0 || index === points.length - 1 || index % step === 0);
 }
 
 async function createScan(request, env) {

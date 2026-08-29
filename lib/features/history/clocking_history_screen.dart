@@ -1,13 +1,21 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../core/api/api_service.dart';
+import '../../core/api/app_user.dart';
 
 class ClockingHistoryScreen extends StatefulWidget {
-  const ClockingHistoryScreen({required this.api, super.key});
+  const ClockingHistoryScreen({
+    required this.api,
+    required this.user,
+    super.key,
+  });
 
   final ApiService api;
+  final AppUser user;
 
   @override
   State<ClockingHistoryScreen> createState() => _ClockingHistoryScreenState();
@@ -15,19 +23,45 @@ class ClockingHistoryScreen extends StatefulWidget {
 
 class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
   DateTime _selectedDate = DateTime.now();
+  int? _selectedDepartmentId;
+  List<DepartmentRecord> _departments = const [];
   late Future<HistoryDay> _future;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.api.getHistory(_selectedDate);
+    _selectedDepartmentId = widget.user.departmentId;
+    _future = widget.user.isManagement
+        ? _loadManagementInitial()
+        : widget.api.getHistory(_selectedDate);
   }
 
-  void _load(DateTime date) {
+  Future<HistoryDay> _loadManagementInitial() async {
+    final departments = await widget.api.getAdminDepartments();
+    final selected = _selectedDepartmentId ??
+        (departments.isEmpty ? null : departments.first.id);
+    if (mounted) {
+      setState(() {
+        _departments = departments;
+        _selectedDepartmentId = selected;
+      });
+    }
+    if (selected == null) {
+      throw const ApiException('Tiada Jabatan tersedia untuk dipaparkan.');
+    }
+    return widget.api.getHistory(_selectedDate, departmentId: selected);
+  }
+
+  void _load(DateTime date, {int? departmentId}) {
     final normalized = DateTime(date.year, date.month, date.day);
+    final selected = departmentId ?? _selectedDepartmentId;
     setState(() {
       _selectedDate = normalized;
-      _future = widget.api.getHistory(normalized);
+      if (departmentId != null) _selectedDepartmentId = departmentId;
+      _future = widget.api.getHistory(
+        normalized,
+        departmentId: widget.user.isManagement ? selected : null,
+      );
     });
   }
 
@@ -53,9 +87,8 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
     return '${two(local.hour)}:${two(local.minute)}';
   }
 
-  bool _sameDay(DateTime a, DateTime b) {
-    return a.year == b.year && a.month == b.month && a.day == b.day;
-  }
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   @override
   Widget build(BuildContext context) {
@@ -84,6 +117,33 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (widget.user.isManagement) ...[
+                        DropdownButtonFormField<int>(
+                          initialValue: _selectedDepartmentId,
+                          decoration: const InputDecoration(
+                            labelText: 'Jabatan',
+                            prefixIcon: Icon(Icons.apartment_rounded),
+                          ),
+                          items: _departments
+                              .map(
+                                (department) => DropdownMenuItem<int>(
+                                  value: department.id,
+                                  child: Text(
+                                    department.active
+                                        ? department.name
+                                        : '${department.name} (Tidak aktif)',
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            if (value != null) {
+                              _load(_selectedDate, departmentId: value);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       Text(
                         'Tarikh: ${_formatDate(_selectedDate)}',
                         style: const TextStyle(fontWeight: FontWeight.w800),
@@ -138,30 +198,75 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                   }
 
                   final history = snapshot.data!;
-                  if (history.sessions.isEmpty) {
-                    return const Center(
-                      child: Text('Tiada sesi rondaan untuk tarikh ini.'),
-                    );
-                  }
-
-                  return ListView.builder(
+                  return ListView(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    itemCount: history.sessions.length + 1,
-                    itemBuilder: (context, index) {
-                      if (index == 0) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Text(
-                            '${history.department} • Sesi rondaan setiap ${history.sessionIntervalMinutes} minit • rekod mengikut sesi Jabatan',
-                            style: Theme.of(context).textTheme.bodyMedium,
+                    children: [
+                      Text(
+                        '${history.department} • Sesi rondaan setiap ${history.sessionIntervalMinutes} minit',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          const Icon(Icons.route_rounded),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Pergerakan Rondaan',
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                            ),
                           ),
-                        );
-                      }
-                      return _SessionCard(
-                        session: history.sessions[index - 1],
-                        formatTime: _formatTime,
-                      );
-                    },
+                          Text('${history.patrolRuns.length} rekod'),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (history.patrolRuns.isEmpty)
+                        const Card(
+                          child: Padding(
+                            padding: EdgeInsets.all(18),
+                            child: Text(
+                              'Tiada rekod mula rondaan atau trail GPS untuk tarikh ini.',
+                            ),
+                          ),
+                        )
+                      else
+                        ...history.patrolRuns.map(
+                          (run) => _PatrolRunCard(
+                            run: run,
+                            formatTime: _formatTime,
+                          ),
+                        ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          const Icon(Icons.fact_check_outlined),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Sesi & Checkpoint',
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (history.sessions.isEmpty)
+                        const Card(
+                          child: Padding(
+                            padding: EdgeInsets.all(18),
+                            child: Text('Tiada sesi rondaan untuk tarikh ini.'),
+                          ),
+                        )
+                      else
+                        ...history.sessions.map(
+                          (session) => _SessionCard(
+                            session: session,
+                            formatTime: _formatTime,
+                          ),
+                        ),
+                    ],
                   );
                 },
               ),
@@ -171,6 +276,224 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
       ),
     );
   }
+}
+
+class _PatrolRunCard extends StatelessWidget {
+  const _PatrolRunCard({required this.run, required this.formatTime});
+
+  final HistoryPatrolRun run;
+  final String Function(DateTime) formatTime;
+
+  ImageProvider<Object>? _imageProvider(String? picture) {
+    if (picture == null || picture.isEmpty) return null;
+    if (picture.startsWith('data:image/')) {
+      final comma = picture.indexOf(',');
+      if (comma > 0) {
+        try {
+          return MemoryImage(base64Decode(picture.substring(comma + 1)));
+        } catch (_) {
+          return null;
+        }
+      }
+    }
+    return NetworkImage(picture);
+  }
+
+  String _duration() {
+    final seconds = run.durationSeconds;
+    if (seconds == null) return 'Belum tamat';
+    final duration = Duration(seconds: seconds);
+    if (duration.inHours > 0) {
+      return '${duration.inHours}j ${duration.inMinutes % 60}m';
+    }
+    if (duration.inMinutes > 0) return '${duration.inMinutes} minit';
+    return '${duration.inSeconds} saat';
+  }
+
+  void _showTrail(BuildContext context) {
+    final points = run.trail
+        .map((point) => LatLng(point.latitude, point.longitude))
+        .toList();
+    if (points.isEmpty) return;
+    final latitude = points.map((point) => point.latitude).reduce((a, b) => a + b) /
+        points.length;
+    final longitude = points.map((point) => point.longitude).reduce((a, b) => a + b) /
+        points.length;
+    final center = LatLng(latitude, longitude);
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * 0.72,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                child: Text(
+                  '${run.userName} • Sesi Rondaan ${run.sessionIndex + 1}\n${formatTime(run.startedAt)} - ${run.endedAt == null ? 'Belum tamat' : formatTime(run.endedAt!)} • ${run.trailPointCount} titik GPS',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              Expanded(
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: center,
+                    initialZoom: points.length == 1 ? 17 : 16,
+                    minZoom: 3,
+                    maxZoom: 19,
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'dev.rimbakawal.app',
+                    ),
+                    if (points.length >= 2)
+                      PolylineLayer(
+                        polylines: [
+                          Polyline(
+                            points: points,
+                            strokeWidth: 5,
+                            color: const Color(0xFFFFD54F),
+                          ),
+                        ],
+                      ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: points.first,
+                          width: 52,
+                          height: 52,
+                          child: const CircleAvatar(
+                            backgroundColor: Color(0xFF00B894),
+                            child: Icon(Icons.play_arrow_rounded),
+                          ),
+                        ),
+                        if (points.length > 1)
+                          Marker(
+                            point: points.last,
+                            width: 52,
+                            height: 52,
+                            child: const CircleAvatar(
+                              backgroundColor: Color(0xFFC0392B),
+                              child: Icon(Icons.stop_rounded),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: Text(
+                  'Peta © penyumbang OpenStreetMap • hijau = mula • merah = lokasi akhir trail',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final image = _imageProvider(run.profilePicture);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundImage: image,
+                  child: image == null
+                      ? Text(run.userName.isEmpty ? '?' : run.userName[0])
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        run.userName,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      Text('Sesi Rondaan ${run.sessionIndex + 1}'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _HistoryChip(
+                  icon: Icons.play_circle_outline_rounded,
+                  text: 'Mula ${formatTime(run.startedAt)}',
+                ),
+                _HistoryChip(
+                  icon: Icons.stop_circle_outlined,
+                  text: run.endedAt == null
+                      ? 'Tamat belum direkod'
+                      : 'Tamat ${formatTime(run.endedAt!)}',
+                ),
+                _HistoryChip(
+                  icon: Icons.timer_outlined,
+                  text: _duration(),
+                ),
+                _HistoryChip(
+                  icon: Icons.route_rounded,
+                  text: '${run.trailPointCount} titik GPS',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: run.trail.isEmpty ? null : () => _showTrail(context),
+              icon: const Icon(Icons.map_rounded),
+              label: const Text('LIHAT TRAIL RONDAAN'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryChip extends StatelessWidget {
+  const _HistoryChip({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15),
+            const SizedBox(width: 5),
+            Text(text, style: const TextStyle(fontWeight: FontWeight.w700)),
+          ],
+        ),
+      );
 }
 
 class _SessionCard extends StatelessWidget {
@@ -184,7 +507,11 @@ class _SessionCard extends StatelessWidget {
     if (picture.startsWith('data:image/')) {
       final comma = picture.indexOf(',');
       if (comma > 0) {
-        return MemoryImage(base64Decode(picture.substring(comma + 1)));
+        try {
+          return MemoryImage(base64Decode(picture.substring(comma + 1)));
+        } catch (_) {
+          return null;
+        }
       }
     }
     return NetworkImage(picture);
@@ -196,8 +523,8 @@ class _SessionCard extends StatelessWidget {
     final statusColor = session.isMissed
         ? scheme.error
         : session.isComplete
-        ? Colors.greenAccent
-        : scheme.secondary;
+            ? Colors.greenAccent
+            : scheme.secondary;
     final statusLabel = switch (session.status) {
       'complete' => 'LENGKAP',
       'missed' => 'CHECKPOINT TERLEPAS',
@@ -205,6 +532,7 @@ class _SessionCard extends StatelessWidget {
       'no_checkpoints' => 'TIADA CHECKPOINT',
       _ => session.status.toUpperCase(),
     };
+    final image = _imageProvider(session.profilePicture);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -225,11 +553,9 @@ class _SessionCard extends StatelessWidget {
             Row(
               children: [
                 CircleAvatar(
-                  backgroundImage: _imageProvider(session.profilePicture),
-                  child: _imageProvider(session.profilePicture) == null
-                      ? Text(
-                          session.userName.isEmpty ? '?' : session.userName[0],
-                        )
+                  backgroundImage: image,
+                  child: image == null
+                      ? Text(session.userName.isEmpty ? '?' : session.userName[0])
                       : null,
                 ),
                 const SizedBox(width: 10),
@@ -251,10 +577,7 @@ class _SessionCard extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 5,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(999),
@@ -271,9 +594,7 @@ class _SessionCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              '${session.scannedCount}/${session.expectedCount} checkpoint direkodkan',
-            ),
+            Text('${session.scannedCount}/${session.expectedCount} checkpoint direkodkan'),
             if (session.missingCheckpointNames.isNotEmpty) ...[
               const SizedBox(height: 10),
               Container(

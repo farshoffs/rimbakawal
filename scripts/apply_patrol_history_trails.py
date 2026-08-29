@@ -5,7 +5,7 @@ ROOT = Path('.')
 
 
 def replace_once(text, pattern, replacement, label, flags=0):
-    updated, count = re.subn(pattern, replacement, text, count=1, flags=flags)
+    updated, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=flags)
     if count != 1:
         raise SystemExit(f'{label}: expected 1 replacement, got {count}')
     return updated

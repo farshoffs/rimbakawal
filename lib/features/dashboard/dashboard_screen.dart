@@ -664,7 +664,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       icon: Icons.history_rounded,
                       title: 'Sejarah',
                       subtitle: 'Sesi dan checkpoint',
-                      onTap: () => _open(ClockingHistoryScreen(api: widget.api)),
+                      onTap: () => _open(ClockingHistoryScreen(api: widget.api, user: _user)),
                     ),
                     _MenuData(
                       icon: Icons.person_rounded,

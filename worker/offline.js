@@ -355,6 +355,32 @@ async function syncPatrolActivity(env, user, clientEventId, occurredAt, type, pa
     eventType,
     occurredAt.toISOString(),
   ).run();
+  const lifecycle = await env.DB.prepare(
+    `SELECT
+       MIN(CASE WHEN event_type = 'start' THEN occurred_at END) AS started_at,
+       MAX(CASE WHEN event_type = 'end' THEN occurred_at END) AS ended_at
+     FROM patrol_activity_log
+     WHERE user_id = ? AND client_session_id = ?`,
+  ).bind(user.id, clientSessionId).first();
+  if (lifecycle?.started_at) {
+    await env.DB.prepare(
+      `INSERT INTO patrol_session_history
+        (user_id, department_id, client_session_id, started_at, ended_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, client_session_id) DO UPDATE SET
+         department_id = excluded.department_id,
+         started_at = excluded.started_at,
+         ended_at = COALESCE(excluded.ended_at, patrol_session_history.ended_at),
+         updated_at = excluded.updated_at`,
+    ).bind(
+      user.id,
+      user.department_id ?? null,
+      clientSessionId,
+      lifecycle.started_at,
+      lifecycle.ended_at || null,
+      new Date().toISOString(),
+    ).run();
+  }
   return { serverId: Number(insert.meta?.last_row_id || 0), clientEventId };
 }
 
@@ -417,6 +443,25 @@ async function liveStart(request, env) {
        last_longitude = NULL,
        last_accuracy = NULL,
        last_location_at = NULL,
+       updated_at = excluded.updated_at`,
+  ).bind(
+    auth.user.id,
+    auth.user.department_id ?? null,
+    clientSessionId,
+    startedAt.toISOString(),
+    nowIso,
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT INTO patrol_session_history
+      (user_id, department_id, client_session_id, started_at, ended_at, updated_at)
+     VALUES (?, ?, ?, ?, NULL, ?)
+     ON CONFLICT(user_id, client_session_id) DO UPDATE SET
+       department_id = excluded.department_id,
+       started_at = CASE
+         WHEN excluded.started_at < patrol_session_history.started_at THEN excluded.started_at
+         ELSE patrol_session_history.started_at
+       END,
        updated_at = excluded.updated_at`,
   ).bind(
     auth.user.id,
@@ -496,6 +541,11 @@ async function liveEnd(request, env) {
   await env.DB.prepare(
     `UPDATE live_patrol_presence
      SET active = 0, ended_at = ?, updated_at = ?
+     WHERE user_id = ? AND client_session_id = ?`,
+  ).bind(endedAt, endedAt, auth.user.id, clientSessionId).run();
+  await env.DB.prepare(
+    `UPDATE patrol_session_history
+     SET ended_at = ?, updated_at = ?
      WHERE user_id = ? AND client_session_id = ?`,
   ).bind(endedAt, endedAt, auth.user.id, clientSessionId).run();
   return json({ ok: true, endedAt });
