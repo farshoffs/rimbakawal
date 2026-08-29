@@ -1,0 +1,74 @@
+name: Apply Attendance Upgrade
+
+on:
+  push:
+    branches:
+      - feature/attendance-geofence-face
+    paths:
+      - .github/workflows/apply-attendance-upgrade.yml
+      - scripts/apply_attendance_upgrade.py.gz.b64
+      - scripts/attendance_upgrade.part2
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/attendance-geofence-face
+
+      - name: Reconstruct attendance upgrade script
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat scripts/apply_attendance_upgrade.py.gz.b64 scripts/attendance_upgrade.part2 \
+            | base64 -d \
+            | gzip -d \
+            > scripts/apply_attendance_upgrade.py
+          python3 -m py_compile scripts/apply_attendance_upgrade.py
+
+      - name: Apply attendance upgrade
+        run: python3 scripts/apply_attendance_upgrade.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Validate Worker JavaScript
+        run: |
+          node --check worker/index.js
+          node --check worker/app.js
+          node --check worker/offline.js
+          node --check worker/sos.js
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit validated attendance upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f scripts/apply_attendance_upgrade.py scripts/apply_attendance_upgrade.py.gz.b64 scripts/attendance_upgrade.part2
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git commit -m "Add geofenced face attendance"
+          git push origin HEAD:feature/attendance-geofence-face
