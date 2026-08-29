@@ -9,6 +9,9 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
 import '../../core/nfc/nfc_service.dart';
+import '../../core/offline/offline_models.dart';
+import '../../core/offline/offline_store.dart';
+import '../../core/offline/offline_sync_service.dart';
 
 class PatrolScreen extends StatefulWidget {
   const PatrolScreen({
@@ -30,61 +33,84 @@ class PatrolScreen extends StatefulWidget {
 
 class _PatrolScreenState extends State<PatrolScreen>
     with SingleTickerProviderStateMixin {
-  final List<NfcLog> _scans = [];
+  final OfflineStore _store = OfflineStore.instance;
+  final OfflineSyncService _sync = OfflineSyncService.instance;
   final ImagePicker _imagePicker = ImagePicker();
-  late Future<PatrolConfig> _configFuture;
-  late final AnimationController _sonarController;
-  Timer? _locationTimer;
-  int? _patrolSessionId;
+
+  late final AnimationController _pulseController;
+  late final String _clientSessionId;
+  late final DateTime _startedAt;
+  StreamSubscription<Position>? _positionSub;
+  Timer? _locationHeartbeat;
+  OfflineBootstrap? _bootstrap;
+  Position? _latestPosition;
+  DateTime? _lastLocationSentAt;
   bool _scanning = false;
-  bool _updatingLocation = false;
-  String _locationStatus = 'Mengaktifkan lokasi langsung…';
+  bool _ending = false;
+  bool _liveStarting = true;
+  String _locationStatus = 'Mencari lokasi…';
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _sonarController = AnimationController(
+    _startedAt = DateTime.now();
+    _clientSessionId = _store.newId('patrol-session');
+    _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2400),
+      duration: const Duration(milliseconds: 2100),
     )..repeat();
-    _refreshConfig();
-    _startPatrol();
+    _store.addListener(_onLocalChanged);
+    _sync.addListener(_onLocalChanged);
+    unawaited(_startOfflinePatrol());
   }
 
   @override
   void dispose() {
-    _locationTimer?.cancel();
-    _sonarController.dispose();
-    final sessionId = _patrolSessionId;
-    if (sessionId != null) unawaited(widget.api.endPatrolSession(sessionId));
+    _store.removeListener(_onLocalChanged);
+    _sync.removeListener(_onLocalChanged);
+    _positionSub?.cancel();
+    _locationHeartbeat?.cancel();
+    _pulseController.dispose();
+    if (!_ending) unawaited(widget.api.endLivePatrol(_clientSessionId));
     super.dispose();
   }
 
-  void _refreshConfig() {
-    setState(() => _configFuture = widget.api.getPatrolConfig());
+  void _onLocalChanged() {
+    if (mounted) setState(() {});
   }
 
-  Future<void> _startPatrol() async {
+  Future<void> _startOfflinePatrol() async {
+    await _store.queueEvent(
+      userId: widget.user.id,
+      type: 'patrol_start',
+      occurredAt: _startedAt,
+      payload: {'clientSessionId': _clientSessionId},
+    );
+    unawaited(_sync.syncNow());
+    await _loadBootstrap();
+    unawaited(_startLiveTracking());
+  }
+
+  Future<void> _loadBootstrap() async {
     try {
-      final sessionId = await widget.api.startPatrolSession();
+      final latest = await widget.api.getOfflineBootstrap();
       if (!mounted) return;
-      setState(() => _patrolSessionId = sessionId);
-      await _sendLocation();
-      _locationTimer = Timer.periodic(
-        const Duration(seconds: 15),
-        (_) => _sendLocation(),
-      );
-    } catch (error) {
+      setState(() => _bootstrap = latest);
+    } catch (_) {
+      final cached = _store.cachedBootstrap();
       if (!mounted) return;
-      setState(() => _locationStatus = 'Lokasi belum dihantar: $error');
+      setState(() => _bootstrap = cached);
     }
   }
 
-  Future<void> _sendLocation() async {
-    final sessionId = _patrolSessionId;
-    if (sessionId == null || _updatingLocation) return;
-    _updatingLocation = true;
+  Future<void> _startLiveTracking() async {
+    try {
+      await widget.api.startLivePatrol(_clientSessionId, _startedAt);
+    } catch (_) {
+      // Live map is best effort. Field work remains available offline.
+    }
+
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
         throw const ApiException('Perkhidmatan lokasi dimatikan.');
@@ -95,62 +121,440 @@ class _PatrolScreenState extends State<PatrolScreen>
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        throw const ApiException('Kebenaran lokasi diperlukan semasa rondaan.');
+        throw const ApiException(
+          'Benarkan lokasi untuk muncul pada peta rondaan langsung.',
+        );
       }
-      final position = await Geolocator.getCurrentPosition(
+
+      final initial = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
         ),
       );
-      await widget.api.updatePatrolLocation(
-        sessionId,
+      await _handlePosition(initial, force: true);
+
+      _positionSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 3,
+        ),
+      ).listen(
+        (position) => unawaited(_handlePosition(position)),
+        onError: (Object error) {
+          if (!mounted) return;
+          setState(() => _locationStatus = _cleanError(error));
+        },
+      );
+      _locationHeartbeat = Timer.periodic(
+        const Duration(seconds: 15),
+        (_) {
+          final position = _latestPosition;
+          if (position != null) unawaited(_handlePosition(position, force: true));
+        },
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _liveStarting = false;
+        _locationStatus = _cleanError(error);
+      });
+    }
+  }
+
+  Future<void> _handlePosition(Position position, {bool force = false}) async {
+    _latestPosition = position;
+    final now = DateTime.now();
+    if (!force &&
+        _lastLocationSentAt != null &&
+        now.difference(_lastLocationSentAt!) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastLocationSentAt = now;
+    try {
+      await widget.api.updateLivePatrolLocation(
+        _clientSessionId,
         latitude: position.latitude,
         longitude: position.longitude,
         accuracy: position.accuracy,
       );
       if (!mounted) return;
       setState(() {
+        _liveStarting = false;
         _locationStatus =
-            'Lokasi langsung aktif • ketepatan ±${position.accuracy.round()} m';
+            'LIVE • ±${position.accuracy.round()} m • ${_clock(now)}';
       });
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
-      setState(() => _locationStatus = _cleanError(error));
-    } finally {
-      _updatingLocation = false;
+      setState(() {
+        _liveStarting = false;
+        _locationStatus =
+            'GPS tersedia • peta live menunggu internet • ±${position.accuracy.round()} m';
+      });
+    }
+  }
+
+  Future<Map<String, dynamic>?> _captureEventLocation() async {
+    final current = _latestPosition;
+    if (current != null) {
+      return {
+        'latitude': current.latitude,
+        'longitude': current.longitude,
+        'accuracy': current.accuracy,
+      };
+    }
+    try {
+      final position = await Geolocator.getLastKnownPosition();
+      if (position == null) return null;
+      return {
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'accuracy': position.accuracy,
+      };
+    } catch (_) {
+      return null;
     }
   }
 
   Future<void> _scanCheckpoint() async {
     if (_scanning) return;
+    final bootstrap = _bootstrap ?? _store.cachedBootstrap();
+    if (bootstrap == null) {
+      setState(() {
+        _error =
+            'Konfigurasi rondaan belum pernah dimuat turun. Sambung internet sekali untuk menyediakan mod offline.';
+      });
+      return;
+    }
+
     setState(() {
       _scanning = true;
       _error = null;
     });
     try {
       if (!await widget.nfcService.isAvailable()) {
-        throw StateError(
-          'NFC tidak tersedia. Pastikan telefon menyokong NFC dan NFC dihidupkan.',
-        );
+        throw StateError('NFC tidak tersedia pada telefon ini.');
       }
       final raw = await widget.nfcService.scan();
-      final saved = await widget.api.storeNfcScan(raw.tagId);
+      final uid = _normalizeUid(raw.tagId);
+      final checkpoint = bootstrap.checkpoints
+          .where((item) => _normalizeUid(item.nfcUid) == uid)
+          .firstOrNull;
+      if (checkpoint == null) {
+        throw const ApiException(
+          'Tag ini bukan checkpoint aktif untuk Jabatan anda.',
+        );
+      }
+
+      final sessionIndex =
+          _sessionIndex(DateTime.now(), bootstrap.sessionIntervalMinutes);
+      final dayKey = _dayKey(DateTime.now());
+      final localScans = _currentSessionScanEvents(
+        sessionIndex: sessionIndex,
+        dayKey: dayKey,
+      );
+      final completedIds = localScans
+          .map((event) => (event.payload['checkpointId'] as num?)?.toInt())
+          .whereType<int>()
+          .toSet();
+      if (completedIds.contains(checkpoint.id)) {
+        throw ApiException('${checkpoint.name} sudah direkod dalam sesi ini.');
+      }
+      if (bootstrap.routeOrderEnforced) {
+        final next = bootstrap.checkpoints
+            .where((item) => !completedIds.contains(item.id))
+            .firstOrNull;
+        if (next != null && next.id != checkpoint.id) {
+          throw ApiException('Checkpoint seterusnya ialah ${next.name}.');
+        }
+      }
+
+      final occurredAt = DateTime.now();
+      await _store.queueEvent(
+        userId: widget.user.id,
+        type: 'scan',
+        occurredAt: occurredAt,
+        location: await _captureEventLocation(),
+        payload: {
+          'nfcUid': uid,
+          'checkpointId': checkpoint.id,
+          'checkpointName': checkpoint.name,
+          'sessionIndex': sessionIndex,
+          'dayKey': dayKey,
+        },
+      );
+      unawaited(_sync.syncNow());
       if (!mounted) return;
-      setState(() => _scans.insert(0, saved));
-      _refreshConfig();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${saved.checkpointName ?? 'Checkpoint'} berjaya direkodkan.',
+            '${checkpoint.name} disimpan dalam telefon. Sync akan berlaku automatik.',
           ),
         ),
       );
+      setState(() {});
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = _cleanError(error));
     } finally {
       if (mounted) setState(() => _scanning = false);
     }
+  }
+
+  Future<void> _reportIncident(CachedCheckpoint? checkpoint) async {
+    final noteController = TextEditingController();
+    final photos = <_IncidentPhoto>[];
+    String category = 'Keselamatan';
+    String severity = 'normal';
+    String? dialogError;
+
+    final submit = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(
+            checkpoint == null
+                ? 'Lapor Insiden'
+                : 'Lapor Insiden • ${checkpoint.name}',
+          ),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: category,
+                    decoration: const InputDecoration(labelText: 'Kategori'),
+                    items: const [
+                      DropdownMenuItem(value: 'Keselamatan', child: Text('Keselamatan')),
+                      DropdownMenuItem(value: 'Kerosakan', child: Text('Kerosakan')),
+                      DropdownMenuItem(value: 'Kebersihan', child: Text('Kebersihan')),
+                      DropdownMenuItem(value: 'Akses', child: Text('Akses')),
+                      DropdownMenuItem(value: 'Lain-lain', child: Text('Lain-lain')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setDialogState(() => category = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: severity,
+                    decoration: const InputDecoration(labelText: 'Keutamaan'),
+                    items: const [
+                      DropdownMenuItem(value: 'normal', child: Text('Normal')),
+                      DropdownMenuItem(value: 'important', child: Text('Penting')),
+                      DropdownMenuItem(value: 'urgent', child: Text('Segera')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setDialogState(() => severity = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteController,
+                    minLines: 3,
+                    maxLines: 6,
+                    maxLength: 500,
+                    decoration: const InputDecoration(
+                      labelText: 'Catatan',
+                      hintText: 'Apa yang anda jumpa?',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: photos.length >= 4
+                            ? null
+                            : () async {
+                                try {
+                                  final picked = await _pickIncidentPhotos(
+                                    camera: true,
+                                    remaining: 4 - photos.length,
+                                  );
+                                  if (!dialogContext.mounted) return;
+                                  setDialogState(() {
+                                    photos.addAll(picked);
+                                    dialogError = null;
+                                  });
+                                } catch (error) {
+                                  if (!dialogContext.mounted) return;
+                                  setDialogState(
+                                    () => dialogError = _cleanError(error),
+                                  );
+                                }
+                              },
+                        icon: const Icon(Icons.photo_camera_rounded),
+                        label: const Text('Kamera'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: photos.length >= 4
+                            ? null
+                            : () async {
+                                try {
+                                  final picked = await _pickIncidentPhotos(
+                                    camera: false,
+                                    remaining: 4 - photos.length,
+                                  );
+                                  if (!dialogContext.mounted) return;
+                                  setDialogState(() {
+                                    photos.addAll(picked);
+                                    dialogError = null;
+                                  });
+                                } catch (error) {
+                                  if (!dialogContext.mounted) return;
+                                  setDialogState(
+                                    () => dialogError = _cleanError(error),
+                                  );
+                                }
+                              },
+                        icon: const Icon(Icons.photo_library_rounded),
+                        label: const Text('Galeri'),
+                      ),
+                    ],
+                  ),
+                  if (photos.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: List.generate(
+                        photos.length,
+                        (index) => Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.memory(
+                                photos[index].bytes,
+                                width: 82,
+                                height: 82,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            Positioned(
+                              right: -9,
+                              top: -9,
+                              child: IconButton.filled(
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => setDialogState(
+                                  () => photos.removeAt(index),
+                                ),
+                                icon: const Icon(Icons.close_rounded, size: 16),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (dialogError != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      dialogError!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Batal'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.save_rounded),
+              label: const Text('Simpan'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final note = noteController.text.trim();
+    noteController.dispose();
+    if (submit != true || note.isEmpty) return;
+
+    await _store.queueEvent(
+      userId: widget.user.id,
+      type: 'incident',
+      location: await _captureEventLocation(),
+      payload: {
+        'checkpointId': checkpoint?.id,
+        'category': category,
+        'severity': severity,
+        'note': note,
+        'images': photos.map((photo) => photo.dataUrl).toList(),
+      },
+    );
+    unawaited(_sync.syncNow());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Insiden disimpan lokal dan dimasukkan ke barisan sync.'),
+      ),
+    );
+  }
+
+  Future<void> _welfareCheck() async {
+    await _store.queueEvent(
+      userId: widget.user.id,
+      type: 'welfare_check',
+      location: await _captureEventLocation(),
+      payload: const {'status': 'ok', 'note': 'Guard confirmed OK'},
+    );
+    unawaited(_sync.syncNow());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Status “Saya OK” disimpan.')),
+    );
+  }
+
+  Future<void> _finishPatrol() async {
+    if (_ending) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tamatkan rondaan?'),
+        content: Text(
+          'Semua data sudah disimpan dalam telefon. ${_store.pendingCount(widget.user.id)} event masih menunggu sync.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Teruskan ronda'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Tamat Rondaan'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    setState(() => _ending = true);
+    await _store.queueEvent(
+      userId: widget.user.id,
+      type: 'patrol_end',
+      payload: {'clientSessionId': _clientSessionId},
+      location: await _captureEventLocation(),
+    );
+    unawaited(_sync.syncNow());
+    try {
+      await widget.api.endLivePatrol(_clientSessionId);
+    } catch (_) {}
+    await _positionSub?.cancel();
+    _locationHeartbeat?.cancel();
+    if (!mounted) return;
+    Navigator.of(context).pop();
   }
 
   Future<List<_IncidentPhoto>> _pickIncidentPhotos({
@@ -184,9 +588,7 @@ class _PatrolScreenState extends State<PatrolScreen>
       if (mime == null) continue;
       final bytes = await file.readAsBytes();
       if (bytes.length > 350000) {
-        throw const ApiException(
-          'Salah satu gambar terlalu besar. Cuba gambar lain.',
-        );
+        throw const ApiException('Gambar terlalu besar. Cuba gambar lain.');
       }
       photos.add(
         _IncidentPhoto(
@@ -210,252 +612,83 @@ class _PatrolScreenState extends State<PatrolScreen>
     return null;
   }
 
-  Future<void> _reportIncident(NfcLog scan) async {
-    final noteController = TextEditingController();
-    final photos = <_IncidentPhoto>[];
-    String category = 'Keselamatan';
-    String severity = 'normal';
-    String? dialogError;
+  List<OfflineEvent> _currentSessionScanEvents({
+    required int sessionIndex,
+    required String dayKey,
+  }) =>
+      _store.eventsForUser(widget.user.id, limit: 1000).where((event) {
+        return event.type == 'scan' &&
+            event.payload['sessionIndex'] == sessionIndex &&
+            event.payload['dayKey'] == dayKey &&
+            !event.isFailed;
+      }).toList();
 
-    final submit = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: Text('Lapor Insiden • ${scan.checkpointName ?? 'Checkpoint'}'),
-          content: SizedBox(
-            width: 460,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: category,
-                    decoration: const InputDecoration(labelText: 'Kategori'),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Keselamatan',
-                        child: Text('Keselamatan'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Kerosakan',
-                        child: Text('Kerosakan'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Kebersihan',
-                        child: Text('Kebersihan'),
-                      ),
-                      DropdownMenuItem(value: 'Akses', child: Text('Akses')),
-                      DropdownMenuItem(
-                        value: 'Lain-lain',
-                        child: Text('Lain-lain'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) setDialogState(() => category = value);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: severity,
-                    decoration: const InputDecoration(labelText: 'Keutamaan'),
-                    items: const [
-                      DropdownMenuItem(value: 'normal', child: Text('Normal')),
-                      DropdownMenuItem(
-                        value: 'important',
-                        child: Text('Penting'),
-                      ),
-                      DropdownMenuItem(value: 'urgent', child: Text('Segera')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) setDialogState(() => severity = value);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: noteController,
-                    minLines: 3,
-                    maxLines: 6,
-                    maxLength: 500,
-                    decoration: const InputDecoration(
-                      labelText: 'Catatan',
-                      hintText: 'Terangkan insiden yang ditemui.',
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: photos.length >= 4
-                            ? null
-                            : () async {
-                                try {
-                                  final picked = await _pickIncidentPhotos(
-                                    camera: true,
-                                    remaining: 4 - photos.length,
-                                  );
-                                  if (!dialogContext.mounted) return;
-                                  setDialogState(() {
-                                    photos.addAll(picked);
-                                    dialogError = null;
-                                  });
-                                } catch (error) {
-                                  if (!dialogContext.mounted) return;
-                                  setDialogState(
-                                    () => dialogError = error.toString(),
-                                  );
-                                }
-                              },
-                        icon: const Icon(Icons.photo_camera_rounded),
-                        label: const Text('Ambil Gambar'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: photos.length >= 4
-                            ? null
-                            : () async {
-                                try {
-                                  final picked = await _pickIncidentPhotos(
-                                    camera: false,
-                                    remaining: 4 - photos.length,
-                                  );
-                                  if (!dialogContext.mounted) return;
-                                  setDialogState(() {
-                                    photos.addAll(picked);
-                                    dialogError = null;
-                                  });
-                                } catch (error) {
-                                  if (!dialogContext.mounted) return;
-                                  setDialogState(
-                                    () => dialogError = error.toString(),
-                                  );
-                                }
-                              },
-                        icon: const Icon(Icons.photo_library_rounded),
-                        label: const Text('Pilih Gambar'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text('${photos.length}/4 gambar'),
-                  if (photos.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: List.generate(
-                        photos.length,
-                        (index) => Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: Image.memory(
-                                photos[index].bytes,
-                                width: 82,
-                                height: 82,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            Positioned(
-                              right: -8,
-                              top: -8,
-                              child: IconButton.filled(
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () => setDialogState(
-                                  () => photos.removeAt(index),
-                                ),
-                                icon: const Icon(Icons.close_rounded, size: 16),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (dialogError != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      dialogError!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Batal'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              icon: const Icon(Icons.send_rounded),
-              label: const Text('Hantar'),
-            ),
-          ],
-        ),
-      ),
+  CachedCheckpoint? _nextCheckpoint(OfflineBootstrap bootstrap) {
+    final index = _sessionIndex(
+      DateTime.now(),
+      bootstrap.sessionIntervalMinutes,
     );
-
-    final note = noteController.text.trim();
-    noteController.dispose();
-    if (submit != true) return;
-    if (note.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Masukkan catatan insiden.')),
-      );
-      return;
-    }
-    try {
-      await widget.api.createIncident(
-        checkpointId: scan.checkpointId,
-        category: category,
-        severity: severity,
-        note: note,
-        images: photos.map((photo) => photo.dataUrl).toList(),
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            photos.isEmpty
-                ? 'Insiden dihantar ke Command Center.'
-                : 'Insiden dan ${photos.length} gambar berjaya dihantar.',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error.toString())));
-    }
+    final day = _dayKey(DateTime.now());
+    final scannedIds = _currentSessionScanEvents(
+      sessionIndex: index,
+      dayKey: day,
+    )
+        .map((event) => (event.payload['checkpointId'] as num?)?.toInt())
+        .whereType<int>()
+        .toSet();
+    return bootstrap.checkpoints
+        .where((checkpoint) => !scannedIds.contains(checkpoint.id))
+        .firstOrNull;
   }
+
+  int _completedCount(OfflineBootstrap bootstrap) {
+    final index = _sessionIndex(
+      DateTime.now(),
+      bootstrap.sessionIntervalMinutes,
+    );
+    final day = _dayKey(DateTime.now());
+    return _currentSessionScanEvents(sessionIndex: index, dayKey: day)
+        .map((event) => (event.payload['checkpointId'] as num?)?.toInt())
+        .whereType<int>()
+        .toSet()
+        .length;
+  }
+
+  int _sessionIndex(DateTime value, int interval) {
+    final local = value.toLocal();
+    final safeInterval = interval.clamp(15, 1440);
+    return (local.hour * 60 + local.minute) ~/ safeInterval;
+  }
+
+  String _dayKey(DateTime value) {
+    final local = value.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)}';
+  }
+
+  String _clock(DateTime value) {
+    final local = value.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
+  }
+
+  String _normalizeUid(String value) =>
+      value.trim().toUpperCase().replaceAll(' ', '');
 
   String _cleanError(Object error) => error
       .toString()
       .replaceFirst('Bad state: ', '')
-      .replaceFirst('TimeoutException: ', '');
-
-  String _formatTime(DateTime time) {
-    final local = time.toLocal();
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${two(local.day)}/${two(local.month)}/${local.year} '
-        '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
-  }
+      .replaceFirst('TimeoutException: ', '')
+      .replaceFirst('ApiException: ', '');
 
   ImageProvider<Object>? _profileImage() {
     final picture = widget.user.profilePicture;
     if (picture == null || picture.isEmpty) return null;
-    if (picture.startsWith('data:image/')) {
-      final comma = picture.indexOf(',');
-      if (comma > 0) {
-        return MemoryImage(base64Decode(picture.substring(comma + 1)));
+    if (picture.startsWith('data:image/') && picture.contains(',')) {
+      try {
+        return MemoryImage(base64Decode(picture.split(',').last));
+      } catch (_) {
+        return null;
       }
     }
     return NetworkImage(picture);
@@ -463,339 +696,602 @@ class _PatrolScreenState extends State<PatrolScreen>
 
   @override
   Widget build(BuildContext context) {
+    final bootstrap = _bootstrap ?? _store.cachedBootstrap();
+    final pending = _store.pendingCount(widget.user.id);
+    final failed = _store.failedCount(widget.user.id);
+    final completed = bootstrap == null ? 0 : _completedCount(bootstrap);
+    final total = bootstrap?.checkpoints.length ?? 0;
+    final progress = total == 0 ? 0.0 : completed / total;
+    final next = bootstrap == null ? null : _nextCheckpoint(bootstrap);
+    final sessionEvents = bootstrap == null
+        ? const <OfflineEvent>[]
+        : _currentSessionScanEvents(
+            sessionIndex: _sessionIndex(
+              DateTime.now(),
+              bootstrap.sessionIntervalMinutes,
+            ),
+            dayKey: _dayKey(DateTime.now()),
+          );
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Rondaan'),
+        title: const Text('Rondaan Aktif'),
         actions: [
           IconButton(
-            tooltip: 'Refresh laluan',
-            onPressed: _refreshConfig,
-            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Saya OK',
+            onPressed: _welfareCheck,
+            icon: const Icon(Icons.health_and_safety_rounded),
+          ),
+          IconButton(
+            tooltip: 'Tamat rondaan',
+            onPressed: _ending ? null : _finishPatrol,
+            icon: const Icon(Icons.stop_circle_outlined),
           ),
         ],
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-          children: [
-            _PatrollingProfile(
-              user: widget.user,
-              image: _profileImage(),
-              animation: _sonarController,
-              locationStatus: _locationStatus,
-              onRefreshLocation: _sendLocation,
-            ),
-            const SizedBox(height: 14),
-            FutureBuilder<PatrolConfig>(
-              future: _configFuture,
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(snapshot.error.toString()),
-                    ),
-                  );
-                }
-                if (!snapshot.hasData) {
-                  return const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                  );
-                }
-                final config = snapshot.data!;
-                final total = config.checkpoints.length;
-                final completed = config.completedCount;
-                final progress = total == 0 ? 0.0 : completed / total;
-                final next = config.nextCheckpoint;
-                return Card(
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await _loadBootstrap();
+            await _sync.syncNow();
+          },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            children: [
+              _LiveHero(
+                user: widget.user,
+                image: _profileImage(),
+                animation: _pulseController,
+                locationStatus: _locationStatus,
+                liveStarting: _liveStarting,
+                pending: pending,
+                failed: failed,
+                syncing: _sync.isSyncing,
+                onSync: _sync.syncNow,
+              ),
+              const SizedBox(height: 14),
+              _RouteCard(
+                department: bootstrap?.departmentName ?? widget.user.jabatan,
+                completed: completed,
+                total: total,
+                progress: progress,
+                next: next,
+                interval: bootstrap?.sessionIntervalMinutes ??
+                    widget.user.sessionIntervalMinutes,
+              ),
+              const SizedBox(height: 14),
+              _ScanCard(
+                scanning: _scanning,
+                mockMode: widget.mockMode,
+                nextName: next?.name,
+                onScan: _scanCheckpoint,
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Card(
+                  color: Theme.of(context).colorScheme.errorContainer,
                   child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
                       children: [
-                        Text(
-                          config.departmentName,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Sesi Rondaan ${config.sessionIndex + 1} • setiap ${config.sessionIntervalMinutes} minit',
-                        ),
-                        const SizedBox(height: 12),
-                        LinearProgressIndicator(value: progress),
-                        const SizedBox(height: 6),
-                        Text('$completed / $total checkpoint selesai'),
-                        const SizedBox(height: 12),
-                        if (next != null)
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .secondaryContainer,
-                            ),
-                            child: Row(
-                              children: [
-                                CircleAvatar(child: Text('${next.position}')),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'CHECKPOINT SETERUSNYA',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                      Text(
-                                        next.name,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 17,
-                                        ),
-                                      ),
-                                      if (next.instruction != null &&
-                                          next.instruction!.isNotEmpty)
-                                        Text(next.instruction!),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        else if (total > 0)
-                          const ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(
-                              Icons.verified_rounded,
-                              color: Colors.green,
-                            ),
-                            title: Text(
-                              'Semua checkpoint Sesi Rondaan ini selesai.',
-                            ),
-                          ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: config.checkpoints
-                              .map(
-                                (checkpoint) => Chip(
-                                  avatar: Icon(
-                                    checkpoint.completed
-                                        ? Icons.check_circle
-                                        : Icons.radio_button_unchecked,
-                                    size: 17,
-                                  ),
-                                  label: Text(
-                                    '${checkpoint.position}. ${checkpoint.name}',
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
+                        const Icon(Icons.error_outline_rounded),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(_error!)),
                       ],
                     ),
                   ),
-                );
-              },
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 68,
-              child: FilledButton.icon(
-                onPressed: _scanning ? null : _scanCheckpoint,
-                icon: Icon(_scanning ? Icons.radar : Icons.nfc, size: 28),
-                label: Text(
-                  _scanning ? 'Menunggu NFC…' : 'Scan Checkpoint',
-                  style: const TextStyle(fontSize: 18),
                 ),
+              ],
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Timeline sesi',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => _reportIncident(next),
+                    icon: const Icon(Icons.add_alert_rounded),
+                    label: const Text('Insiden'),
+                  ),
+                ],
               ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Card(
-                color: Theme.of(context).colorScheme.errorContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(_error!),
+              const SizedBox(height: 8),
+              if (sessionEvents.isEmpty)
+                const _EmptyTimeline()
+              else
+                ...sessionEvents.reversed.map(
+                  (event) => _TimelineEvent(
+                    event: event,
+                    checkpoint: bootstrap?.checkpoints
+                        .where(
+                          (item) =>
+                              item.id ==
+                              (event.payload['checkpointId'] as num?)?.toInt(),
+                        )
+                        .firstOrNull,
+                    onIncident: () {
+                      final checkpoint = bootstrap?.checkpoints
+                          .where(
+                            (item) =>
+                                item.id ==
+                                (event.payload['checkpointId'] as num?)?.toInt(),
+                          )
+                          .firstOrNull;
+                      _reportIncident(checkpoint);
+                    },
+                  ),
                 ),
-              ),
             ],
-            const SizedBox(height: 18),
-            Text(
-              'Checkpoint direkodkan (${_scans.length})',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            if (_scans.isEmpty)
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text(
-                    'Belum ada checkpoint direkodkan dalam rondaan ini.',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              )
-            else
-              ..._scans.map(
-                (scan) => Card(
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      child: Icon(Icons.check_rounded),
-                    ),
-                    title: Text(scan.checkpointName ?? 'Checkpoint'),
-                    subtitle: Text(_formatTime(scan.scannedAt)),
-                    trailing: IconButton(
-                      tooltip: 'Lapor insiden',
-                      onPressed: () => _reportIncident(scan),
-                      icon: const Icon(Icons.report_problem_outlined),
-                    ),
-                  ),
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _PatrollingProfile extends StatelessWidget {
-  const _PatrollingProfile({
+class _LiveHero extends StatelessWidget {
+  const _LiveHero({
     required this.user,
     required this.image,
     required this.animation,
     required this.locationStatus,
-    required this.onRefreshLocation,
+    required this.liveStarting,
+    required this.pending,
+    required this.failed,
+    required this.syncing,
+    required this.onSync,
   });
 
   final AppUser user;
   final ImageProvider<Object>? image;
   final Animation<double> animation;
   final String locationStatus;
-  final VoidCallback onRefreshLocation;
+  final bool liveStarting;
+  final int pending;
+  final int failed;
+  final bool syncing;
+  final VoidCallback onSync;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-        child: Column(
-          children: [
-            SizedBox(
-              width: 190,
-              height: 190,
-              child: AnimatedBuilder(
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF251A4F), Color(0xFF151827), Color(0xFF341214)],
+        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              AnimatedBuilder(
                 animation: animation,
-                builder: (context, child) => Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    for (var index = 0; index < 3; index++)
-                      Builder(
-                        builder: (context) {
-                          final phase = (animation.value + index / 3) % 1.0;
-                          final size = 105 + phase * 82;
-                          return Container(
-                            width: size,
-                            height: size,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Theme.of(context).colorScheme.secondary
-                                    .withValues(alpha: (1.0 - phase) * 0.42),
-                                width: 2,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [
-                            Theme.of(context).colorScheme.primary,
-                            Theme.of(context).colorScheme.secondary,
-                          ],
-                        ),
-                      ),
-                      child: CircleAvatar(
-                        radius: 58,
-                        backgroundImage: image,
-                        child: image == null
-                            ? Text(
-                                user.nama.isEmpty ? '?' : user.nama[0],
-                                style: const TextStyle(
-                                  fontSize: 40,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              )
-                            : null,
-                      ),
+                builder: (context, child) => Container(
+                  padding: EdgeInsets.all(5 + animation.value * 3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFF6C5CE7)
+                          .withValues(alpha: 1 - animation.value * 0.65),
+                      width: 2,
                     ),
+                  ),
+                  child: child,
+                ),
+                child: CircleAvatar(
+                  radius: 30,
+                  backgroundImage: image,
+                  child: image == null
+                      ? Text(
+                          user.nama.isEmpty ? '?' : user.nama[0],
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.nama,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(user.jabatan),
                   ],
                 ),
               ),
-            ),
-            Text(
-              user.nama,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'RONDAAN AKTIF',
-              style: TextStyle(
-                color: Colors.greenAccent,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.2,
-              ),
-            ),
-            const SizedBox(height: 10),
-            InkWell(
-              onTap: onRefreshLocation,
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.my_location_rounded, size: 18),
-                    const SizedBox(width: 7),
-                    Flexible(
-                      child: Text(
-                        locationStatus,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                  ],
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00B894).withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  liveStarting ? 'STARTING' : 'ON PATROL',
+                  style: const TextStyle(
+                    color: Color(0xFF55E6C1),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                  ),
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              const Icon(Icons.my_location_rounded, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  locationStatus,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              const _MiniBadge(
+                icon: Icons.phone_android_rounded,
+                text: 'LOCAL FIRST',
+                color: Color(0xFF74B9FF),
+              ),
+              _MiniBadge(
+                icon: syncing ? Icons.sync_rounded : Icons.cloud_upload_outlined,
+                text: syncing ? 'SYNCING…' : '$pending PENDING',
+                color: const Color(0xFFA29BFE),
+              ),
+              if (failed > 0)
+                _MiniBadge(
+                  icon: Icons.warning_amber_rounded,
+                  text: '$failed FAILED',
+                  color: const Color(0xFFFF7675),
+                ),
+            ],
+          ),
+          if (pending > 0 || failed > 0) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: syncing ? null : onSync,
+              icon: const Icon(Icons.sync_rounded),
+              label: const Text('Sync sekarang'),
             ),
           ],
-        ),
+        ],
       ),
     );
   }
 }
 
+class _MiniBadge extends StatelessWidget {
+  const _MiniBadge({required this.icon, required this.text, required this.color});
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withValues(alpha: 0.22)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 5),
+            Text(
+              text,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w900,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _RouteCard extends StatelessWidget {
+  const _RouteCard({
+    required this.department,
+    required this.completed,
+    required this.total,
+    required this.progress,
+    required this.next,
+    required this.interval,
+  });
+  final String department;
+  final int completed;
+  final int total;
+  final double progress;
+  final CachedCheckpoint? next;
+  final int interval;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          department,
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                        ),
+                        Text('Sesi setiap $interval minit'),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '$completed/$total',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: progress.clamp(0, 1),
+                  minHeight: 10,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6C5CE7).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Row(
+                  children: [
+                    const CircleAvatar(child: Icon(Icons.flag_circle_rounded)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'SETERUSNYA',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          Text(
+                            next?.name ??
+                                (total == 0
+                                    ? 'Tiada checkpoint aktif'
+                                    : 'Semua checkpoint selesai'),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          if ((next?.instruction ?? '').isNotEmpty)
+                            Text(next!.instruction!),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+class _ScanCard extends StatelessWidget {
+  const _ScanCard({
+    required this.scanning,
+    required this.mockMode,
+    required this.nextName,
+    required this.onScan,
+  });
+  final bool scanning;
+  final bool mockMode;
+  final String? nextName;
+  final VoidCallback onScan;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          color: const Color(0xFF10131D),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 92,
+              height: 92,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFFC0392B).withValues(alpha: 0.75),
+                    const Color(0xFF4834D4).withValues(alpha: 0.85),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF4834D4).withValues(alpha: 0.25),
+                    blurRadius: 32,
+                  ),
+                ],
+              ),
+              child: Icon(
+                scanning ? Icons.radar_rounded : Icons.nfc_rounded,
+                size: 48,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              scanning ? 'Sentuhkan tag NFC…' : 'Scan checkpoint',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              nextName == null
+                  ? 'Data disimpan dalam telefon dahulu.'
+                  : 'Checkpoint dijangka: $nextName',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: scanning ? null : onScan,
+              icon: const Icon(Icons.nfc_rounded),
+              label: Text(
+                scanning
+                    ? 'SCANNING…'
+                    : mockMode
+                        ? 'SCAN MOCK NFC'
+                        : 'SCAN NFC',
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _TimelineEvent extends StatelessWidget {
+  const _TimelineEvent({
+    required this.event,
+    required this.checkpoint,
+    required this.onIncident,
+  });
+  final OfflineEvent event;
+  final CachedCheckpoint? checkpoint;
+  final VoidCallback onIncident;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = event.isSynced
+        ? const Color(0xFF55E6C1)
+        : event.isFailed
+            ? const Color(0xFFFF7675)
+            : const Color(0xFFFFD166);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Card(
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          leading: CircleAvatar(
+            backgroundColor: color.withValues(alpha: 0.14),
+            child: Icon(
+              event.isSynced
+                  ? Icons.cloud_done_rounded
+                  : event.isFailed
+                      ? Icons.cloud_off_rounded
+                      : Icons.phone_android_rounded,
+              color: color,
+            ),
+          ),
+          title: Text(
+            checkpoint?.name ??
+                event.payload['checkpointName'] as String? ??
+                'Checkpoint',
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          subtitle: Text(
+            '${_formatEventTime(event.occurredAt)} • ${event.isSynced ? 'Synced' : event.isFailed ? 'Perlu semak' : 'Disimpan lokal'}',
+          ),
+          trailing: IconButton(
+            tooltip: 'Lapor insiden',
+            onPressed: onIncident,
+            icon: const Icon(Icons.report_problem_outlined),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _formatEventTime(DateTime value) {
+    final local = value.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
+  }
+}
+
+class _EmptyTimeline extends StatelessWidget {
+  const _EmptyTimeline();
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 18),
+          child: Column(
+            children: [
+              Icon(
+                Icons.route_outlined,
+                size: 44,
+                color: Theme.of(context).colorScheme.secondary,
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Belum ada checkpoint dalam sesi ini.',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
 class _IncidentPhoto {
   const _IncidentPhoto({required this.bytes, required this.dataUrl});
-
   final Uint8List bytes;
   final String dataUrl;
+}
+
+extension _FirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull {
+    final iterator = this.iterator;
+    return iterator.moveNext() ? iterator.current : null;
+  }
 }
