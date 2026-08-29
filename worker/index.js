@@ -192,13 +192,31 @@ async function getScans(request, env, url) {
 
   const calendarBounds = malaysiaDayBounds(requestedDate);
   if (!calendarBounds) return json({ error: 'Tarikh tidak sah.' }, 400);
-  const sessionStartMinutes = Math.max(0, Math.min(1439, Number(auth.user.session_start_minutes ?? 420)));
-  const bounds = {
-    startMs: calendarBounds.startMs + sessionStartMinutes * 60000,
-    endMs: calendarBounds.startMs + sessionStartMinutes * 60000 + 86400000,
-  };
-  bounds.startIso = new Date(bounds.startMs).toISOString();
-  bounds.endIso = new Date(bounds.endMs).toISOString();
+
+  const sessionStartMinutes = Math.max(
+    0,
+    Math.min(1439, Number(auth.user.session_start_minutes ?? 420)),
+  );
+  const interval = Math.max(
+    15,
+    Math.min(1440, Number(auth.user.session_interval_minutes || 120)),
+  );
+
+  // Query enough data to evaluate complete session windows at the edges of
+  // the selected Malaysia calendar date, while only displaying scans that
+  // actually happened on the selected date.
+  const firstWindow = sessionWindow(
+    new Date(calendarBounds.startMs),
+    interval,
+    sessionStartMinutes,
+  );
+  const lastWindow = sessionWindow(
+    new Date(calendarBounds.endMs - 1),
+    interval,
+    sessionStartMinutes,
+  );
+  const queryStartIso = new Date(firstWindow.startMs).toISOString();
+  const queryEndIso = new Date(lastWindow.endMs).toISOString();
 
   const checkpointResult = await env.DB.prepare(
     `SELECT id, name, position
@@ -217,29 +235,39 @@ async function getScans(request, env, url) {
      LEFT JOIN checkpoints c ON c.id = s.checkpoint_id
      WHERE u.department_id = ? AND s.scanned_at >= ? AND s.scanned_at < ?
      ORDER BY s.scanned_at ASC, s.id ASC`,
-  ).bind(auth.user.department_id, bounds.startIso, bounds.endIso).all();
+  ).bind(auth.user.department_id, queryStartIso, queryEndIso).all();
 
   const scans = scanResult.results ?? [];
-  const interval = Math.max(15, Math.min(1440, Number(auth.user.session_interval_minutes || 120)));
   const nowMs = Date.now();
-  const todayKey = scheduleDateKey(new Date(), sessionStartMinutes);
+  const todayKey = malaysiaDateKey(new Date());
   const isPastDay = requestedDate < todayKey;
   const isFutureDay = requestedDate > todayKey;
   const sessions = [];
 
   if (!isFutureDay) {
-    const sessionCount = Math.ceil(1440 / interval);
-    for (let index = 0; index < sessionCount; index += 1) {
-      const startMs = bounds.startMs + index * interval * 60000;
-      const endMs = Math.min(bounds.endMs, startMs + interval * 60000);
+    let cursor = firstWindow.startMs;
+    while (cursor < calendarBounds.endMs) {
+      const window = sessionWindow(
+        new Date(cursor),
+        interval,
+        sessionStartMinutes,
+      );
+      const startMs = window.startMs;
+      const endMs = window.endMs;
+      if (startMs >= calendarBounds.endMs) break;
       if (requestedDate === todayKey && startMs > nowMs) break;
 
-      const sessionScans = scans.filter((scan) => {
+      const fullSessionScans = scans.filter((scan) => {
         const time = Date.parse(scan.scanned_at);
         return time >= startMs && time < endMs;
       });
+      const calendarScans = fullSessionScans.filter((scan) => {
+        const time = Date.parse(scan.scanned_at);
+        return time >= calendarBounds.startMs && time < calendarBounds.endMs;
+      });
+
       const scannedCheckpointIds = new Set(
-        sessionScans
+        fullSessionScans
           .map((scan) => Number(scan.checkpoint_id || 0))
           .filter((id) => id > 0),
       );
@@ -253,20 +281,26 @@ async function getScans(request, env, url) {
       else if (isPastDay || endMs <= nowMs) status = 'missed';
 
       const scannerIds = [...new Set(
-        sessionScans.map((scan) => Number(scan.user_id || 0)).filter((id) => id > 0),
+        calendarScans
+          .map((scan) => Number(scan.user_id || 0))
+          .filter((id) => id > 0),
       )];
       const scannerNames = [...new Set(
-        sessionScans.map((scan) => String(scan.user_name || '').trim()).filter(Boolean),
+        calendarScans
+          .map((scan) => String(scan.user_name || '').trim())
+          .filter(Boolean),
       )];
-      const firstScan = sessionScans[0] ?? null;
+      const firstScan = calendarScans[0] ?? null;
 
       sessions.push({
         userId: scannerIds.length === 1 ? scannerIds[0] : 0,
         userName: scannerNames.length > 0
           ? scannerNames.join(', ')
           : 'Tiada pengawal direkodkan',
-        profilePicture: scannerIds.length === 1 ? (firstScan?.profile_picture || null) : null,
-        index,
+        profilePicture: scannerIds.length === 1
+          ? (firstScan?.profile_picture || null)
+          : null,
+        index: window.index,
         startAt: new Date(startMs).toISOString(),
         endAt: new Date(endMs).toISOString(),
         status,
@@ -277,8 +311,11 @@ async function getScans(request, env, url) {
           name: checkpoint.name,
           position: checkpoint.position,
         })),
-        scans: sessionScans.map(scanJson),
+        scans: calendarScans.map(scanJson),
       });
+
+      if (endMs <= cursor) break;
+      cursor = endMs;
     }
     sessions.sort((left, right) => Date.parse(right.startAt) - Date.parse(left.startAt));
   }
@@ -752,6 +789,14 @@ function scheduleDayWindow(value, startMinutes = 420) {
   let startMs = localMidnightUtc - MALAYSIA_OFFSET_MS + safeStart * 60000;
   if (minuteOfDay < safeStart) startMs -= 86400000;
   return { startMs, endMs: startMs + 86400000 };
+}
+
+function sessionWindow(value, interval, startMinutes = 420) {
+  const day = scheduleDayWindow(value, startMinutes);
+  const safeInterval = Math.max(15, Math.min(1440, Number(interval || 120)));
+  const index = Math.floor((value.getTime() - day.startMs) / 60000 / safeInterval);
+  const startMs = day.startMs + index * safeInterval * 60000;
+  return { index, startMs, endMs: Math.min(day.endMs, startMs + safeInterval * 60000) };
 }
 
 function currentSessionIndex(value, interval, startMinutes = 420) {
