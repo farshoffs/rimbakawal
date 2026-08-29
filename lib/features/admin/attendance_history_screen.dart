@@ -59,53 +59,90 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   Future<void> _showDetail(AttendanceRecord record) async {
+    var current = record;
+    var savingReview = false;
     final profile = _image(record.profilePicture);
     final selfie = _image(record.selfieData);
     await showDialog<void>(
       context: context,
-      builder: (context) => Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(22),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text('Detail Kehadiran', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('Detail Kehadiran', style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                      ),
+                      IconButton(onPressed: () => Navigator.pop(dialogContext), icon: const Icon(Icons.close_rounded)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text('${current.userName ?? 'Pengguna'} • ${current.department ?? '-'}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text('${current.punchType == 'IN' ? 'MASUK' : 'KELUAR'} • ${_time(current.punchedAt)} • ${current.distanceMeters.toStringAsFixed(0)}m dari pusat'),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(child: _PhotoPanel(title: 'Gambar Profil', image: profile)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _PhotoPanel(title: 'Selfie Punch', image: selfie)),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _InfoChip(icon: Icons.face_retouching_natural_rounded, text: 'Status: ${current.faceStatus}'),
+                      _InfoChip(icon: Icons.analytics_rounded, text: 'Skor: ${current.faceScore?.round() ?? '-'}%'),
+                      _InfoChip(icon: Icons.gps_fixed_rounded, text: 'GPS ±${current.accuracyMeters?.toStringAsFixed(0) ?? '-'}m'),
+                      _InfoChip(icon: Icons.location_on_rounded, text: '${current.latitude.toStringAsFixed(6)}, ${current.longitude.toStringAsFixed(6)}'),
+                      if (current.isReviewed)
+                        _InfoChip(icon: Icons.verified_rounded, text: 'Disemak${current.reviewedByName == null ? '' : ' oleh ${current.reviewedByName}'}'),
+                    ],
+                  ),
+                  if (current.faceReason != null && current.faceReason!.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Text('Catatan pengecaman: ${current.faceReason}'),
+                  ],
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: current.isReviewed || savingReview
+                        ? null
+                        : () async {
+                            setDialogState(() => savingReview = true);
+                            try {
+                              final updated = await widget.api.reviewAttendanceRecord(current.id);
+                              if (!dialogContext.mounted) return;
+                              setDialogState(() {
+                                current = updated;
+                                savingReview = false;
+                              });
+                              _refresh();
+                            } catch (error) {
+                              if (!dialogContext.mounted) return;
+                              setDialogState(() => savingReview = false);
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                SnackBar(content: Text(error.toString())),
+                              );
+                            }
+                          },
+                    icon: Icon(current.isReviewed ? Icons.verified_rounded : Icons.task_alt_rounded),
+                    label: Text(
+                      current.isReviewed
+                          ? 'TELAH DISEMAK'
+                          : savingReview
+                              ? 'MENYIMPAN…'
+                              : 'DISEMAK',
                     ),
-                    IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text('${record.userName ?? 'Pengguna'} • ${record.department ?? '-'}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                Text('${record.punchType == 'IN' ? 'MASUK' : 'KELUAR'} • ${_time(record.punchedAt)} • ${record.distanceMeters.toStringAsFixed(0)}m dari pusat'),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(child: _PhotoPanel(title: 'Gambar Profil', image: profile)),
-                    const SizedBox(width: 12),
-                    Expanded(child: _PhotoPanel(title: 'Selfie Punch', image: selfie)),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _InfoChip(icon: Icons.face_retouching_natural_rounded, text: 'Status: ${record.faceStatus}'),
-                    _InfoChip(icon: Icons.analytics_rounded, text: 'Skor: ${record.faceScore?.round() ?? '-'}%'),
-                    _InfoChip(icon: Icons.gps_fixed_rounded, text: 'GPS ±${record.accuracyMeters?.toStringAsFixed(0) ?? '-'}m'),
-                    _InfoChip(icon: Icons.location_on_rounded, text: '${record.latitude.toStringAsFixed(6)}, ${record.longitude.toStringAsFixed(6)}'),
-                  ],
-                ),
-                if (record.faceReason != null && record.faceReason!.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  Text('Catatan pengecaman: ${record.faceReason}'),
+                  ),
                 ],
-              ],
+              ),
             ),
           ),
         ),
