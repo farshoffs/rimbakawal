@@ -16,7 +16,6 @@ import '../auth/login_screen.dart';
 import '../history/clocking_history_screen.dart';
 import '../patrol/patrol_screen.dart';
 import '../profile/profile_screen.dart';
-import '../settings/nfc_settings_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -226,9 +225,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       api: widget.api,
     ),
   );
-
-  void _openNfcSettings() =>
-      _open(NfcSettingsScreen(mockMode: widget.mockMode));
 
   Future<void> _openProfile() async {
     await Navigator.of(context).push(
@@ -466,16 +462,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                       title: 'Mula Rondaan',
                       subtitle: 'Imbas checkpoint dan rekod lokasi',
                       onTap: _openPatrol,
-                    ),
-                    _MenuData(
-                      icon: nfcTestMode
-                          ? Icons.science_rounded
-                          : Icons.nfc_rounded,
-                      title: 'Tetapan NFC',
-                      subtitle: nfcTestMode
-                          ? 'Mod Test NFC aktif'
-                          : 'Mod Scan NFC Sebenar aktif',
-                      onTap: _openNfcSettings,
                     ),
                     _MenuData(
                       icon: Icons.fingerprint_rounded,

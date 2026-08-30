@@ -470,9 +470,11 @@ async function commandCenter(request, env) {
   if (auth.response) return auth.response;
 
   const now = new Date();
+  const todayKey = malaysiaDateKey(now);
+  const todayBounds = malaysiaDayBounds(todayKey);
   const bounds = {
-    startIso: new Date(now.getTime() - 86400000).toISOString(),
-    endIso: new Date(now.getTime() + 60000).toISOString(),
+    startIso: todayBounds.startIso,
+    endIso: todayBounds.endIso,
   };
   const liveSince = new Date(now.getTime() - 2 * 60 * 1000).toISOString();
 
@@ -622,6 +624,7 @@ async function commandCenter(request, env) {
 
     patrols.push({
       userId: Number(user.id),
+      departmentId: Number(user.department_id || 0),
       nama: user.nama,
       jabatan: user.jabatan,
       profilePicture: user.profile_picture,
@@ -644,6 +647,100 @@ async function commandCenter(request, env) {
     });
   }
 
+
+
+  // Liputan rondaan dikira sekali bagi setiap Jabatan/sesi, bukan sekali bagi
+  // setiap pengawal. Hanya sesi yang SUDAH TAMAT pada tarikh kalendar Malaysia
+  // hari semasa dikira sebagai due/terlepas. Sesi akan datang tidak disentuh.
+  completeCount = 0;
+  alertCount = 0;
+  missedSessionCount = 0;
+  missedCheckpointCount = 0;
+  scannedCheckpointCount = 0;
+  dueCheckpointCount = 0;
+  completedScannedCheckpointCount = 0;
+
+  const departmentUsers = new Map();
+  for (const user of usersResult.results ?? []) {
+    const departmentId = Number(user.department_id || 0);
+    if (departmentId <= 0) continue;
+    const list = departmentUsers.get(departmentId) ?? [];
+    list.push(user);
+    departmentUsers.set(departmentId, list);
+  }
+
+  for (const [departmentId, users] of departmentUsers.entries()) {
+    const sample = users[0];
+    const interval = Math.max(15, Number(sample.session_interval_minutes || 120));
+    const intervalMs = interval * 60000;
+    const sessionStartMinutes = Math.max(0, Math.min(1439, Number(sample.session_start_minutes ?? 420)));
+    const expected = checkpointCounts.get(departmentId) ?? 0;
+    if (expected <= 0) continue;
+
+    const anchorMs = todayBounds.startMs + sessionStartMinutes * 60000;
+    const nowMs = now.getTime();
+    const userIds = new Set(users.map((user) => Number(user.id)));
+    const departmentScans = scans.filter((row) => {
+      const time = Date.parse(row.scanned_at);
+      return userIds.has(Number(row.user_id))
+        && time >= todayBounds.startMs
+        && time < todayBounds.endMs;
+    });
+
+    // Belum sampai jam mula rondaan hari ini: tiada sesi yang due atau terlepas.
+    if (nowMs < anchorMs) continue;
+
+    const currentIndex = Math.floor((nowMs - anchorMs) / intervalMs);
+    const currentStartMs = anchorMs + currentIndex * intervalMs;
+    const currentEndMs = Math.min(todayBounds.endMs, currentStartMs + intervalMs);
+
+    // Sesi sebelum currentIndex telah tamat dan sahaja yang boleh dianggap due.
+    for (let index = 0; index < currentIndex; index += 1) {
+      const sessionStartMs = anchorMs + index * intervalMs;
+      if (sessionStartMs >= todayBounds.endMs) break;
+      const sessionEndMs = Math.min(todayBounds.endMs, sessionStartMs + intervalMs);
+      if (sessionEndMs > nowMs) break;
+      const unique = new Set(
+        departmentScans
+          .filter((row) => {
+            const time = Date.parse(row.scanned_at);
+            return time >= sessionStartMs && time < sessionEndMs;
+          })
+          .map((row) => Number(row.checkpoint_id))
+          .filter((id) => id > 0),
+      );
+      dueCheckpointCount += expected;
+      completedScannedCheckpointCount += unique.size;
+      scannedCheckpointCount += unique.size;
+      if (unique.size < expected) {
+        missedSessionCount += 1;
+        missedCheckpointCount += expected - unique.size;
+      }
+    }
+
+    // Sesi semasa dipaparkan untuk kemajuan, tetapi tidak dianggap terlepas.
+    if (currentStartMs < todayBounds.endMs && nowMs < currentEndMs) {
+      const currentUnique = new Set(
+        departmentScans
+          .filter((row) => {
+            const time = Date.parse(row.scanned_at);
+            return time >= currentStartMs && time < currentEndMs;
+          })
+          .map((row) => Number(row.checkpoint_id))
+          .filter((id) => id > 0),
+      );
+      scannedCheckpointCount += currentUnique.size;
+      if (currentUnique.size >= expected) completeCount += 1;
+
+      const hasActivePatroller = users.some((user) => activePatrols.has(Number(user.id)));
+      const minutesIntoSession = Math.max(0, Math.floor((nowMs - currentStartMs) / 60000));
+      const grace = Math.max(10, Math.min(30, Math.floor(interval / 4)));
+      if (hasActivePatroller && minutesIntoSession >= grace && currentUnique.size === 0) {
+        alertCount += 1;
+      }
+    }
+  }
+
   const incidents = incidentsResult.results ?? [];
   const urgentIncidents = incidents.filter((row) => row.severity === 'urgent').length;
 
@@ -653,6 +750,7 @@ async function commandCenter(request, env) {
       patrolUsers: patrols.length,
       complete: completeCount,
       alerts: alertCount,
+      coverageDate: todayKey,
       missedSessions: missedSessionCount,
       missedCheckpoints: missedCheckpointCount,
       scannedCheckpoints: scannedCheckpointCount,

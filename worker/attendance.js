@@ -394,6 +394,58 @@ async function commandCenterWithAttendance(request, env, ctx) {
     faceStatus: row.face_status,
     faceScore: row.face_score == null ? null : Number(row.face_score),
   }));
+
+  const presentResult = await env.DB.prepare(
+    `SELECT a.user_id, a.department_id, a.punched_at
+     FROM attendance_records a
+     JOIN users u ON u.id = a.user_id
+     JOIN (
+       SELECT user_id, MAX(punched_at) AS max_time
+       FROM attendance_records
+       WHERE work_date = ? ${scopeDepartment ? 'AND department_id = ?' : ''}
+       GROUP BY user_id
+     ) latest ON latest.user_id = a.user_id AND latest.max_time = a.punched_at
+     WHERE a.work_date = ? ${scopeDepartment ? 'AND a.department_id = ?' : ''}
+       AND a.punch_type = 'IN'
+       AND u.active = 1
+       AND LOWER(u.jawatan) IN ('patrol', 'supervisor')`,
+  ).bind(...(scopeDepartment
+    ? [date, scopeDepartment, date, scopeDepartment]
+    : [date, date])).all();
+
+  const presentByUser = new Map(
+    (presentResult.results ?? []).map((row) => [Number(row.user_id), row]),
+  );
+  const rows = (payload.patrols ?? []).map((row) => ({
+    ...row,
+    present: presentByUser.has(Number(row.userId)),
+    attendanceAt: presentByUser.get(Number(row.userId))?.punched_at ?? null,
+    isSessionPatroller: false,
+  }));
+
+  // Walaupun beberapa peranti tersilap memulakan rondaan serentak, paparan Status
+  // Pengawal hanya memilih seorang peronda untuk setiap Jabatan bagi sesi semasa.
+  const chosenByDepartment = new Map();
+  for (const row of rows) {
+    if (!row.present) continue;
+    if (Number(row.scannedCount || 0) <= 0 && row.patrolSessionId == null) continue;
+    const departmentId = Number(row.departmentId || 0);
+    if (departmentId <= 0) continue;
+    const stamp = Math.max(
+      Date.parse(row.lastScanAt || '') || 0,
+      Date.parse(row.sessionStartedAt || '') || 0,
+    );
+    const existing = chosenByDepartment.get(departmentId);
+    if (!existing || stamp > existing.stamp) {
+      chosenByDepartment.set(departmentId, { userId: Number(row.userId), stamp });
+    }
+  }
+  payload.patrols = rows.map((row) => ({
+    ...row,
+    isSessionPatroller:
+      chosenByDepartment.get(Number(row.departmentId || 0))?.userId === Number(row.userId),
+  }));
+
   return json(payload);
 }
 

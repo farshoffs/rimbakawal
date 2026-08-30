@@ -20,7 +20,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
   Timer? _timer;
   bool _loading = true;
   String? _error;
-  String _filter = 'all';
 
   @override
   void initState() {
@@ -57,21 +56,10 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     }
   }
 
-  List<Map<String, dynamic>> get _filteredPatrols {
-    final rows = _data?.patrols ?? const [];
-    if (_filter == 'alerts') {
-      return rows
-          .where((row) => row['status'] == 'late' || row['status'] == 'missed')
+  List<Map<String, dynamic>> get _filteredPatrols =>
+      (_data?.patrols ?? const <Map<String, dynamic>>[])
+          .where((row) => row['present'] == true)
           .toList();
-    }
-    if (_filter == 'active') {
-      return rows.where((row) => row['status'] == 'patrolling').toList();
-    }
-    if (_filter == 'complete') {
-      return rows.where((row) => row['status'] == 'complete').toList();
-    }
-    return rows;
-  }
 
   ImageProvider<Object>? _profileImage(Object? value) {
     final source = value as String?;
@@ -183,24 +171,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     );
   }
 
-  Color _statusColor(String status) => switch (status) {
-    'complete' => const Color(0xFF00B894),
-    'patrolling' => const Color(0xFF6C5CE7),
-    'late' => const Color(0xFFFDCB6E),
-    'missed' => const Color(0xFFFF7675),
-    'no_checkpoints' => const Color(0xFF636E72),
-    _ => const Color(0xFF74B9FF),
-  };
-
-  String _statusLabel(String status) => switch (status) {
-    'complete' => 'LENGKAP',
-    'patrolling' => 'SEDANG MERONDA',
-    'late' => 'LEWAT',
-    'missed' => 'TERLEPAS',
-    'no_checkpoints' => 'TIADA CHECKPOINT',
-    _ => 'MENUNGGU',
-  };
-
   String _time(Object? value) {
     final date = DateTime.tryParse(value as String? ?? '')?.toLocal();
     if (date == null) return '-';
@@ -275,42 +245,14 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                     ],
                     const SizedBox(height: 18),
                     _SectionHeader(
-                      title: 'Status Pengawal',
-                      subtitle:
-                          '${data?.patrols.length ?? 0} pengguna dipantau',
-                    ),
-                    const SizedBox(height: 10),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: SegmentedButton<String>(
-                        segments: const [
-                          ButtonSegment(value: 'all', label: Text('Semua')),
-                          ButtonSegment(
-                            value: 'alerts',
-                            icon: Icon(Icons.warning_amber_rounded),
-                            label: Text('Amaran'),
-                          ),
-                          ButtonSegment(
-                            value: 'active',
-                            icon: Icon(Icons.directions_walk_rounded),
-                            label: Text('Ronda'),
-                          ),
-                          ButtonSegment(
-                            value: 'complete',
-                            icon: Icon(Icons.check_circle_outline_rounded),
-                            label: Text('Selesai'),
-                          ),
-                        ],
-                        selected: {_filter},
-                        onSelectionChanged: (value) =>
-                            setState(() => _filter = value.first),
-                      ),
+                      title: 'Status Pengawal • Hadir',
+                      subtitle: '${patrols.length} pengawal sedang hadir',
                     ),
                     const SizedBox(height: 12),
                     if (patrols.isEmpty)
                       const _EmptyState(
                         icon: Icons.shield_outlined,
-                        text: 'Tiada pengawal dalam kategori ini.',
+                        text: 'Tiada pengawal yang sedang hadir.',
                       )
                     else
                       LayoutBuilder(
@@ -329,13 +271,13 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                                         image: _profileImage(
                                           row['profilePicture'],
                                         ),
-                                        color: _statusColor(
-                                          row['status'] as String? ?? 'waiting',
-                                        ),
-                                        label: _statusLabel(
-                                          row['status'] as String? ?? 'waiting',
-                                        ),
-                                        time: _time(row['lastScanAt']),
+                                        color: row['isSessionPatroller'] == true
+                                            ? const Color(0xFF6C5CE7)
+                                            : const Color(0xFF00B894),
+                                        label: row['isSessionPatroller'] == true
+                                            ? 'PERONDA SESI'
+                                            : 'HADIR',
+                                        time: _time(row['attendanceAt']),
                                         onMap: _openLiveMap,
                                       ),
                                     ),
@@ -355,13 +297,13 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                                   (row) => _PatrolCard(
                                     row: row,
                                     image: _profileImage(row['profilePicture']),
-                                    color: _statusColor(
-                                      row['status'] as String? ?? 'waiting',
-                                    ),
-                                    label: _statusLabel(
-                                      row['status'] as String? ?? 'waiting',
-                                    ),
-                                    time: _time(row['lastScanAt']),
+                                    color: row['isSessionPatroller'] == true
+                                        ? const Color(0xFF6C5CE7)
+                                        : const Color(0xFF00B894),
+                                    label: row['isSessionPatroller'] == true
+                                        ? 'PERONDA SESI'
+                                        : 'HADIR',
+                                    time: _time(row['attendanceAt']),
                                     onMap: _openLiveMap,
                                   ),
                                 )
@@ -608,8 +550,13 @@ class _PatrolCoverageOverview extends StatelessWidget {
     final scanned = _value('scannedCheckpoints');
     final due = _value('dueCheckpoints');
     final completedScanned = _value('completedScannedCheckpoints');
-    final coverage = due <= 0 ? 1.0 : (completedScanned / due).clamp(0.0, 1.0);
+    final coverage = due <= 0 ? 0.0 : (completedScanned / due).clamp(0.0, 1.0);
     final coveragePercent = (coverage * 100).round();
+    final coverageDate = summary['coverageDate'] as String?;
+    final dateParts = coverageDate?.split('-') ?? const <String>[];
+    final dateLabel = dateParts.length == 3
+        ? '${dateParts[2]}/${dateParts[1]}/${dateParts[0]}'
+        : 'hari semasa';
 
     return Card(
       child: Padding(
@@ -629,12 +576,18 @@ class _PatrolCoverageOverview extends StatelessWidget {
                     ),
                   ),
                 ),
-                Chip(label: Text('$coveragePercent% LIPUTAN')),
+                Chip(
+                  label: Text(
+                    due <= 0
+                        ? 'BELUM ADA SESI TAMAT'
+                        : '$coveragePercent% LIPUTAN',
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 6),
-            const Text(
-              'Sesi yang telah tamat sahaja dikira sebagai terlepas. Sesi semasa tidak dihukum sebelum waktunya tamat.',
+            Text(
+              'Dikira untuk tarikh $dateLabel sahaja (waktu Malaysia), bukan 24 jam bergerak. Hanya sesi yang telah tamat dikira; sesi semasa dan sesi akan datang tidak dianggap terlepas.',
             ),
             const SizedBox(height: 14),
             LinearProgressIndicator(value: coverage, minHeight: 9),
@@ -795,9 +748,7 @@ class _PatrolCard extends StatelessWidget {
     final scanned = (row['scannedCount'] as num?)?.toInt() ?? 0;
     final expected = (row['expectedCount'] as num?)?.toInt() ?? 0;
     final progress = expected == 0 ? 0.0 : scanned / expected;
-    final missed = (row['missedSessions'] as num?)?.toInt() ?? 0;
-    final missedCheckpoints = (row['missedCheckpoints'] as num?)?.toInt() ?? 0;
-    final scannedToday = (row['scannedToday'] as num?)?.toInt() ?? 0;
+    final isSessionPatroller = row['isSessionPatroller'] == true;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -849,26 +800,29 @@ class _PatrolCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: LinearProgressIndicator(
-                      value: progress.clamp(0, 1),
-                      minHeight: 7,
-                      color: color,
+                  if (isSessionPatroller) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: progress.clamp(0, 1),
+                        minHeight: 7,
+                        color: color,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    '$scanned/$expected checkpoint sesi semasa • imbasan terakhir $time',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Hari ini: $scannedToday diimbas • $missedCheckpoints checkpoint terlepas • $missed sesi terlepas',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w700,
+                    const SizedBox(height: 5),
+                    Text(
+                      '$scanned/$expected checkpoint sesi semasa • hadir sejak $time',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
+                  ] else
+                    Text(
+                      'Hadir sejak $time',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                 ],
               ),
             ),
