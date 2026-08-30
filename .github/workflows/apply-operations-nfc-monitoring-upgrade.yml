@@ -1,0 +1,109 @@
+name: Apply Operations NFC Monitoring Upgrade
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply_operations_nfc_monitoring_upgrade.py
+      - .github/workflows/apply-operations-nfc-monitoring-upgrade.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply operations upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply_operations_nfc_monitoring_upgrade.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Format touched Dart files
+        shell: bash
+        run: |
+          dart format \
+            lib/core/offline/offline_sync_service.dart \
+            lib/core/offline/offline_store.dart \
+            lib/core/nfc/nfc_scan_prompt.dart \
+            lib/features/settings/nfc_settings_screen.dart \
+            lib/features/dashboard/dashboard_screen.dart \
+            lib/features/admin/admin_screen.dart \
+            lib/features/admin/department_maintenance_screen.dart \
+            lib/features/admin/command_center_screen.dart \
+            lib/features/admin/user_maintenance_screen.dart \
+            lib/features/admin/sos_management_screen.dart \
+            lib/features/history/clocking_history_screen.dart \
+            lib/features/attendance/web_selfie_capture_web.dart \
+            lib/features/sos/sos_alert_gate.dart \
+            lib/features/patrol/patrol_screen.dart
+
+      - name: Validate Worker JavaScript
+        run: node --check worker/app.js
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Verify requested UI and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "SCAN TAG" lib/features/admin/department_maintenance_screen.dart
+          grep -q "Mod Test NFC" lib/features/settings/nfc_settings_screen.dart
+          grep -q "CHECKPOINT TERLEPAS" lib/features/admin/command_center_screen.dart
+          grep -q "version: 0.5.3+19" pubspec.yaml
+          if grep -R -n -A4 "TextButton(" lib | grep -q "Text('Batal')"; then
+            echo "A TextButton Batal may remain; inspect output below:"
+            grep -R -n -A4 "TextButton(" lib | grep -B4 -A1 "Text('Batal')" || true
+            exit 1
+          fi
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit validated upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'No upgrade changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            pubspec.yaml \
+            lib/core/offline/offline_sync_service.dart \
+            lib/core/offline/offline_store.dart \
+            lib/core/nfc/nfc_scan_prompt.dart \
+            lib/features/settings/nfc_settings_screen.dart \
+            lib/features/dashboard/dashboard_screen.dart \
+            lib/features/admin/admin_screen.dart \
+            lib/features/admin/department_maintenance_screen.dart \
+            lib/features/admin/command_center_screen.dart \
+            lib/features/admin/user_maintenance_screen.dart \
+            lib/features/admin/sos_management_screen.dart \
+            lib/features/history/clocking_history_screen.dart \
+            lib/features/attendance/web_selfie_capture_web.dart \
+            lib/features/sos/sos_alert_gate.dart \
+            lib/features/patrol/patrol_screen.dart \
+            worker/app.js
+          git commit -m 'Improve offline controls NFC modes and patrol coverage'
+          git push origin HEAD:main
