@@ -1,0 +1,3 @@
+RimbaKawal mobile release 0.5.2+18
+Source app commit: 33fd310dfc23c97794889bbfd5f053b7ff8f131c
+Release changes: native Android/iOS NFC, production SOS on Rondaan Aktif, removal of test SOS controls, white notification popup text, Android APK/AAB and unsigned iOS IPA build.
