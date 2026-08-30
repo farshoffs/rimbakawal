@@ -31,7 +31,8 @@ Future<String?> captureWebSelfie(BuildContext context) async {
   try {
     await video.onLoadedMetadata.first.timeout(const Duration(seconds: 10));
     await video.play();
-    final viewType = 'rimbakawal-selfie-${DateTime.now().microsecondsSinceEpoch}';
+    final viewType =
+        'rimbakawal-selfie-${DateTime.now().microsecondsSinceEpoch}';
     ui_web.platformViewRegistry.registerViewFactory(viewType, (int _) => video);
 
     if (!context.mounted) return null;
@@ -61,14 +62,24 @@ Future<String?> captureWebSelfie(BuildContext context) async {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Batal'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            icon: const Icon(Icons.camera_alt_rounded),
-            label: const Text('AMBIL GAMBAR'),
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  icon: const Icon(Icons.camera_alt_rounded),
+                  label: const Text('AMBIL GAMBAR'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Batal'),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -81,7 +92,9 @@ Future<String?> captureWebSelfie(BuildContext context) async {
     canvas.context2D.drawImageScaled(video, 0, 0, width, height);
     return canvas.toDataUrl('image/jpeg', 0.72);
   } on TimeoutException {
-    throw StateError('Webcam mengambil masa terlalu lama untuk bermula. Cuba semula.');
+    throw StateError(
+      'Webcam mengambil masa terlalu lama untuk bermula. Cuba semula.',
+    );
   } finally {
     for (final track in stream.getTracks()) {
       track.stop();

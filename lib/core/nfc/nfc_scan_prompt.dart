@@ -13,18 +13,12 @@ Future<NfcScanResult?> showNfcScanPrompt({
   return showDialog<NfcScanResult>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => _NfcScanPrompt(
-      nfcService: nfcService,
-      title: title,
-    ),
+    builder: (context) => _NfcScanPrompt(nfcService: nfcService, title: title),
   );
 }
 
 class _NfcScanPrompt extends StatefulWidget {
-  const _NfcScanPrompt({
-    required this.nfcService,
-    required this.title,
-  });
+  const _NfcScanPrompt({required this.nfcService, required this.title});
 
   final NfcService nfcService;
   final String title;
@@ -162,16 +156,27 @@ class _NfcScanPromptState extends State<_NfcScanPrompt> {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: _closing ? null : _cancel,
-            child: const Text('Batal'),
-          ),
-          if (_error != null)
-            FilledButton.icon(
-              onPressed: _busy || _closing ? null : _startScan,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Cuba Lagi'),
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_error != null) ...[
+                  FilledButton.icon(
+                    onPressed: _busy || _closing ? null : _startScan,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Cuba Lagi'),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                OutlinedButton(
+                  onPressed: _closing ? null : _cancel,
+                  child: const Text('Batal'),
+                ),
+              ],
             ),
+          ),
         ],
       ),
     );

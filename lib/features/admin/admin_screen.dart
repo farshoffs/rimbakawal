@@ -9,6 +9,7 @@ import 'live_patrol_map_screen.dart';
 import 'report_screen.dart';
 import 'sos_management_screen.dart';
 import 'user_maintenance_screen.dart';
+import '../settings/nfc_settings_screen.dart';
 
 class AdminScreen extends StatelessWidget {
   const AdminScreen({
@@ -51,7 +52,8 @@ class AdminScreen extends StatelessWidget {
           _AdminMenuCard(
             icon: Icons.fingerprint_rounded,
             title: 'Sejarah Kehadiran',
-            subtitle: 'Semak punch masuk/keluar, geofence dan detail pengesahan wajah.',
+            subtitle:
+                'Semak punch masuk/keluar, geofence dan detail pengesahan wajah.',
             onTap: () => _open(context, AttendanceHistoryScreen(api: api)),
           ),
           const SizedBox(height: 10),
@@ -83,6 +85,13 @@ class AdminScreen extends StatelessWidget {
                 mockMode: mockMode,
               ),
             ),
+          ),
+          const SizedBox(height: 10),
+          _AdminMenuCard(
+            icon: Icons.nfc_rounded,
+            title: 'Tetapan NFC',
+            subtitle: 'Tukar antara Mod Test NFC dan Mod Scan NFC Sebenar.',
+            onTap: () => _open(context, NfcSettingsScreen(mockMode: mockMode)),
           ),
           const SizedBox(height: 10),
           _AdminMenuCard(

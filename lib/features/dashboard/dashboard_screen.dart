@@ -16,6 +16,7 @@ import '../auth/login_screen.dart';
 import '../history/clocking_history_screen.dart';
 import '../patrol/patrol_screen.dart';
 import '../profile/profile_screen.dart';
+import '../settings/nfc_settings_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -108,7 +109,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       }
     } catch (_) {
       final cached = _store.cachedBootstrap();
-      if (cached != null && mounted &&
+      if (cached != null &&
+          mounted &&
           (_sessionIntervalMinutes != cached.sessionIntervalMinutes ||
               _sessionStartMinutes != cached.sessionStartMinutes)) {
         setState(() {
@@ -158,7 +160,8 @@ class _DashboardScreenState extends State<DashboardScreen>
           builder: (_) => LoginScreen(
             nfcService: widget.nfcService,
             mockMode: widget.mockMode,
-            notice: 'Sesi Rondaan baharu telah bermula. Sila log masuk semula untuk meneruskan.',
+            notice:
+                'Sesi Rondaan baharu telah bermula. Sila log masuk semula untuk meneruskan.',
           ),
         ),
         (_) => false,
@@ -174,7 +177,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Pemberitahuan belum dikonfigurasi pada pelayan aplikasi.'),
+          content: Text(
+            'Pemberitahuan belum dikonfigurasi pada pelayan aplikasi.',
+          ),
         ),
       );
       return;
@@ -214,13 +219,16 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _openPatrol() => _open(
-        PatrolScreen(
-          user: _user,
-          nfcService: widget.nfcService,
-          mockMode: widget.mockMode,
-          api: widget.api,
-        ),
-      );
+    PatrolScreen(
+      user: _user,
+      nfcService: widget.nfcService,
+      mockMode: widget.mockMode,
+      api: widget.api,
+    ),
+  );
+
+  void _openNfcSettings() =>
+      _open(NfcSettingsScreen(mockMode: widget.mockMode));
 
   Future<void> _openProfile() async {
     await Navigator.of(context).push(
@@ -287,6 +295,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     final image = _avatar();
     final pending = _user.isManagement ? _store.pendingCount(_user.id) : 0;
     final failed = _user.isManagement ? _store.failedCount(_user.id) : 0;
+    final online = _sync.isOnline;
+    final nfcTestMode = _store.isNfcTestMode;
 
     return Scaffold(
       appBar: AppBar(
@@ -294,7 +304,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         actions: [
           IconButton(
             tooltip: 'Aktifkan pemberitahuan',
-            onPressed: _enableNotifications,
+            onPressed: online ? _enableNotifications : null,
             icon: const Icon(Icons.notifications_active_rounded),
           ),
           IconButton(
@@ -361,12 +371,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 _user.nama,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                    ),
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w900),
                               ),
                               const SizedBox(height: 3),
-                              Text('${_user.jawatanPaparan} • ${_user.jabatan}'),
+                              Text(
+                                '${_user.jawatanPaparan} • ${_user.jabatan}',
+                              ),
                             ],
                           ),
                         ),
@@ -377,10 +388,21 @@ class _DashboardScreenState extends State<DashboardScreen>
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        const _StatusPill(
-                          icon: Icons.offline_bolt_rounded,
-                          label: 'SEDIA LUAR TALIAN',
-                          color: Color(0xFF74B9FF),
+                        _StatusPill(
+                          icon: online
+                              ? Icons.cloud_done_rounded
+                              : Icons.cloud_off_rounded,
+                          label: online ? 'DALAM TALIAN' : 'LUAR TALIAN',
+                          color: online
+                              ? const Color(0xFF55E6C1)
+                              : const Color(0xFFFF7675),
+                        ),
+                        _StatusPill(
+                          icon: nfcTestMode
+                              ? Icons.science_rounded
+                              : Icons.nfc_rounded,
+                          label: nfcTestMode ? 'NFC • TEST' : 'NFC • SEBENAR',
+                          color: const Color(0xFFA29BFE),
                         ),
                         if (_user.isManagement)
                           _StatusPill(
@@ -406,12 +428,33 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ],
                 ),
               ),
+              if (!online) ...[
+                const SizedBox(height: 14),
+                Card(
+                  color: const Color(0xFF2B1719),
+                  child: const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.cloud_off_rounded, color: Color(0xFFFF7675)),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Sambungan internet terputus. Fungsi dalam talian dikunci sementara. Mula Rondaan masih boleh digunakan kerana rekod disimpan pada peranti dan akan disegerakkan semula selepas talian pulih.',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 22),
               Text(
                 'Operasi',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 12),
               LayoutBuilder(
@@ -425,22 +468,38 @@ class _DashboardScreenState extends State<DashboardScreen>
                       onTap: _openPatrol,
                     ),
                     _MenuData(
+                      icon: nfcTestMode
+                          ? Icons.science_rounded
+                          : Icons.nfc_rounded,
+                      title: 'Tetapan NFC',
+                      subtitle: nfcTestMode
+                          ? 'Mod Test NFC aktif'
+                          : 'Mod Scan NFC Sebenar aktif',
+                      onTap: _openNfcSettings,
+                    ),
+                    _MenuData(
                       icon: Icons.fingerprint_rounded,
                       title: 'Kehadiran',
                       subtitle: 'Rekod masuk/keluar dengan lokasi dan selfie',
-                      onTap: () => _open(AttendanceScreen(api: widget.api, user: _user)),
+                      onTap: () =>
+                          _open(AttendanceScreen(api: widget.api, user: _user)),
+                      enabled: online,
                     ),
                     _MenuData(
                       icon: Icons.history_rounded,
                       title: 'Sejarah',
                       subtitle: 'Sesi dan checkpoint',
-                      onTap: () => _open(ClockingHistoryScreen(api: widget.api, user: _user)),
+                      onTap: () => _open(
+                        ClockingHistoryScreen(api: widget.api, user: _user),
+                      ),
+                      enabled: online,
                     ),
                     _MenuData(
                       icon: Icons.person_rounded,
                       title: 'Profil',
                       subtitle: _user.jawatanPaparan,
                       onTap: _openProfile,
+                      enabled: online,
                     ),
                     if (_user.isManagement)
                       _MenuData(
@@ -448,13 +507,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                         title: 'Pentadbiran',
                         subtitle: 'Konfigurasi sistem',
                         onTap: _openAdmin,
+                        enabled: online,
                       ),
                     if (_user.canMonitor)
                       _MenuData(
                         icon: Icons.monitor_heart_rounded,
                         title: 'Pemantauan',
                         subtitle: 'Pemantauan operasi langsung',
-                        onTap: () => _open(CommandCenterScreen(api: widget.api)),
+                        onTap: () =>
+                            _open(CommandCenterScreen(api: widget.api)),
+                        enabled: online,
                       ),
                   ];
 
@@ -466,10 +528,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                       crossAxisCount: columns,
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,
-                      childAspectRatio:
-                          constraints.maxWidth >= 760 ? 1.35 : 1.12,
+                      childAspectRatio: constraints.maxWidth >= 760
+                          ? 1.35
+                          : 1.12,
                     ),
-                    itemBuilder: (context, index) => _MenuCard(data: items[index]),
+                    itemBuilder: (context, index) =>
+                        _MenuCard(data: items[index]),
                   );
                 },
               ),
@@ -494,28 +558,28 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: color.withValues(alpha: 0.25)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: color),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
-        ),
-      );
+      ],
+    ),
+  );
 }
 
 class _MenuData {
@@ -524,12 +588,14 @@ class _MenuData {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.enabled = true,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final bool enabled;
 }
 
 class _MenuCard extends StatelessWidget {
@@ -538,48 +604,57 @@ class _MenuCard extends StatelessWidget {
   final _MenuData data;
 
   @override
-  Widget build(BuildContext context) => Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: data.onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .secondary
-                        .withValues(alpha: 0.11),
-                    borderRadius: BorderRadius.circular(15),
+  Widget build(BuildContext context) => Opacity(
+    opacity: data.enabled ? 1 : 0.42,
+    child: Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: data.enabled ? data.onTap : null,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.secondary.withValues(alpha: 0.11),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Icon(
+                      data.icon,
+                      color: Theme.of(context).colorScheme.secondary,
+                      size: 28,
+                    ),
                   ),
-                  child: Icon(
-                    data.icon,
-                    color: Theme.of(context).colorScheme.secondary,
-                    size: 28,
-                  ),
+                  const Spacer(),
+                  if (!data.enabled)
+                    const Icon(Icons.cloud_off_rounded, size: 20),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                data.title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
                 ),
-                const Spacer(),
-                Text(
-                  data.title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  data.subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                data.enabled ? data.subtitle : 'Tidak tersedia tanpa Internet',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ),
         ),
-      );
+      ),
+    ),
+  );
 }

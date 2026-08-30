@@ -21,16 +21,25 @@ class OfflineSyncService extends ChangeNotifier {
   bool _syncing = false;
   DateTime? _lastSyncAt;
   String? _lastError;
+  bool _online = false;
 
   bool get isSyncing => _syncing;
+  bool get isOnline => _online;
   DateTime? get lastSyncAt => _lastSyncAt;
   String? get lastError => _lastError;
 
   Future<void> start() async {
     if (_started) return;
     _started = true;
+    final initial = await _connectivity.checkConnectivity();
+    _setOnline(_hasNetwork(initial));
     _connectivitySub = _connectivity.onConnectivityChanged.listen((results) {
-      if (_hasNetwork(results)) unawaited(syncNow());
+      final connected = _hasNetwork(results);
+      if (!connected) {
+        _setOnline(false);
+        return;
+      }
+      unawaited(syncNow());
     });
     _timer = Timer.periodic(
       const Duration(seconds: 30),
@@ -57,7 +66,10 @@ class OfflineSyncService extends ChangeNotifier {
     final user = _store.cachedUser();
     if (user == null) return;
     final connectivity = await _connectivity.checkConnectivity();
-    if (!_hasNetwork(connectivity)) return;
+    if (!_hasNetwork(connectivity)) {
+      _setOnline(false);
+      return;
+    }
 
     final pending = _store.pendingEvents(user.id, limit: 50);
     if (pending.isEmpty) {
@@ -65,7 +77,11 @@ class OfflineSyncService extends ChangeNotifier {
         await _api.getOfflineBootstrap();
         _lastError = null;
         _lastSyncAt = DateTime.now();
-      } catch (_) {}
+        _setOnline(true);
+      } catch (error) {
+        _lastError = error.toString();
+        _setOnline(false);
+      }
       notifyListeners();
       return;
     }
@@ -75,9 +91,7 @@ class OfflineSyncService extends ChangeNotifier {
     notifyListeners();
     try {
       final results = await _api.syncOfflineEvents(pending);
-      final byId = {
-        for (final row in results) row['id'] as String? ?? '': row,
-      };
+      final byId = {for (final row in results) row['id'] as String? ?? '': row};
       for (final event in pending) {
         final result = byId[event.id];
         if (result == null) continue;
@@ -92,15 +106,23 @@ class OfflineSyncService extends ChangeNotifier {
         }
       }
       _lastSyncAt = DateTime.now();
+      _setOnline(true);
       try {
         await _api.getOfflineBootstrap();
       } catch (_) {}
     } catch (error) {
       _lastError = error.toString();
+      _setOnline(false);
     } finally {
       _syncing = false;
       notifyListeners();
     }
+  }
+
+  void _setOnline(bool value) {
+    if (_online == value) return;
+    _online = value;
+    notifyListeners();
   }
 
   bool _hasNetwork(List<ConnectivityResult> results) =>

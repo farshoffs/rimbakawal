@@ -101,17 +101,27 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
           'Sesi Rondaan ${run.sessionIndex + 1} oleh ${run.userName} akan dipadam bersama trail lokasi dan rekod checkpoint dalam sesi ini.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                    foregroundColor: Theme.of(context).colorScheme.onError,
+                  ),
+                  child: const Text('Padam Sesi'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Batal'),
+                ),
+              ],
             ),
-            child: const Text('Padam Sesi'),
           ),
         ],
       ),
@@ -126,9 +136,9 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
       _load(_selectedDate);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -294,7 +304,12 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
 }
 
 class _PatrolRunCard extends StatelessWidget {
-  const _PatrolRunCard({required this.run, required this.formatTime, required this.canDelete, required this.onDelete});
+  const _PatrolRunCard({
+    required this.run,
+    required this.formatTime,
+    required this.canDelete,
+    required this.onDelete,
+  });
 
   final HistoryPatrolRun run;
   final String Function(DateTime) formatTime;

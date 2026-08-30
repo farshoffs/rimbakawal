@@ -84,17 +84,27 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = controller.text.trim();
-              if (value.isEmpty) return;
-              Navigator.pop(context, value);
-            },
-            child: const Text('Selesai'),
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton(
+                  onPressed: () {
+                    final value = controller.text.trim();
+                    if (value.isEmpty) return;
+                    Navigator.pop(context, value);
+                  },
+                  child: const Text('Selesai'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Batal'),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -111,9 +121,9 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -168,9 +178,7 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
                             children: [
                               Text(
                                 '$active SOS AKTIF',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineSmall
+                                style: Theme.of(context).textTheme.headlineSmall
                                     ?.copyWith(fontWeight: FontWeight.w900),
                               ),
                               const Text(
@@ -235,7 +243,9 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
                                       ),
                                     ),
                                     Chip(
-                                      label: Text(isActive ? 'AKTIF' : 'SELESAI'),
+                                      label: Text(
+                                        isActive ? 'AKTIF' : 'SELESAI',
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -243,16 +253,25 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
                                 Text(
                                   '${labelJawatan(event['jawatan'] as String?)} • ${event['jabatan'] ?? '-'}',
                                 ),
-                                Text('Dicetus: ${_dateTime(event['triggered_at'])}'),
+                                Text(
+                                  'Dicetus: ${_dateTime(event['triggered_at'])}',
+                                ),
                                 const SizedBox(height: 8),
-                                Text(event['note'] as String? ?? 'Tiada catatan SOS.'),
+                                Text(
+                                  event['note'] as String? ??
+                                      'Tiada catatan SOS.',
+                                ),
                                 if (!isActive) ...[
                                   const Divider(height: 24),
                                   Text(
                                     'Diselesaikan: ${_dateTime(event['resolved_at'])}',
-                                    style: const TextStyle(fontWeight: FontWeight.w800),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
-                                  Text('Oleh: ${event['resolved_by_name'] ?? '-'}'),
+                                  Text(
+                                    'Oleh: ${event['resolved_by_name'] ?? '-'}',
+                                  ),
                                   const SizedBox(height: 5),
                                   Text(
                                     'Catatan: ${event['resolution_note'] ?? '-'}',

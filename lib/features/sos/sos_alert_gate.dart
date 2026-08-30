@@ -8,11 +8,7 @@ import '../../core/api/app_user.dart';
 import 'sos_alert_api.dart';
 
 class SosAlertGate extends StatefulWidget {
-  const SosAlertGate({
-    required this.user,
-    required this.child,
-    super.key,
-  });
+  const SosAlertGate({required this.user, required this.child, super.key});
 
   final AppUser user;
   final Widget child;
@@ -92,7 +88,8 @@ class _SosAlertGateState extends State<SosAlertGate>
 
     bool resolved = false;
     try {
-      resolved = await showGeneralDialog<bool>(
+      resolved =
+          await showGeneralDialog<bool>(
             context: context,
             barrierDismissible: false,
             barrierColor: Colors.black.withValues(alpha: 0.96),
@@ -119,7 +116,9 @@ class _SosAlertGateState extends State<SosAlertGate>
                             ],
                           ),
                           border: Border.all(
-                            color: const Color(0xFFFF7675).withValues(alpha: 0.45),
+                            color: const Color(
+                              0xFFFF7675,
+                            ).withValues(alpha: 0.45),
                           ),
                         ),
                         child: Column(
@@ -143,7 +142,8 @@ class _SosAlertGateState extends State<SosAlertGate>
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              event['jabatan'] as String? ?? widget.user.jabatan,
+                              event['jabatan'] as String? ??
+                                  widget.user.jabatan,
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                 color: Color(0xFFFFB8B8),
@@ -166,7 +166,11 @@ class _SosAlertGateState extends State<SosAlertGate>
                             ),
                             _InfoRow(
                               label: 'Catatan',
-                              value: (event['note'] as String?)?.trim().isNotEmpty == true
+                              value:
+                                  (event['note'] as String?)
+                                          ?.trim()
+                                          .isNotEmpty ==
+                                      true
                                   ? event['note'] as String
                                   : 'Tiada catatan',
                             ),
@@ -191,7 +195,8 @@ class _SosAlertGateState extends State<SosAlertGate>
                               const SizedBox(height: 8),
                             ],
                             OutlinedButton.icon(
-                              onPressed: () => Navigator.of(dialogContext).pop(false),
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(false),
                               icon: const Icon(Icons.visibility_rounded),
                               label: const Text('TUTUP AMARAN'),
                             ),
@@ -230,9 +235,9 @@ class _SosAlertGateState extends State<SosAlertGate>
       if (dialogContext.mounted) Navigator.of(dialogContext).pop(true);
     } catch (error) {
       if (!dialogContext.mounted) return;
-      ScaffoldMessenger.of(dialogContext).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        dialogContext,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -256,23 +261,34 @@ class _SosAlertGateState extends State<SosAlertGate>
               maxLines: 6,
               decoration: const InputDecoration(
                 labelText: 'Catatan penyelesaian',
-                hintText: 'Contoh: Pengawal telah ditemui dan keadaan disahkan selamat.',
+                hintText:
+                    'Contoh: Pengawal telah ditemui dan keadaan disahkan selamat.',
               ),
             ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final note = controller.text.trim();
-              if (note.isEmpty) return;
-              Navigator.pop(context, note);
-            },
-            child: const Text('Sahkan Selesai'),
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton(
+                  onPressed: () {
+                    final note = controller.text.trim();
+                    if (note.isEmpty) return;
+                    Navigator.pop(context, note);
+                  },
+                  child: const Text('Sahkan Selesai'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Batal'),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -301,28 +317,28 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.055),
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 82,
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFFFFB8B8),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
+    width: double.infinity,
+    margin: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.055),
+      borderRadius: BorderRadius.circular(15),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 82,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFFFFB8B8),
+              fontWeight: FontWeight.w800,
             ),
-            Expanded(child: Text(value)),
-          ],
+          ),
         ),
-      );
+        Expanded(child: Text(value)),
+      ],
+    ),
+  );
 }

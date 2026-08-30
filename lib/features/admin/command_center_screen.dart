@@ -93,13 +93,17 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       await _refresh(silent: true);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Status insiden ditukar kepada ${_incidentStatusLabel(status)}.')),
+        SnackBar(
+          content: Text(
+            'Status insiden ditukar kepada ${_incidentStatusLabel(status)}.',
+          ),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -124,7 +128,9 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
               }
               final images = snapshot.data ?? const [];
               if (images.isEmpty) {
-                return const Center(child: Text('Tiada gambar untuk insiden ini.'));
+                return const Center(
+                  child: Text('Tiada gambar untuk insiden ini.'),
+                );
               }
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -136,7 +142,10 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                         const Expanded(
                           child: Text(
                             'Bukti Gambar',
-                            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 18,
+                            ),
                           ),
                         ),
                         IconButton(
@@ -158,7 +167,9 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                             ),
                           );
                         } catch (_) {
-                          return const Center(child: Text('Gambar tidak dapat dibaca.'));
+                          return const Center(
+                            child: Text('Gambar tidak dapat dibaca.'),
+                          );
                         }
                       }).toList(),
                     ),
@@ -173,22 +184,22 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
   }
 
   Color _statusColor(String status) => switch (status) {
-        'complete' => const Color(0xFF00B894),
-        'patrolling' => const Color(0xFF6C5CE7),
-        'late' => const Color(0xFFFDCB6E),
-        'missed' => const Color(0xFFFF7675),
-        'no_checkpoints' => const Color(0xFF636E72),
-        _ => const Color(0xFF74B9FF),
-      };
+    'complete' => const Color(0xFF00B894),
+    'patrolling' => const Color(0xFF6C5CE7),
+    'late' => const Color(0xFFFDCB6E),
+    'missed' => const Color(0xFFFF7675),
+    'no_checkpoints' => const Color(0xFF636E72),
+    _ => const Color(0xFF74B9FF),
+  };
 
   String _statusLabel(String status) => switch (status) {
-        'complete' => 'LENGKAP',
-        'patrolling' => 'SEDANG MERONDA',
-        'late' => 'LEWAT',
-        'missed' => 'TERLEPAS',
-        'no_checkpoints' => 'TIADA CHECKPOINT',
-        _ => 'MENUNGGU',
-      };
+    'complete' => 'LENGKAP',
+    'patrolling' => 'SEDANG MERONDA',
+    'late' => 'LEWAT',
+    'missed' => 'TERLEPAS',
+    'no_checkpoints' => 'TIADA CHECKPOINT',
+    _ => 'MENUNGGU',
+  };
 
   String _time(Object? value) {
     final date = DateTime.tryParse(value as String? ?? '')?.toLocal();
@@ -243,9 +254,14 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                       onMap: _openLiveMap,
                     ),
                     const SizedBox(height: 12),
+                    _PatrolCoverageOverview(summary: summary),
+                    const SizedBox(height: 12),
                     _AttendanceOverview(
-                      summary: data?.attendanceSummary ?? const <String, dynamic>{},
-                      recent: data?.attendanceRecent ?? const <Map<String, dynamic>>[],
+                      summary:
+                          data?.attendanceSummary ?? const <String, dynamic>{},
+                      recent:
+                          data?.attendanceRecent ??
+                          const <Map<String, dynamic>>[],
                     ),
                     if (_error != null) ...[
                       const SizedBox(height: 12),
@@ -260,7 +276,8 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                     const SizedBox(height: 18),
                     _SectionHeader(
                       title: 'Status Pengawal',
-                      subtitle: '${data?.patrols.length ?? 0} pengguna dipantau',
+                      subtitle:
+                          '${data?.patrols.length ?? 0} pengguna dipantau',
                     ),
                     const SizedBox(height: 10),
                     SingleChildScrollView(
@@ -304,10 +321,14 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                               children: patrols
                                   .map(
                                     (row) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 10),
+                                      padding: const EdgeInsets.only(
+                                        bottom: 10,
+                                      ),
                                       child: _PatrolCard(
                                         row: row,
-                                        image: _profileImage(row['profilePicture']),
+                                        image: _profileImage(
+                                          row['profilePicture'],
+                                        ),
                                         color: _statusColor(
                                           row['status'] as String? ?? 'waiting',
                                         ),
@@ -360,22 +381,26 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                         text: 'Tiada insiden terbuka.',
                       )
                     else
-                      ...incidents.take(12).map(
-                        (incident) => _IncidentCard(
-                          incident: incident,
-                          onAcknowledge: () => _updateIncident(
-                            (incident['id'] as num).toInt(),
-                            'acknowledged',
+                      ...incidents
+                          .take(12)
+                          .map(
+                            (incident) => _IncidentCard(
+                              incident: incident,
+                              onAcknowledge: () => _updateIncident(
+                                (incident['id'] as num).toInt(),
+                                'acknowledged',
+                              ),
+                              onResolve: () => _updateIncident(
+                                (incident['id'] as num).toInt(),
+                                'resolved',
+                              ),
+                              onImages:
+                                  (incident['image_count'] as num?)?.toInt() ==
+                                      0
+                                  ? null
+                                  : () => _showIncidentImages(incident),
+                            ),
                           ),
-                          onResolve: () => _updateIncident(
-                            (incident['id'] as num).toInt(),
-                            'resolved',
-                          ),
-                          onImages: (incident['image_count'] as num?)?.toInt() == 0
-                              ? null
-                              : () => _showIncidentImages(incident),
-                        ),
-                      ),
                     const SizedBox(height: 22),
                     _SectionHeader(
                       title: 'SOS • 24 Jam',
@@ -388,25 +413,32 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                         text: 'Tiada SOS dalam 24 jam.',
                       )
                     else
-                      ...sos.take(10).map(
-                        (row) => Card(
-                          color: const Color(0xFF2C1116),
-                          child: ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: Color(0x33FF7675),
-                              child: Icon(Icons.sos_rounded, color: Color(0xFFFF7675)),
+                      ...sos
+                          .take(10)
+                          .map(
+                            (row) => Card(
+                              color: const Color(0xFF2C1116),
+                              child: ListTile(
+                                leading: const CircleAvatar(
+                                  backgroundColor: Color(0x33FF7675),
+                                  child: Icon(
+                                    Icons.sos_rounded,
+                                    color: Color(0xFFFF7675),
+                                  ),
+                                ),
+                                title: Text(
+                                  row['nama'] as String? ?? '-',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '${row['jabatan'] ?? '-'} • ${_time(row['triggered_at'])}\n${row['note'] ?? 'Tiada catatan'}',
+                                ),
+                                isThreeLine: true,
+                              ),
                             ),
-                            title: Text(
-                              row['nama'] as String? ?? '-',
-                              style: const TextStyle(fontWeight: FontWeight.w900),
-                            ),
-                            subtitle: Text(
-                              '${row['jabatan'] ?? '-'} • ${_time(row['triggered_at'])}\n${row['note'] ?? 'Tiada catatan'}',
-                            ),
-                            isThreeLine: true,
                           ),
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -464,8 +496,8 @@ class _OperationsHero extends StatelessWidget {
                     Text(
                       'Pusat Pemantauan Operasi',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     Text(
                       'Kemas kini automatik setiap 8 saat${generatedAt == null ? '' : ' • ${_clock(generatedAt!)}'}',
@@ -562,6 +594,144 @@ class _OperationsHero extends StatelessWidget {
   }
 }
 
+class _PatrolCoverageOverview extends StatelessWidget {
+  const _PatrolCoverageOverview({required this.summary});
+
+  final Map<String, dynamic> summary;
+
+  int _value(String key) => (summary[key] as num?)?.toInt() ?? 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final missedSessions = _value('missedSessions');
+    final missedCheckpoints = _value('missedCheckpoints');
+    final scanned = _value('scannedCheckpoints');
+    final due = _value('dueCheckpoints');
+    final completedScanned = _value('completedScannedCheckpoints');
+    final coverage = due <= 0 ? 1.0 : (completedScanned / due).clamp(0.0, 1.0);
+    final coveragePercent = (coverage * 100).round();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.analytics_rounded),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'Liputan Rondaan Hari Ini',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Chip(label: Text('$coveragePercent% LIPUTAN')),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Sesi yang telah tamat sahaja dikira sebagai terlepas. Sesi semasa tidak dihukum sebelum waktunya tamat.',
+            ),
+            const SizedBox(height: 14),
+            LinearProgressIndicator(value: coverage, minHeight: 9),
+            const SizedBox(height: 14),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth >= 600
+                    ? (constraints.maxWidth - 24) / 3
+                    : constraints.maxWidth;
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  children: [
+                    SizedBox(
+                      width: width,
+                      child: _CoverageMetric(
+                        icon: Icons.nfc_rounded,
+                        value: scanned,
+                        label: 'CHECKPOINT DIIMBAS',
+                      ),
+                    ),
+                    SizedBox(
+                      width: width,
+                      child: _CoverageMetric(
+                        icon: Icons.location_off_rounded,
+                        value: missedCheckpoints,
+                        label: 'CHECKPOINT TERLEPAS',
+                      ),
+                    ),
+                    SizedBox(
+                      width: width,
+                      child: _CoverageMetric(
+                        icon: Icons.event_busy_rounded,
+                        value: missedSessions,
+                        label: 'SESI TERLEPAS',
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CoverageMetric extends StatelessWidget {
+  const _CoverageMetric({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final int value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(16),
+      color: Colors.white.withValues(alpha: 0.035),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$value',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class _HeroMetric extends StatelessWidget {
   const _HeroMetric({
     required this.value,
@@ -576,32 +746,32 @@ class _HeroMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 13),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.09),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: color.withValues(alpha: 0.16)),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 13),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.09),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: color.withValues(alpha: 0.16)),
+    ),
+    child: Column(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: 5),
+        Text(
+          '$value',
+          style: TextStyle(
+            color: color,
+            fontSize: 21,
+            fontWeight: FontWeight.w900,
+          ),
         ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(height: 5),
-            Text(
-              '$value',
-              style: TextStyle(
-                color: color,
-                fontSize: 21,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            Text(
-              label,
-              maxLines: 1,
-              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900),
-            ),
-          ],
+        Text(
+          label,
+          maxLines: 1,
+          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _PatrolCard extends StatelessWidget {
@@ -626,6 +796,8 @@ class _PatrolCard extends StatelessWidget {
     final expected = (row['expectedCount'] as num?)?.toInt() ?? 0;
     final progress = expected == 0 ? 0.0 : scanned / expected;
     final missed = (row['missedSessions'] as num?)?.toInt() ?? 0;
+    final missedCheckpoints = (row['missedCheckpoints'] as num?)?.toInt() ?? 0;
+    final scannedToday = (row['scannedToday'] as num?)?.toInt() ?? 0;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -652,7 +824,10 @@ class _PatrolCard extends StatelessWidget {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: color.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(999),
@@ -684,8 +859,15 @@ class _PatrolCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    '$scanned/$expected checkpoint • imbasan terakhir $time${missed > 0 ? ' • $missed sesi terlepas' : ''}',
+                    '$scanned/$expected checkpoint sesi semasa • imbasan terakhir $time',
                     style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Hari ini: $scannedToday diimbas • $missedCheckpoints checkpoint terlepas • $missed sesi terlepas',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
@@ -720,8 +902,8 @@ class _IncidentCard extends StatelessWidget {
     final color = severity == 'urgent'
         ? const Color(0xFFFF7675)
         : severity == 'important'
-            ? const Color(0xFFFDCB6E)
-            : const Color(0xFF74B9FF);
+        ? const Color(0xFFFDCB6E)
+        : const Color(0xFF74B9FF);
     final status = incident['status'] as String? ?? 'open';
     final imageCount = (incident['image_count'] as num?)?.toInt() ?? 0;
     return Padding(
@@ -761,7 +943,11 @@ class _IncidentCard extends StatelessWidget {
                   ),
                   Text(
                     _incidentStatusLabel(status),
-                    style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 10),
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 10,
+                    ),
                   ),
                 ],
               ),
@@ -806,19 +992,19 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
-            ),
-          ),
-          Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.end,
+    children: [
+      Expanded(
+        child: Text(
+          title,
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+        ),
+      ),
+      Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+    ],
+  );
 }
 
 class _EmptyState extends StatelessWidget {
@@ -828,33 +1014,33 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 16),
-          child: Column(
-            children: [
-              Icon(icon, size: 38, color: Theme.of(context).colorScheme.secondary),
-              const SizedBox(height: 8),
-              Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
-            ],
-          ),
-        ),
-      );
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 16),
+      child: Column(
+        children: [
+          Icon(icon, size: 38, color: Theme.of(context).colorScheme.secondary),
+          const SizedBox(height: 8),
+          Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ],
+      ),
+    ),
+  );
 }
 
 String _incidentStatusLabel(String status) => switch (status.toLowerCase()) {
-      'open' => 'TERBUKA',
-      'acknowledged' => 'DIAMBIL MAKLUM',
-      'resolved' => 'SELESAI',
-      _ => status.toUpperCase(),
-    };
+  'open' => 'TERBUKA',
+  'acknowledged' => 'DIAMBIL MAKLUM',
+  'resolved' => 'SELESAI',
+  _ => status.toUpperCase(),
+};
 
-String _incidentSeverityLabel(String severity) => switch (severity.toLowerCase()) {
+String _incidentSeverityLabel(String severity) =>
+    switch (severity.toLowerCase()) {
       'urgent' => 'SEGERA',
       'important' => 'PENTING',
       'normal' => 'BIASA',
       _ => severity.toUpperCase(),
     };
-
 
 class _AttendanceOverview extends StatelessWidget {
   const _AttendanceOverview({required this.summary, required this.recent});
@@ -870,43 +1056,82 @@ class _AttendanceOverview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              Row(children: [
-                const Icon(Icons.fingerprint_rounded),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Kehadiran Hari Ini', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900))),
-              ]),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _AttendanceMetric(label: 'Hadir', value: '${summary['presentUsers'] ?? 0}'),
-                  _AttendanceMetric(label: 'Dalam Kawasan', value: '${summary['currentlyIn'] ?? 0}'),
-                  _AttendanceMetric(label: 'Tidak Hadir', value: '${summary['absentUsers'] ?? 0}'),
-                  _AttendanceMetric(label: 'Semak Wajah', value: '${summary['faceReviewRequired'] ?? 0}'),
-                ],
+              const Icon(Icons.fingerprint_rounded),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Kehadiran Hari Ini',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
-              if (recent.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Divider(),
-                ...recent.take(5).map((row) => ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(row['punchType'] == 'IN' ? Icons.login_rounded : Icons.logout_rounded),
-                      title: Text(row['userName'] as String? ?? 'Pengguna', style: const TextStyle(fontWeight: FontWeight.w800)),
-                      subtitle: Text('${row['department'] ?? '-'} • ${row['punchType'] == 'IN' ? 'MASUK' : 'KELUAR'} ${_time(row['punchedAt'])}'),
-                      trailing: Text(row['faceScore'] == null ? 'SEMAK' : '${(row['faceScore'] as num).round()}%', style: const TextStyle(fontWeight: FontWeight.w900)),
-                    )),
-              ],
             ],
           ),
-        ),
-      );
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _AttendanceMetric(
+                label: 'Hadir',
+                value: '${summary['presentUsers'] ?? 0}',
+              ),
+              _AttendanceMetric(
+                label: 'Dalam Kawasan',
+                value: '${summary['currentlyIn'] ?? 0}',
+              ),
+              _AttendanceMetric(
+                label: 'Tidak Hadir',
+                value: '${summary['absentUsers'] ?? 0}',
+              ),
+              _AttendanceMetric(
+                label: 'Semak Wajah',
+                value: '${summary['faceReviewRequired'] ?? 0}',
+              ),
+            ],
+          ),
+          if (recent.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Divider(),
+            ...recent
+                .take(5)
+                .map(
+                  (row) => ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      row['punchType'] == 'IN'
+                          ? Icons.login_rounded
+                          : Icons.logout_rounded,
+                    ),
+                    title: Text(
+                      row['userName'] as String? ?? 'Pengguna',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(
+                      '${row['department'] ?? '-'} • ${row['punchType'] == 'IN' ? 'MASUK' : 'KELUAR'} ${_time(row['punchedAt'])}',
+                    ),
+                    trailing: Text(
+                      row['faceScore'] == null
+                          ? 'SEMAK'
+                          : '${(row['faceScore'] as num).round()}%',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+          ],
+        ],
+      ),
+    ),
+  );
 }
 
 class _AttendanceMetric extends StatelessWidget {
@@ -915,11 +1140,18 @@ class _AttendanceMetric extends StatelessWidget {
   final String value;
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [Text(value, style: const TextStyle(fontWeight: FontWeight.w900)), const SizedBox(width: 5), Text(label)]),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(value, style: const TextStyle(fontWeight: FontWeight.w900)),
+        const SizedBox(width: 5),
+        Text(label),
+      ],
+    ),
+  );
 }

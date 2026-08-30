@@ -237,7 +237,10 @@ class _EditUserDialogState extends State<_EditUserDialog> {
       }
       final bytes = await picked.readAsBytes();
       if (bytes.length > 500000) {
-        setState(() => _error = 'Gambar terlalu besar. Pilih gambar lain yang lebih kecil.');
+        setState(
+          () => _error =
+              'Gambar terlalu besar. Pilih gambar lain yang lebih kecil.',
+        );
         return;
       }
       setState(() {
@@ -329,9 +332,9 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                 onPressed: _saving
                     ? null
                     : () => setState(() {
-                          _newProfilePicture = null;
-                          _clearProfilePicture = true;
-                        }),
+                        _newProfilePicture = null;
+                        _clearProfilePicture = true;
+                      }),
                 icon: const Icon(Icons.delete_outline_rounded),
                 label: const Text('Buang gambar profil'),
               ),
@@ -372,9 +375,18 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                   prefixIcon: Icon(Icons.work_outline_rounded),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'Patrol', child: Text('Pengawal Rondaan')),
-                  DropdownMenuItem(value: 'Supervisor', child: Text('Penyelia')),
-                  DropdownMenuItem(value: 'Management', child: Text('Pengurusan')),
+                  DropdownMenuItem(
+                    value: 'Patrol',
+                    child: Text('Pengawal Rondaan'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Supervisor',
+                    child: Text('Penyelia'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Management',
+                    child: Text('Pengurusan'),
+                  ),
                 ],
                 onChanged: _saving
                     ? null
@@ -413,13 +425,26 @@ class _EditUserDialogState extends State<_EditUserDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
-          child: const Text('Batal'),
-        ),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: Text(_saving ? 'Menyimpan…' : 'Simpan'),
+        SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                child: Text(_saving ? 'Menyimpan…' : 'Simpan'),
+              ),
+
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _saving
+                    ? null
+                    : () => Navigator.of(context).pop(false),
+                child: const Text('Batal'),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -471,7 +496,10 @@ class _AddUserDialogState extends State<_AddUserDialog> {
     final name = _nameController.text.trim();
     final ic = _icController.text.replaceAll(RegExp(r'\D'), '');
     if (name.length < 3 || ic.length != 12 || _departmentId == null) {
-      setState(() => _error = 'Lengkapkan nama, No. Kad Pengenalan 12 digit dan Jabatan.');
+      setState(
+        () => _error =
+            'Lengkapkan nama, No. Kad Pengenalan 12 digit dan Jabatan.',
+      );
       return;
     }
     setState(() {
@@ -542,7 +570,10 @@ class _AddUserDialogState extends State<_AddUserDialog> {
                   prefixIcon: Icon(Icons.work_outline_rounded),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'Patrol', child: Text('Pengawal Rondaan')),
+                  DropdownMenuItem(
+                    value: 'Patrol',
+                    child: Text('Pengawal Rondaan'),
+                  ),
                   DropdownMenuItem(
                     value: 'Supervisor',
                     child: Text('Penyelia'),
@@ -585,13 +616,26 @@ class _AddUserDialogState extends State<_AddUserDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
-          child: const Text('Batal'),
-        ),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: Text(_saving ? 'Menyimpan…' : 'Tambah'),
+        SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                child: Text(_saving ? 'Menyimpan…' : 'Tambah'),
+              ),
+
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _saving
+                    ? null
+                    : () => Navigator.of(context).pop(false),
+                child: const Text('Batal'),
+              ),
+            ],
+          ),
         ),
       ],
     );

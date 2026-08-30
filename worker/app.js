@@ -550,6 +550,11 @@ async function commandCenter(request, env) {
   const patrols = [];
   let completeCount = 0;
   let alertCount = 0;
+  let missedSessionCount = 0;
+  let missedCheckpointCount = 0;
+  let scannedCheckpointCount = 0;
+  let dueCheckpointCount = 0;
+  let completedScannedCheckpointCount = 0;
 
   for (const user of usersResult.results ?? []) {
     const interval = Number(user.session_interval_minutes || 120);
@@ -571,6 +576,8 @@ async function commandCenter(request, env) {
     const activePatrol = activePatrols.get(Number(user.id)) ?? null;
 
     let missedSessions = 0;
+    let missedCheckpoints = 0;
+    let scannedCompletedCheckpoints = 0;
     for (let index = 0; index < currentIndex; index += 1) {
       const previousStartMs = scheduleDay.startMs + index * interval * 60000;
       const previousEndMs = Math.min(
@@ -581,14 +588,19 @@ async function commandCenter(request, env) {
         const time = Date.parse(row.scanned_at);
         return time >= previousStartMs && time < previousEndMs;
       });
-      if (previousRows.length === 0) continue;
       const unique = new Set(
         previousRows
           .map((row) => Number(row.checkpoint_id))
           .filter((id) => id > 0),
       );
-      if (expected > 0 && unique.size < expected) missedSessions += 1;
+      scannedCompletedCheckpoints += unique.size;
+      if (expected > 0 && unique.size < expected) {
+        missedSessions += 1;
+        missedCheckpoints += expected - unique.size;
+      }
     }
+    const scannedToday = scannedCompletedCheckpoints + uniqueCurrent.size;
+    const dueCheckpoints = expected * currentIndex;
 
     const minutesIntoSession = Math.max(0, Math.floor((now.getTime() - currentWindow.startMs) / 60000));
     const grace = Math.max(10, Math.min(30, Math.floor(interval / 4)));
@@ -602,6 +614,11 @@ async function commandCenter(request, env) {
 
     if (status === 'complete') completeCount += 1;
     if (status === 'late' || status === 'missed') alertCount += 1;
+    missedSessionCount += missedSessions;
+    missedCheckpointCount += missedCheckpoints;
+    scannedCheckpointCount += scannedToday;
+    dueCheckpointCount += dueCheckpoints;
+    completedScannedCheckpointCount += scannedCompletedCheckpoints;
 
     patrols.push({
       userId: Number(user.id),
@@ -613,6 +630,10 @@ async function commandCenter(request, env) {
       scannedCount: uniqueCurrent.size,
       expectedCount: expected,
       missedSessions,
+      missedCheckpoints,
+      scannedToday,
+      dueCheckpoints,
+      completedScannedCheckpoints: scannedCompletedCheckpoints,
       lastScanAt: lastScan?.scanned_at ?? null,
       patrolSessionId: activePatrol ? Number(activePatrol.id) : null,
       sessionStartedAt: activePatrol?.started_at ?? null,
@@ -632,6 +653,11 @@ async function commandCenter(request, env) {
       patrolUsers: patrols.length,
       complete: completeCount,
       alerts: alertCount,
+      missedSessions: missedSessionCount,
+      missedCheckpoints: missedCheckpointCount,
+      scannedCheckpoints: scannedCheckpointCount,
+      dueCheckpoints: dueCheckpointCount,
+      completedScannedCheckpoints: completedScannedCheckpointCount,
       openIncidents: incidents.length,
       urgentIncidents,
       sos24h: (sosResult.results ?? []).length,

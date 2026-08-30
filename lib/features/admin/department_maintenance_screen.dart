@@ -43,10 +43,8 @@ class _DepartmentMaintenanceScreenState
   Future<void> _editDepartment([DepartmentRecord? department]) async {
     final changed = await showDialog<bool>(
       context: context,
-      builder: (context) => _DepartmentDialog(
-        api: widget.api,
-        department: department,
-      ),
+      builder: (context) =>
+          _DepartmentDialog(api: widget.api, department: department),
     );
     if (changed == true && mounted) _refresh();
   }
@@ -87,7 +85,10 @@ class _DepartmentMaintenanceScreenState
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text(snapshot.error.toString(), textAlign: TextAlign.center),
+                child: Text(
+                  snapshot.error.toString(),
+                  textAlign: TextAlign.center,
+                ),
               ),
             );
           }
@@ -137,7 +138,9 @@ class _DepartmentMaintenanceScreenState
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           FutureBuilder<List<CheckpointRecord>>(
-                            future: widget.api.getAdminCheckpoints(department.id),
+                            future: widget.api.getAdminCheckpoints(
+                              department.id,
+                            ),
                             builder: (context, checkpointSnapshot) {
                               if (checkpointSnapshot.connectionState ==
                                   ConnectionState.waiting) {
@@ -156,7 +159,8 @@ class _DepartmentMaintenanceScreenState
                                   ),
                                 );
                               }
-                              final checkpoints = checkpointSnapshot.data ??
+                              final checkpoints =
+                                  checkpointSnapshot.data ??
                                   const <CheckpointRecord>[];
                               if (checkpoints.isEmpty) {
                                 return const Padding(
@@ -186,7 +190,9 @@ class _DepartmentMaintenanceScreenState
                                           '${checkpoint.nfcUid}'
                                           '${checkpoint.active ? '' : ' • TIDAK AKTIF'}',
                                         ),
-                                        trailing: const Icon(Icons.edit_rounded),
+                                        trailing: const Icon(
+                                          Icons.edit_rounded,
+                                        ),
                                       ),
                                     )
                                     .toList(),
@@ -240,11 +246,21 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.department?.name ?? '');
-    _intervalController = TextEditingController(text: (widget.department?.sessionIntervalMinutes ?? 120).toString());
-    _locationLabelController = TextEditingController(text: widget.department?.attendanceLocationLabel ?? '');
-    _companyController = TextEditingController(text: widget.department?.companyName ?? '');
-    _zoneController = TextEditingController(text: widget.department?.zone ?? '');
+    _nameController = TextEditingController(
+      text: widget.department?.name ?? '',
+    );
+    _intervalController = TextEditingController(
+      text: (widget.department?.sessionIntervalMinutes ?? 120).toString(),
+    );
+    _locationLabelController = TextEditingController(
+      text: widget.department?.attendanceLocationLabel ?? '',
+    );
+    _companyController = TextEditingController(
+      text: widget.department?.companyName ?? '',
+    );
+    _zoneController = TextEditingController(
+      text: widget.department?.zone ?? '',
+    );
     final startMinutes = widget.department?.sessionStartMinutes ?? 420;
     _startTime = TimeOfDay(hour: startMinutes ~/ 60, minute: startMinutes % 60);
     _active = widget.department?.active ?? true;
@@ -264,7 +280,11 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
   }
 
   Future<void> _pickStartTime() async {
-    final selected = await showTimePicker(context: context, initialTime: _startTime, helpText: 'Jam mula sesi rondaan');
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: _startTime,
+      helpText: 'Jam mula sesi rondaan',
+    );
     if (selected != null && mounted) setState(() => _startTime = selected);
   }
 
@@ -277,10 +297,16 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
       return;
     }
     if (_latitude == null || _longitude == null) {
-      setState(() => _error = 'Tandakan pusat kawasan sekolah pada peta untuk fungsi kehadiran.');
+      setState(
+        () => _error =
+            'Tandakan pusat kawasan sekolah pada peta untuk fungsi kehadiran.',
+      );
       return;
     }
-    setState(() { _saving = true; _error = null; });
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
       final existing = widget.department;
       if (existing == null) {
@@ -327,7 +353,9 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
   Widget build(BuildContext context) {
     final center = LatLng(_latitude ?? 5.69582, _longitude ?? 100.53720);
     return AlertDialog(
-      title: Text(widget.department == null ? 'Tambah Jabatan' : 'Tetapan Jabatan'),
+      title: Text(
+        widget.department == null ? 'Tambah Jabatan' : 'Tetapan Jabatan',
+      ),
       content: SizedBox(
         width: 620,
         child: SingleChildScrollView(
@@ -337,7 +365,10 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
             children: [
               TextField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Nama Jabatan', prefixIcon: Icon(Icons.account_tree_rounded)),
+                decoration: const InputDecoration(
+                  labelText: 'Nama Jabatan',
+                  prefixIcon: Icon(Icons.account_tree_rounded),
+                ),
               ),
               const SizedBox(height: 14),
               TextField(
@@ -363,7 +394,11 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
               TextField(
                 controller: _intervalController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Tempoh satu sesi (minit)', helperText: 'Nilai asal: 120 minit (2 jam)', prefixIcon: Icon(Icons.timer_outlined)),
+                decoration: const InputDecoration(
+                  labelText: 'Tempoh satu sesi (minit)',
+                  helperText: 'Nilai asal: 120 minit (2 jam)',
+                  prefixIcon: Icon(Icons.timer_outlined),
+                ),
               ),
               const SizedBox(height: 14),
               LayoutBuilder(
@@ -406,9 +441,16 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                 },
               ),
               const SizedBox(height: 16),
-              Text('Kawasan Kehadiran', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+              Text(
+                'Kawasan Kehadiran',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+              ),
               const SizedBox(height: 6),
-              const Text('Tekan pada peta untuk menetapkan pusat sekolah. Bulatan menunjukkan radius yang dibenarkan untuk punch masuk/keluar.'),
+              const Text(
+                'Tekan pada peta untuk menetapkan pusat sekolah. Bulatan menunjukkan radius yang dibenarkan untuk punch masuk/keluar.',
+              ),
               const SizedBox(height: 10),
               ClipRRect(
                 borderRadius: BorderRadius.circular(18),
@@ -418,50 +460,135 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                     options: MapOptions(
                       initialCenter: center,
                       initialZoom: _latitude == null ? 15 : 17,
-                      onTap: (_, point) => setState(() { _latitude = point.latitude; _longitude = point.longitude; }),
+                      onTap: (_, point) => setState(() {
+                        _latitude = point.latitude;
+                        _longitude = point.longitude;
+                      }),
                     ),
                     children: [
-                      TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'dev.rimbakawal.rimbakawal'),
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'dev.rimbakawal.rimbakawal',
+                      ),
                       if (_latitude != null && _longitude != null)
-                        CircleLayer(circles: [CircleMarker(point: LatLng(_latitude!, _longitude!), radius: _radius, useRadiusInMeter: true, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.16), borderColor: Theme.of(context).colorScheme.primary, borderStrokeWidth: 2)]),
+                        CircleLayer(
+                          circles: [
+                            CircleMarker(
+                              point: LatLng(_latitude!, _longitude!),
+                              radius: _radius,
+                              useRadiusInMeter: true,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.16),
+                              borderColor: Theme.of(
+                                context,
+                              ).colorScheme.primary,
+                              borderStrokeWidth: 2,
+                            ),
+                          ],
+                        ),
                       if (_latitude != null && _longitude != null)
-                        MarkerLayer(markers: [Marker(point: LatLng(_latitude!, _longitude!), width: 48, height: 48, child: const Icon(Icons.school_rounded, size: 38))]),
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: LatLng(_latitude!, _longitude!),
+                              width: 48,
+                              height: 48,
+                              child: const Icon(Icons.school_rounded, size: 38),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 4),
-              const Text('© OpenStreetMap contributors', style: TextStyle(fontSize: 10)),
+              const Text(
+                '© OpenStreetMap contributors',
+                style: TextStyle(fontSize: 10),
+              ),
               const SizedBox(height: 10),
-              Row(children: [
-                const Icon(Icons.radar_rounded),
-                const SizedBox(width: 8),
-                Expanded(child: Slider(value: _radius.clamp(30.0, 1000.0).toDouble(), min: 30, max: 1000, divisions: 97, label: '${_radius.round()}m', onChanged: (value) => setState(() => _radius = value))),
-                SizedBox(width: 72, child: Text('${_radius.round()} m', textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w900))),
-              ]),
+              Row(
+                children: [
+                  const Icon(Icons.radar_rounded),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Slider(
+                      value: _radius.clamp(30.0, 1000.0).toDouble(),
+                      min: 30,
+                      max: 1000,
+                      divisions: 97,
+                      label: '${_radius.round()}m',
+                      onChanged: (value) => setState(() => _radius = value),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 72,
+                    child: Text(
+                      '${_radius.round()} m',
+                      textAlign: TextAlign.end,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ],
+              ),
               TextField(
                 controller: _locationLabelController,
-                decoration: const InputDecoration(labelText: 'Label lokasi (pilihan)', hintText: 'Contoh: SMK Bandar Baru Sungai Lalang', prefixIcon: Icon(Icons.location_city_rounded)),
+                decoration: const InputDecoration(
+                  labelText: 'Label lokasi (pilihan)',
+                  hintText: 'Contoh: SMK Bandar Baru Sungai Lalang',
+                  prefixIcon: Icon(Icons.location_city_rounded),
+                ),
               ),
               if (_latitude != null && _longitude != null) ...[
                 const SizedBox(height: 8),
-                SelectableText('Pusat: ${_latitude!.toStringAsFixed(6)}, ${_longitude!.toStringAsFixed(6)}'),
+                SelectableText(
+                  'Pusat: ${_latitude!.toStringAsFixed(6)}, ${_longitude!.toStringAsFixed(6)}',
+                ),
               ],
               if (widget.department != null) ...[
                 const SizedBox(height: 8),
-                SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Jabatan aktif'), value: _active, onChanged: (value) => setState(() => _active = value)),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Jabatan aktif'),
+                  value: _active,
+                  onChanged: (value) => setState(() => _active = value),
+                ),
               ],
               if (_error != null) ...[
                 const SizedBox(height: 8),
-                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
               ],
             ],
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: _saving ? null : () => Navigator.of(context).pop(false), child: const Text('Batal')),
-        FilledButton(onPressed: _saving ? null : _save, child: Text(_saving ? 'Menyimpan…' : 'Simpan')),
+        SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                child: Text(_saving ? 'Menyimpan…' : 'Simpan'),
+              ),
+
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _saving
+                    ? null
+                    : () => Navigator.of(context).pop(false),
+                child: const Text('Batal'),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -498,8 +625,12 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.checkpoint?.name ?? '');
-    _uidController = TextEditingController(text: widget.checkpoint?.nfcUid ?? '');
+    _nameController = TextEditingController(
+      text: widget.checkpoint?.name ?? '',
+    );
+    _uidController = TextEditingController(
+      text: widget.checkpoint?.nfcUid ?? '',
+    );
     _positionController = TextEditingController(
       text: (widget.checkpoint?.position ?? 1).toString(),
     );
@@ -529,7 +660,9 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
       if (!mounted) return;
       setState(() => _uidController.text = checkpointId);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tag NFC berjaya ditetapkan untuk checkpoint ini.')),
+        const SnackBar(
+          content: Text('Tag NFC berjaya ditetapkan untuk checkpoint ini.'),
+        ),
       );
     } on NfcScanCancelledException {
       // User closed the native NFC prompt.
@@ -546,7 +679,9 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
     final uid = _uidController.text.trim().toUpperCase();
     final position = int.tryParse(_positionController.text.trim());
     if (name.isEmpty || uid.isEmpty || position == null) {
-      setState(() => _error = 'Lengkapkan nama, Scan Tag dan susunan checkpoint.');
+      setState(
+        () => _error = 'Lengkapkan nama, Scan Tag dan susunan checkpoint.',
+      );
       return;
     }
     setState(() {
@@ -587,7 +722,9 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.checkpoint == null ? 'Tambah Checkpoint' : 'Edit Checkpoint'),
+      title: Text(
+        widget.checkpoint == null ? 'Tambah Checkpoint' : 'Edit Checkpoint',
+      ),
       content: SizedBox(
         width: 440,
         child: SingleChildScrollView(
@@ -602,30 +739,31 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
                 ),
               ),
               const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _uidController,
-                      textCapitalization: TextCapitalization.characters,
-                      decoration: const InputDecoration(
-                        labelText: 'ID tag NFC',
-                        hintText: 'Tekan Scan Tag untuk menetapkan tag',
-                        prefixIcon: Icon(Icons.nfc_rounded),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    height: 56,
-                    child: FilledButton.tonalIcon(
-                      onPressed: _scanning ? null : _scanTag,
-                      icon: const Icon(Icons.nfc_rounded),
-                      label: Text(_scanning ? 'Menulis…' : 'Scan Tag'),
-                    ),
-                  ),
-                ],
+              TextField(
+                controller: _uidController,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'ID tag NFC',
+                  hintText: 'Tekan Scan Tag untuk menetapkan tag',
+                  prefixIcon: Icon(Icons.nfc_rounded),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: _scanning ? null : _scanTag,
+                  icon: const Icon(Icons.nfc_rounded),
+                  label: Text(_scanning ? 'MENULIS TAG…' : 'SCAN TAG'),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Untuk checkpoint baharu, tag akan ditulis dengan ID RimbaKawal. Untuk checkpoint sedia ada, Scan Tag akan menulis semula tag yang disentuh.',
+                  style: TextStyle(fontSize: 12),
+                ),
               ),
               if (widget.mockMode) ...[
                 const SizedBox(height: 6),
@@ -667,13 +805,26 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
-          child: const Text('Batal'),
-        ),
-        FilledButton(
-          onPressed: _saving || _scanning ? null : _save,
-          child: Text(_saving ? 'Menyimpan…' : 'Simpan'),
+        SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FilledButton(
+                onPressed: _saving || _scanning ? null : _save,
+                child: Text(_saving ? 'Menyimpan…' : 'Simpan'),
+              ),
+
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _saving
+                    ? null
+                    : () => Navigator.of(context).pop(false),
+                child: const Text('Batal'),
+              ),
+            ],
+          ),
         ),
       ],
     );

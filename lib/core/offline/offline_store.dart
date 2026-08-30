@@ -15,6 +15,7 @@ class OfflineStore extends ChangeNotifier {
   static const _cacheBoxName = 'rimbakawal_field_cache_v2';
   static const _cachedUserKey = 'cached_user';
   static const _bootstrapKey = 'patrol_bootstrap';
+  static const _nfcModeKey = 'nfc_operation_mode';
 
   late Box<dynamic> _eventsBox;
   late Box<dynamic> _cacheBox;
@@ -78,21 +79,28 @@ class OfflineStore extends ChangeNotifier {
   }
 
   List<OfflineEvent> pendingEvents(int userId, {int limit = 50}) {
-    final rows = eventsForUser(userId, limit: 1000)
-        .where((event) => event.isPending)
-        .toList();
+    final rows = eventsForUser(
+      userId,
+      limit: 1000,
+    ).where((event) => event.isPending).toList();
     rows.sort((a, b) => a.occurredAt.compareTo(b.occurredAt));
     return rows.take(limit).toList(growable: false);
   }
 
-  int pendingCount(int userId) =>
-      eventsForUser(userId, limit: 1000).where((event) => event.isPending).length;
+  int pendingCount(int userId) => eventsForUser(
+    userId,
+    limit: 1000,
+  ).where((event) => event.isPending).length;
 
-  int failedCount(int userId) =>
-      eventsForUser(userId, limit: 1000).where((event) => event.isFailed).length;
+  int failedCount(int userId) => eventsForUser(
+    userId,
+    limit: 1000,
+  ).where((event) => event.isFailed).length;
 
-  int syncedCount(int userId) =>
-      eventsForUser(userId, limit: 1000).where((event) => event.isSynced).length;
+  int syncedCount(int userId) => eventsForUser(
+    userId,
+    limit: 1000,
+  ).where((event) => event.isSynced).length;
 
   Future<void> markAttempt(String id, {String? error}) async {
     final event = _event(id);
@@ -194,6 +202,23 @@ class OfflineStore extends ChangeNotifier {
     }
   }
 
+  String get nfcMode {
+    if (!_ready) return 'real';
+    final value = _cacheBox.get(_nfcModeKey);
+    return value == 'test' ? 'test' : 'real';
+  }
+
+  bool get isNfcTestMode => nfcMode == 'test';
+
+  Future<void> setNfcMode(String mode) async {
+    _ensureReady();
+    if (mode != 'test' && mode != 'real') {
+      throw ArgumentError.value(mode, 'mode', 'Mod NFC tidak sah.');
+    }
+    await _cacheBox.put(_nfcModeKey, mode);
+    notifyListeners();
+  }
+
   Future<void> purgeSyncedOlderThan(Duration age) async {
     if (!_ready) return;
     final cutoff = DateTime.now().subtract(age);
@@ -225,14 +250,14 @@ class OfflineStore extends ChangeNotifier {
   }
 
   Map<String, dynamic> _userToJson(AppUser user) => {
-        'id': user.id,
-        'nama': user.nama,
-        'noKadPengenalan': user.noKadPengenalan,
-        'jawatan': user.jawatan,
-        'jabatan': user.jabatan,
-        'profilePicture': user.profilePicture,
-        'departmentId': user.departmentId,
-        'sessionIntervalMinutes': user.sessionIntervalMinutes,
-        'active': user.active,
-      };
+    'id': user.id,
+    'nama': user.nama,
+    'noKadPengenalan': user.noKadPengenalan,
+    'jawatan': user.jawatan,
+    'jabatan': user.jabatan,
+    'profilePicture': user.profilePicture,
+    'departmentId': user.departmentId,
+    'sessionIntervalMinutes': user.sessionIntervalMinutes,
+    'active': user.active,
+  };
 }

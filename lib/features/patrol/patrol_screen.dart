@@ -220,7 +220,8 @@ class _PatrolScreenState extends State<PatrolScreen> {
     final bootstrap = _bootstrap ?? _store.cachedBootstrap();
     if (bootstrap == null) {
       setState(() {
-        _error = 'Konfigurasi rondaan belum pernah dimuat turun. Sambungkan peranti ke Internet sekali untuk menyediakan penggunaan luar talian.';
+        _error =
+            'Konfigurasi rondaan belum pernah dimuat turun. Sambungkan peranti ke Internet sekali untuk menyediakan penggunaan luar talian.';
       });
       return;
     }
@@ -230,20 +231,35 @@ class _PatrolScreenState extends State<PatrolScreen> {
       _error = null;
     });
     try {
-      final raw = await showNfcScanPrompt(
-        context: context,
-        nfcService: widget.nfcService,
-        title: 'Imbas Checkpoint NFC',
-      );
-      if (raw == null) return;
-      final uid = _normalizeUid(raw.tagId);
-      final checkpoint = bootstrap.checkpoints
-          .where((item) => _normalizeUid(item.nfcUid) == uid)
-          .firstOrNull;
-      if (checkpoint == null) {
-        throw const ApiException(
-          'Tag ini bukan checkpoint aktif untuk Jabatan anda.',
+      late final String uid;
+      late final CachedCheckpoint checkpoint;
+      if (_store.isNfcTestMode) {
+        final dummy = _nextCheckpoint(bootstrap);
+        if (dummy == null) {
+          throw const ApiException(
+            'Semua checkpoint untuk sesi ini sudah direkod.',
+          );
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        checkpoint = dummy;
+        uid = _normalizeUid(dummy.nfcUid);
+      } else {
+        final raw = await showNfcScanPrompt(
+          context: context,
+          nfcService: widget.nfcService,
+          title: 'Imbas Checkpoint NFC',
         );
+        if (raw == null) return;
+        uid = _normalizeUid(raw.tagId);
+        final matched = bootstrap.checkpoints
+            .where((item) => _normalizeUid(item.nfcUid) == uid)
+            .firstOrNull;
+        if (matched == null) {
+          throw const ApiException(
+            'Tag ini bukan checkpoint aktif untuk Jabatan anda.',
+          );
+        }
+        checkpoint = matched;
       }
 
       final sessionIndex = _sessionIndex(
@@ -288,6 +304,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
           'checkpointName': checkpoint.name,
           'sessionIndex': sessionIndex,
           'dayKey': dayKey,
+          'nfcMode': _store.isNfcTestMode ? 'test' : 'real',
         },
       );
       unawaited(_sync.syncNow());
@@ -295,7 +312,9 @@ class _PatrolScreenState extends State<PatrolScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${checkpoint.name} telah disimpan pada peranti dan akan disegerakkan secara automatik.',
+            _store.isNfcTestMode
+                ? 'DUMMY • ${checkpoint.name} telah direkod dan akan disegerakkan secara automatik.'
+                : '${checkpoint.name} telah disimpan pada peranti dan akan disegerakkan secara automatik.',
           ),
         ),
       );
@@ -487,14 +506,24 @@ class _PatrolScreenState extends State<PatrolScreen> {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Batal'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              icon: const Icon(Icons.save_rounded),
-              label: const Text('Simpan'),
+            SizedBox(
+              width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    icon: const Icon(Icons.save_rounded),
+                    label: const Text('Simpan'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('Batal'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -555,18 +584,28 @@ class _PatrolScreenState extends State<PatrolScreen> {
           'SOS akan direkod bersama lokasi rondaan semasa dan dihantar kepada pemantauan RimbaKawal. Ia tidak menghubungi talian kecemasan secara automatik.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Batal'),
-          ),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFC0392B),
-              foregroundColor: Colors.white,
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFC0392B),
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () => Navigator.of(context).pop(true),
+                  icon: const Icon(Icons.sos_rounded),
+                  label: const Text('AKTIFKAN SOS'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Batal'),
+                ),
+              ],
             ),
-            onPressed: () => Navigator.of(context).pop(true),
-            icon: const Icon(Icons.sos_rounded),
-            label: const Text('AKTIFKAN SOS'),
           ),
         ],
       ),
@@ -622,8 +661,9 @@ class _PatrolScreenState extends State<PatrolScreen> {
       if (mounted) setState(() => _torchOn = !_torchOn);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(_cleanError(error))));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_cleanError(error))));
     } finally {
       if (mounted) setState(() => _torchChanging = false);
     }
@@ -738,9 +778,9 @@ class _PatrolScreenState extends State<PatrolScreen> {
     required int sessionIndex,
     required String dayKey,
   }) => _store.eventsForUser(widget.user.id, limit: 1000).where((event) {
-        return event.type == 'scan' &&
-            event.payload['clientSessionId'] == _clientSessionId &&
-            event.payload['sessionIndex'] == sessionIndex &&
+    return event.type == 'scan' &&
+        event.payload['clientSessionId'] == _clientSessionId &&
+        event.payload['sessionIndex'] == sessionIndex &&
         event.payload['dayKey'] == dayKey &&
         !event.isFailed;
   }).toList();
@@ -855,6 +895,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
   @override
   Widget build(BuildContext context) {
     final bootstrap = _bootstrap ?? _store.cachedBootstrap();
+    final testNfc = _store.isNfcTestMode;
     final pending = _store.pendingCount(widget.user.id);
     final failed = _store.failedCount(widget.user.id);
     final completed = bootstrap == null ? 0 : _completedCount(bootstrap);
@@ -959,11 +1000,19 @@ class _PatrolScreenState extends State<PatrolScreen> {
                   side: BorderSide(color: Colors.white.withValues(alpha: 0.22)),
                 ),
                 icon: Icon(
-                  _scanning ? Icons.radar_rounded : Icons.nfc_rounded,
+                  _scanning
+                      ? Icons.radar_rounded
+                      : testNfc
+                      ? Icons.science_rounded
+                      : Icons.nfc_rounded,
                   size: 30,
                 ),
                 label: Text(
-                  _scanning ? 'MENGIMBAS…' : 'IMBAS CHECKPOINT',
+                  _scanning
+                      ? (testNfc ? 'MENCUBA…' : 'MENGIMBAS…')
+                      : (testNfc
+                            ? 'DUMMY SCAN CHECKPOINT'
+                            : 'IMBAS CHECKPOINT'),
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
@@ -994,6 +1043,26 @@ class _PatrolScreenState extends State<PatrolScreen> {
                 syncing: _sync.isSyncing,
                 onSync: _sync.syncNow,
               ),
+              if (testNfc) ...[
+                const SizedBox(height: 12),
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Icon(Icons.science_rounded, color: Color(0xFFA29BFE)),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'MOD TEST NFC AKTIF • Tekan butang dummy scan untuk merekod checkpoint seterusnya tanpa tag fizikal.',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               _RouteCard(
                 department: bootstrap?.departmentName ?? widget.user.jabatan,
@@ -1051,8 +1120,9 @@ class _PatrolScreenState extends State<PatrolScreen> {
                   Expanded(
                     child: Text(
                       'Rekod sesi',
-                      style: Theme.of(context).textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                   TextButton.icon(
@@ -1180,8 +1250,9 @@ class _LiveHero extends StatelessWidget {
                       user.nama,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(user.jabatan),
@@ -1329,8 +1400,9 @@ class _RouteCard extends StatelessWidget {
                   children: [
                     Text(
                       department,
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     Text(
                       sessionLabel,
@@ -1346,8 +1418,9 @@ class _RouteCard extends StatelessWidget {
               ),
               Text(
                 '$completed/$total',
-                style: Theme.of(context).textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ],
           ),
