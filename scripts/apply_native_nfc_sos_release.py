@@ -49,7 +49,6 @@ replace_once(
     '    if (Platform.isAndroid) {',
     '    if (defaultTargetPlatform == TargetPlatform.android) {',
 )
-# Two iOS platform checks exist in this file.
 real_nfc = Path('lib/core/nfc/real_nfc_service.dart')
 text = real_nfc.read_text(encoding='utf-8')
 if text.count('Platform.isIOS') != 2:
@@ -231,9 +230,10 @@ new_package = '''      - name: Package unsigned iOS IPA
           retention-days: 14
           path: ${{ runner.temp }}/RimbaKawal-iOS-Production-Unsigned.ipa
 '''
-if old_package not in text:
-    raise SystemExit('Expected iOS packaging block not found in build-mobile-production.yml')
-workflow.write_text(text.replace(old_package, new_package, 1), encoding='utf-8')
+if old_package in text:
+    workflow.write_text(text.replace(old_package, new_package, 1), encoding='utf-8')
+elif new_package not in text:
+    raise SystemExit('Expected old or new iOS packaging block not found in build-mobile-production.yml')
 
 # Bump build version so the rebuilt mobile artifacts are distinguishable.
 replace_once('pubspec.yaml', 'version: 0.5.1+17', 'version: 0.5.2+18')
