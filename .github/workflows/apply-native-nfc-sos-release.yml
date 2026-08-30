@@ -1,0 +1,70 @@
+name: Apply Native NFC and Patrol SOS Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply_native_nfc_sos_release.py
+      - .github/workflows/apply-native-nfc-sos-release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply native NFC and SOS patch
+        run: python3 scripts/apply_native_nfc_sos_release.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit validated release changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- \
+            lib/main.dart \
+            lib/core/nfc/real_nfc_service.dart \
+            lib/core/nfc/nfc_scan_prompt.dart \
+            lib/features/dashboard/dashboard_screen.dart \
+            lib/features/patrol/patrol_screen.dart \
+            lib/core/notifications/notification_alert_gate.dart \
+            .github/workflows/build-mobile-production.yml \
+            pubspec.yaml; then
+            echo 'No release changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            lib/main.dart \
+            lib/core/nfc/real_nfc_service.dart \
+            lib/core/nfc/nfc_scan_prompt.dart \
+            lib/features/dashboard/dashboard_screen.dart \
+            lib/features/patrol/patrol_screen.dart \
+            lib/core/notifications/notification_alert_gate.dart \
+            .github/workflows/build-mobile-production.yml \
+            pubspec.yaml
+          git commit -m 'Enable native NFC and patrol SOS'
+          git push origin HEAD:main
