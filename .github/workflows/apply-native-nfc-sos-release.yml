@@ -22,7 +22,11 @@ jobs:
           fetch-depth: 0
 
       - name: Apply native NFC and SOS patch
-        run: python3 scripts/apply_native_nfc_sos_release.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply_native_nfc_sos_release.py
+          sed -i "/import 'dart:typed_data';/d" lib/core/nfc/real_nfc_service.dart
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
