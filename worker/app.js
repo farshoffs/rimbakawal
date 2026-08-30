@@ -18,6 +18,15 @@ export default {
       if (url.pathname === '/api/admin/command-center' && request.method === 'GET') {
         return commandCenter(request, env);
       }
+      if (url.pathname === '/api/attendance/status' && request.method === 'GET') {
+        return attendanceStatus(request, env);
+      }
+      if (url.pathname === '/api/attendance/punch' && request.method === 'POST') {
+        return attendancePunch(request, env);
+      }
+      if (url.pathname === '/api/admin/attendance' && request.method === 'GET') {
+        return adminAttendance(request, env, url);
+      }
       if (url.pathname === '/api/sos' && request.method === 'POST') {
         return createSos(request, env);
       }
@@ -48,6 +57,10 @@ export default {
       if (incidentImagesMatch && request.method === 'GET') {
         return getIncidentImages(request, env, Number(incidentImagesMatch[1]));
       }
+      const attendanceEvidenceMatch = url.pathname.match(/^\/api\/admin\/attendance\/(\d+)\/evidence$/);
+      if (attendanceEvidenceMatch && request.method === 'GET') {
+        return attendanceEvidence(request, env, Number(attendanceEvidenceMatch[1]));
+      }
     } catch (error) {
       console.error(error);
       return json({ error: 'Ralat pelayan. Sila cuba lagi.' }, 500);
@@ -66,7 +79,6 @@ async function createUser(request, env) {
   const identityCard = String(body.noKadPengenalan ?? '').replace(/\D/g, '');
   const jawatan = String(body.jawatan ?? 'Patrol').trim();
   const departmentId = Number(body.departmentId ?? 0);
-  const noPk = String(body.noPk ?? '').trim().slice(0, 50);
 
   if (nama.length < 3) return json({ error: 'Nama pengguna tidak sah.' }, 400);
   if (!/^\d{12}$/.test(identityCard)) {
@@ -90,12 +102,187 @@ async function createUser(request, env) {
   if (duplicate) return json({ error: 'No. Kad Pengenalan ini sudah berdaftar.' }, 409);
 
   const result = await env.DB.prepare(
-    `INSERT INTO users (nama, no_kad_pengenalan, no_pk, jawatan, profile_picture, jabatan, active, department_id)
-     VALUES (?, ?, ?, ?, NULL, ?, 1, ?)`,
-  ).bind(nama, identityCard, noPk || null, jawatan, department.name, departmentId).run();
+    `INSERT INTO users (nama, no_kad_pengenalan, jawatan, profile_picture, jabatan, active, department_id)
+     VALUES (?, ?, ?, NULL, ?, 1, ?)`,
+  ).bind(nama, identityCard, jawatan, department.name, departmentId).run();
 
   const user = await getUserById(env, result.meta?.last_row_id);
   return json({ user: publicUser(user) }, 201);
+}
+
+const FACE_MATCH_THRESHOLD = 0.60;
+const MAX_ATTENDANCE_IMAGE_LENGTH = 700000;
+
+async function attendanceStatus(request, env) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth.response;
+  const department = await attendanceDepartment(env, auth.user.department_id);
+  if (!department) return json({ error: 'Kawasan sekolah belum ditetapkan oleh Admin.' }, 409);
+
+  const bounds = malaysiaDayBounds(malaysiaDateKey(new Date()));
+  const result = await env.DB.prepare(
+    `SELECT id, event_type, status, rejection_reason, recorded_at, distance_meters,
+            face_similarity, within_geofence, face_matched
+     FROM attendance_records
+     WHERE user_id = ? AND recorded_at >= ? AND recorded_at < ?
+     ORDER BY recorded_at ASC`,
+  ).bind(auth.user.id, bounds.startIso, bounds.endIso).all();
+  const records = result.results ?? [];
+  const accepted = records.filter((row) => row.status === 'accepted');
+  const nextEventType = accepted.at(-1)?.event_type === 'in' ? 'out' : 'in';
+  return json({
+    department: attendanceDepartmentJson(department),
+    hasProfilePicture: Boolean(auth.user.profile_picture),
+    profilePicture: auth.user.profile_picture,
+    faceThreshold: FACE_MATCH_THRESHOLD,
+    nextEventType,
+    records: records.map(attendanceJson),
+  });
+}
+
+async function attendancePunch(request, env) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth.response;
+  const department = await attendanceDepartment(env, auth.user.department_id);
+  if (!department) return json({ error: 'Kawasan sekolah belum ditetapkan oleh Admin.' }, 409);
+  if (!auth.user.profile_picture) return json({ error: 'Tetapkan gambar profil sebelum merekod kehadiran.' }, 409);
+
+  const body = await readJson(request);
+  const latitude = Number(body.latitude);
+  const longitude = Number(body.longitude);
+  const accuracy = Number(body.accuracy ?? 0);
+  const similarity = Number(body.faceSimilarity);
+  const faceDetected = body.faceDetected === true;
+  const faceMatched = body.faceMatched === true;
+  const selfie = String(body.selfieImage ?? '');
+  const devicePlatform = String(body.devicePlatform ?? '').trim().slice(0, 40) || null;
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+      !Number.isFinite(longitude) || longitude < -180 || longitude > 180 ||
+      !Number.isFinite(accuracy) || accuracy < 0 || accuracy > 5000 ||
+      !Number.isFinite(similarity) || similarity < -1 || similarity > 1) {
+    return json({ error: 'Data lokasi atau pengesahan muka tidak sah.' }, 400);
+  }
+  if (!/^data:image\/(jpeg|jpg|png);base64,/i.test(selfie) || selfie.length > MAX_ATTENDANCE_IMAGE_LENGTH) {
+    return json({ error: 'Gambar swafoto tidak sah atau terlalu besar.' }, 400);
+  }
+
+  const bounds = malaysiaDayBounds(malaysiaDateKey(new Date()));
+  const latest = await env.DB.prepare(
+    `SELECT event_type FROM attendance_records
+     WHERE user_id = ? AND status = 'accepted' AND recorded_at >= ? AND recorded_at < ?
+     ORDER BY recorded_at DESC LIMIT 1`,
+  ).bind(auth.user.id, bounds.startIso, bounds.endIso).first();
+  const eventType = latest?.event_type === 'in' ? 'out' : 'in';
+  const distance = haversineMeters(
+    latitude, longitude, Number(department.attendance_latitude), Number(department.attendance_longitude),
+  );
+  const radius = Number(department.attendance_radius_meters || 200);
+  const withinGeofence = distance <= radius;
+  const serverFaceMatched = faceDetected && faceMatched && similarity >= FACE_MATCH_THRESHOLD;
+  let rejectionReason = null;
+  if (!withinGeofence) rejectionReason = 'Di luar radius kawasan sekolah.';
+  else if (!faceDetected) rejectionReason = 'Wajah tidak dikesan.';
+  else if (!serverFaceMatched) rejectionReason = 'Padanan wajah tidak melepasi tahap minimum.';
+  const status = rejectionReason == null ? 'accepted' : 'rejected';
+  const recordedAt = new Date().toISOString();
+
+  const result = await env.DB.prepare(
+    `INSERT INTO attendance_records
+      (user_id, department_id, event_type, status, rejection_reason, recorded_at,
+       latitude, longitude, accuracy, distance_meters, geofence_radius_meters,
+       within_geofence, face_detected, face_matched, face_similarity, face_threshold,
+       selfie_image, device_platform)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    auth.user.id, auth.user.department_id, eventType, status, rejectionReason, recordedAt,
+    latitude, longitude, accuracy, distance, radius, withinGeofence ? 1 : 0,
+    faceDetected ? 1 : 0, serverFaceMatched ? 1 : 0, similarity, FACE_MATCH_THRESHOLD,
+    selfie, devicePlatform,
+  ).run();
+  const record = await env.DB.prepare(
+    `SELECT id, event_type, status, rejection_reason, recorded_at, distance_meters,
+            face_similarity, within_geofence, face_matched
+     FROM attendance_records WHERE id = ? LIMIT 1`,
+  ).bind(result.meta?.last_row_id).first();
+  return json({ record: attendanceJson(record) }, status === 'accepted' ? 201 : 422);
+}
+
+async function adminAttendance(request, env, url) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  const date = url.searchParams.get('date') || malaysiaDateKey(new Date());
+  const departmentId = Number(url.searchParams.get('departmentId') || 0);
+  if (!isDateKey(date)) return json({ error: 'Tarikh kehadiran tidak sah.' }, 400);
+  const bounds = malaysiaDayBounds(date);
+  const query = `SELECT a.id, a.event_type, a.status, a.rejection_reason, a.recorded_at,
+      a.latitude, a.longitude, a.accuracy, a.distance_meters, a.geofence_radius_meters,
+      a.within_geofence, a.face_detected, a.face_matched, a.face_similarity,
+      a.face_threshold, a.face_reference_source, a.device_platform,
+      u.nama, u.no_kad_pengenalan, COALESCE(d.name, u.jabatan) AS jabatan
+    FROM attendance_records a JOIN users u ON u.id = a.user_id
+    LEFT JOIN departments d ON d.id = a.department_id
+    WHERE a.recorded_at >= ? AND a.recorded_at < ?
+      ${departmentId > 0 ? 'AND a.department_id = ?' : ''}
+    ORDER BY a.recorded_at DESC LIMIT 500`;
+  const result = departmentId > 0
+    ? await env.DB.prepare(query).bind(bounds.startIso, bounds.endIso, departmentId).all()
+    : await env.DB.prepare(query).bind(bounds.startIso, bounds.endIso).all();
+  return json({ date, records: (result.results ?? []).map(attendanceJson) });
+}
+
+async function attendanceEvidence(request, env, attendanceId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  const row = await env.DB.prepare(
+    'SELECT selfie_image FROM attendance_records WHERE id = ? LIMIT 1',
+  ).bind(attendanceId).first();
+  if (!row) return json({ error: 'Rekod kehadiran tidak ditemui.' }, 404);
+  return json({ selfieImage: row.selfie_image });
+}
+
+async function attendanceDepartment(env, departmentId) {
+  if (!departmentId) return null;
+  return env.DB.prepare(
+    `SELECT id, name, attendance_latitude, attendance_longitude, attendance_radius_meters
+     FROM departments WHERE id = ? AND active = 1
+       AND attendance_latitude IS NOT NULL AND attendance_longitude IS NOT NULL LIMIT 1`,
+  ).bind(departmentId).first();
+}
+
+function attendanceDepartmentJson(row) {
+  return {
+    id: Number(row.id), name: row.name,
+    latitude: Number(row.attendance_latitude), longitude: Number(row.attendance_longitude),
+    radiusMeters: Number(row.attendance_radius_meters || 200),
+  };
+}
+
+function attendanceJson(row) {
+  return {
+    id: Number(row.id), eventType: row.event_type, status: row.status,
+    rejectionReason: row.rejection_reason, recordedAt: row.recorded_at,
+    latitude: row.latitude == null ? null : Number(row.latitude),
+    longitude: row.longitude == null ? null : Number(row.longitude),
+    accuracy: row.accuracy == null ? null : Number(row.accuracy),
+    distanceMeters: Number(row.distance_meters || 0),
+    geofenceRadiusMeters: Number(row.geofence_radius_meters || 0),
+    withinGeofence: Boolean(row.within_geofence), faceDetected: Boolean(row.face_detected),
+    faceMatched: Boolean(row.face_matched),
+    faceSimilarity: row.face_similarity == null ? null : Number(row.face_similarity),
+    faceThreshold: row.face_threshold == null ? FACE_MATCH_THRESHOLD : Number(row.face_threshold),
+    faceReferenceSource: row.face_reference_source ?? 'profile_picture',
+    devicePlatform: row.device_platform ?? null, nama: row.nama ?? null,
+    noKadPengenalan: row.no_kad_pengenalan ?? null, jabatan: row.jabatan ?? null,
+  };
+}
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const toRadians = (value) => value * Math.PI / 180;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(lat1)) *
+    Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 async function startPatrolSession(request, env) {
@@ -483,6 +670,7 @@ async function commandCenter(request, env) {
     sosResult,
     incidentsResult,
     patrolSessionsResult,
+    attendanceResult,
   ] = await Promise.all([
     env.DB.prepare(
       `SELECT u.id, u.nama, u.department_id, COALESCE(d.name, u.jabatan) AS jabatan,
@@ -538,6 +726,16 @@ async function commandCenter(request, env) {
          GROUP BY user_id
        ) latest ON latest.latest_id = ps.id`,
     ).bind(liveSince).all(),
+    env.DB.prepare(
+      `SELECT a.id, a.event_type, a.status, a.rejection_reason, a.recorded_at,
+              a.distance_meters, a.face_similarity, a.face_matched,
+              u.nama, COALESCE(d.name, u.jabatan) AS jabatan
+       FROM attendance_records a
+       JOIN users u ON u.id = a.user_id
+       LEFT JOIN departments d ON d.id = a.department_id
+       WHERE a.recorded_at >= ?
+       ORDER BY a.recorded_at DESC LIMIT 50`,
+    ).bind(bounds.startIso).all(),
   ]);
 
   const checkpointCounts = new Map(
@@ -625,6 +823,13 @@ async function commandCenter(request, env) {
 
   const incidents = incidentsResult.results ?? [];
   const urgentIncidents = incidents.filter((row) => row.severity === 'urgent').length;
+  const attendance = (attendanceResult.results ?? []).map(attendanceJson);
+  const acceptedAttendance = attendance.filter((row) => row.status === 'accepted');
+  const presentUsers = new Set();
+  for (const row of [...acceptedAttendance].reverse()) {
+    if (row.eventType === 'in') presentUsers.add(row.nama);
+    else presentUsers.delete(row.nama);
+  }
 
   return json({
     generatedAt: now.toISOString(),
@@ -635,10 +840,14 @@ async function commandCenter(request, env) {
       openIncidents: incidents.length,
       urgentIncidents,
       sos24h: (sosResult.results ?? []).length,
+      attendancePunches: acceptedAttendance.length,
+      attendancePresent: presentUsers.size,
+      attendanceRejected: attendance.filter((row) => row.status === 'rejected').length,
     },
     patrols,
     incidents,
     sosEvents: sosResult.results ?? [],
+    attendance,
   });
 }
 
@@ -793,7 +1002,7 @@ async function requireUser(request, env) {
   if (!token) return { response: json({ error: 'Sesi tidak sah. Sila log masuk.' }, 401) };
 
   const user = await env.DB.prepare(
-    `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan, u.profile_picture,
+    `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
             COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
             COALESCE(d.session_start_minutes, 420) AS session_start_minutes
@@ -810,7 +1019,7 @@ async function requireUser(request, env) {
 
 async function getUserById(env, id) {
   return env.DB.prepare(
-    `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan, u.profile_picture,
+    `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
             COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
             COALESCE(d.session_start_minutes, 420) AS session_start_minutes
@@ -825,7 +1034,6 @@ function publicUser(user) {
     id: user.id,
     nama: user.nama,
     noKadPengenalan: user.no_kad_pengenalan,
-    noPk: user.no_pk || '',
     jawatan: user.jawatan,
     profilePicture: user.profile_picture,
     jabatan: user.jabatan,
