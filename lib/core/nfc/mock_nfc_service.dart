@@ -9,13 +9,18 @@ class MockNfcService implements NfcService {
   ];
 
   int _index = 0;
+  int _scanGeneration = 0;
 
   @override
   Future<bool> isAvailable() async => true;
 
   @override
   Future<NfcScanResult> scan() async {
+    final generation = ++_scanGeneration;
     await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (generation != _scanGeneration) {
+      throw const NfcScanCancelledException();
+    }
 
     final tagId = _mockTags[_index % _mockTags.length];
     _index++;
@@ -26,5 +31,10 @@ class MockNfcService implements NfcService {
       technology: 'NFC-A (mock)',
       ndefPayload: 'patrol://checkpoint/$tagId',
     );
+  }
+
+  @override
+  Future<void> cancelScan() async {
+    _scanGeneration++;
   }
 }

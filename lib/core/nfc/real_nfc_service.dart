@@ -14,6 +14,7 @@ class RealNfcService implements NfcService {
       : _manager = manager ?? NfcManager.instance;
 
   final NfcManager _manager;
+  Completer<NfcScanResult>? _activeScan;
 
   @override
   Future<bool> isAvailable() async {
@@ -23,56 +24,109 @@ class RealNfcService implements NfcService {
 
   @override
   Future<NfcScanResult> scan() async {
+    final existingScan = _activeScan;
+    if (existingScan != null && !existingScan.isCompleted) {
+      throw StateError('Imbasan NFC sedang berjalan.');
+    }
+
     final completer = Completer<NfcScanResult>();
+    _activeScan = completer;
+    var discoveryHandled = false;
+    Timer? timeoutTimer;
 
-    await _manager.startSession(
-      pollingOptions: const {NfcPollingOption.iso14443},
-      alertMessageIos: 'Hold your iPhone near the patrol checkpoint tag.',
-      invalidateAfterFirstReadIos: true,
-      onDiscovered: (tag) async {
-        if (completer.isCompleted) return;
-
-        try {
-          final result = _normalizeTag(tag);
-          completer.complete(result);
-
-          if (Platform.isAndroid) {
-            await _manager.stopSession();
-          } else if (Platform.isIOS) {
-            await _manager.stopSession(alertMessageIos: 'Checkpoint scanned.');
-          }
-        } catch (error, stackTrace) {
-          completer.completeError(error, stackTrace);
-          await _stopQuietly(errorMessage: 'Unable to read this NFC tag.');
-        }
-      },
-      onSessionErrorIos: (error) {
-        if (!completer.isCompleted) {
-          completer.completeError(StateError(error.toString()));
-        }
-      },
+    // Keep an error listener attached while startSession is still awaiting the
+    // platform channel. This also makes a very early user cancellation safe.
+    unawaited(
+      completer.future.then<void>(
+        (_) {},
+        onError: (Object _, StackTrace __) {},
+      ),
     );
 
     try {
-      return await completer.future.timeout(const Duration(seconds: 30));
-    } on TimeoutException {
-      await _stopQuietly(errorMessage: 'NFC scan timed out.');
-      throw TimeoutException('No NFC tag detected within 30 seconds.');
+      await _manager.startSession(
+        pollingOptions: const {
+          NfcPollingOption.iso14443,
+          NfcPollingOption.iso15693,
+        },
+        alertMessageIos: 'Dekatkan bahagian atas iPhone pada tag checkpoint.',
+        invalidateAfterFirstReadIos: true,
+        onDiscovered: (tag) async {
+          if (completer.isCompleted || discoveryHandled) return;
+          discoveryHandled = true;
+
+          try {
+            final result = _normalizeTag(tag);
+            await _stopQuietly(alertMessage: 'Checkpoint berjaya diimbas.');
+            if (!completer.isCompleted) completer.complete(result);
+          } catch (error, stackTrace) {
+            await _stopQuietly(
+              errorMessage: 'Tag NFC ini tidak dapat dibaca.',
+            );
+            if (!completer.isCompleted) {
+              completer.completeError(error, stackTrace);
+            }
+          }
+        },
+        onSessionErrorIos: (error) {
+          if (completer.isCompleted) return;
+
+          final message = error.toString();
+          final normalized = message.toLowerCase().replaceAll(' ', '');
+          if (normalized.contains('usercancel')) {
+            completer.completeError(const NfcScanCancelledException());
+          } else {
+            completer.completeError(StateError(message));
+          }
+        },
+      );
+
+      if (completer.isCompleted) {
+        await _stopQuietly();
+      } else {
+        timeoutTimer = Timer(const Duration(seconds: 30), () async {
+          if (completer.isCompleted) return;
+          await _stopQuietly(
+            errorMessage: 'Masa imbasan NFC telah tamat.',
+          );
+          if (!completer.isCompleted) {
+            completer.completeError(
+              TimeoutException('Tiada tag NFC dikesan dalam masa 30 saat.'),
+            );
+          }
+        });
+      }
+
+      return await completer.future;
+    } finally {
+      timeoutTimer?.cancel();
+      if (identical(_activeScan, completer)) {
+        _activeScan = null;
+      }
     }
+  }
+
+  @override
+  Future<void> cancelScan() async {
+    final completer = _activeScan;
+    if (completer != null && !completer.isCompleted) {
+      completer.completeError(const NfcScanCancelledException());
+    }
+    await _stopQuietly();
   }
 
   NfcScanResult _normalizeTag(NfcTag tag) {
     if (Platform.isAndroid) {
       final androidTag = NfcTagAndroid.from(tag);
       if (androidTag == null) {
-        throw StateError('Android detected a tag but could not read its ID.');
+        throw StateError('Android mengesan tag tetapi ID tidak dapat dibaca.');
       }
 
       return NfcScanResult(
         tagId: _hex(androidTag.id),
         scannedAt: DateTime.now(),
         technology: androidTag.techList.isEmpty
-            ? 'Android NFC / ISO 14443'
+            ? 'Android NFC'
             : androidTag.techList.join(', '),
       );
     }
@@ -106,22 +160,28 @@ class RealNfcService implements NfcService {
       }
 
       throw StateError(
-        'iPhone detected the NFC tag, but this prototype could not extract an identifier from it.',
+        'iPhone mengesan tag tetapi ID tag tidak dapat dibaca.',
       );
     }
 
-    throw UnsupportedError('Real NFC is only enabled for Android and iOS.');
+    throw UnsupportedError('NFC sebenar hanya tersedia pada Android dan iOS.');
   }
 
-  Future<void> _stopQuietly({String? errorMessage}) async {
+  Future<void> _stopQuietly({
+    String? alertMessage,
+    String? errorMessage,
+  }) async {
     try {
       if (Platform.isIOS) {
-        await _manager.stopSession(errorMessageIos: errorMessage);
+        await _manager.stopSession(
+          alertMessageIos: alertMessage,
+          errorMessageIos: errorMessage,
+        );
       } else {
         await _manager.stopSession();
       }
     } catch (_) {
-      // Session may already have been invalidated by the OS.
+      // The OS may already have invalidated or closed the reader session.
     }
   }
 

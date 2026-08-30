@@ -9,6 +9,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
+import '../../core/nfc/nfc_scan_prompt.dart';
 import '../../core/nfc/nfc_service.dart';
 import '../../core/offline/offline_models.dart';
 import '../../core/offline/offline_store.dart';
@@ -228,10 +229,12 @@ class _PatrolScreenState extends State<PatrolScreen> {
       _error = null;
     });
     try {
-      if (!await widget.nfcService.isAvailable()) {
-        throw StateError('NFC tidak tersedia pada telefon ini.');
-      }
-      final raw = await widget.nfcService.scan();
+      final raw = await showNfcScanPrompt(
+        context: context,
+        nfcService: widget.nfcService,
+        title: 'Imbas Checkpoint NFC',
+      );
+      if (raw == null) return;
       final uid = _normalizeUid(raw.tagId);
       final checkpoint = bootstrap.checkpoints
           .where((item) => _normalizeUid(item.nfcUid) == uid)
