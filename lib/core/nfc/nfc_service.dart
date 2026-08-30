@@ -10,5 +10,6 @@ class NfcScanCancelledException implements Exception {
 abstract interface class NfcService {
   Future<bool> isAvailable();
   Future<NfcScanResult> scan();
+  Future<String> writeCheckpointTag();
   Future<void> cancelScan();
 }

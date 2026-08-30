@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'nfc_scan_result.dart';
 import 'nfc_service.dart';
 
@@ -10,6 +12,7 @@ class MockNfcService implements NfcService {
 
   int _index = 0;
   int _scanGeneration = 0;
+  String? _lastWrittenCheckpointId;
 
   @override
   Future<bool> isAvailable() async => true;
@@ -22,15 +25,28 @@ class MockNfcService implements NfcService {
       throw const NfcScanCancelledException();
     }
 
-    final tagId = _mockTags[_index % _mockTags.length];
+    final tagId = _lastWrittenCheckpointId ?? _mockTags[_index % _mockTags.length];
     _index++;
 
     return NfcScanResult(
       tagId: tagId,
       scannedAt: DateTime.now(),
       technology: 'NFC-A (mock)',
-      ndefPayload: 'patrol://checkpoint/$tagId',
+      ndefPayload: 'rimbakawal://checkpoint/$tagId',
     );
+  }
+
+  @override
+  Future<String> writeCheckpointTag() async {
+    final generation = ++_scanGeneration;
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (generation != _scanGeneration) {
+      throw const NfcScanCancelledException();
+    }
+    final random = Random();
+    final id = 'RK-${List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join().toUpperCase()}';
+    _lastWrittenCheckpointId = id;
+    return id;
   }
 
   @override

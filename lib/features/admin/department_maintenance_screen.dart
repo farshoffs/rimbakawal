@@ -3,7 +3,6 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../core/api/api_service.dart';
-import '../../core/nfc/nfc_scan_prompt.dart';
 import '../../core/nfc/nfc_service.dart';
 
 class DepartmentMaintenanceScreen extends StatefulWidget {
@@ -515,21 +514,25 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
     super.dispose();
   }
 
-  Future<void> _scanUid() async {
+  Future<void> _scanTag() async {
     if (_scanning) return;
     setState(() {
       _scanning = true;
       _error = null;
     });
     try {
-      final result = await showNfcScanPrompt(
-        context: context,
-        nfcService: widget.nfcService,
-        title: 'Imbas UID Tag NFC',
-      );
-      if (result == null) return;
+      final available = await widget.nfcService.isAvailable();
+      if (!available) {
+        throw StateError('NFC tidak tersedia pada peranti ini.');
+      }
+      final checkpointId = await widget.nfcService.writeCheckpointTag();
       if (!mounted) return;
-      _uidController.text = result.tagId.toUpperCase();
+      setState(() => _uidController.text = checkpointId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tag NFC berjaya ditetapkan untuk checkpoint ini.')),
+      );
+    } on NfcScanCancelledException {
+      // User closed the native NFC prompt.
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
@@ -543,7 +546,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
     final uid = _uidController.text.trim().toUpperCase();
     final position = int.tryParse(_positionController.text.trim());
     if (name.isEmpty || uid.isEmpty || position == null) {
-      setState(() => _error = 'Lengkapkan nama, UID tag NFC dan susunan checkpoint.');
+      setState(() => _error = 'Lengkapkan nama, Scan Tag dan susunan checkpoint.');
       return;
     }
     setState(() {
@@ -607,8 +610,8 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
                       controller: _uidController,
                       textCapitalization: TextCapitalization.characters,
                       decoration: const InputDecoration(
-                        labelText: 'UID tag NFC',
-                        hintText: 'Imbas tag atau masukkan UID',
+                        labelText: 'ID tag NFC',
+                        hintText: 'Tekan Scan Tag untuk menetapkan tag',
                         prefixIcon: Icon(Icons.nfc_rounded),
                       ),
                     ),
@@ -617,9 +620,9 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
                   SizedBox(
                     height: 56,
                     child: FilledButton.tonalIcon(
-                      onPressed: _scanning ? null : _scanUid,
+                      onPressed: _scanning ? null : _scanTag,
                       icon: const Icon(Icons.nfc_rounded),
-                      label: Text(_scanning ? 'Mengimbas…' : 'Imbas'),
+                      label: Text(_scanning ? 'Menulis…' : 'Scan Tag'),
                     ),
                   ),
                 ],
@@ -629,7 +632,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Versi web menggunakan simulasi NFC untuk ujian konfigurasi.',
+                    'Versi web menggunakan simulasi penulisan NFC untuk ujian konfigurasi.',
                     style: TextStyle(fontSize: 12),
                   ),
                 ),
