@@ -1,0 +1,3 @@
+RimbaKawal web preview rebuild trigger
+Source NFC writer commit: 04d1029bc8854cfdd0302ce4320f1a308687c58b
+Purpose: rebuild and deploy web production so Scan Tag UI/flow can be previewed in browser.
