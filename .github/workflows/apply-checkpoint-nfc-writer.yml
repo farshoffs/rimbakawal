@@ -1,0 +1,62 @@
+name: Apply Checkpoint NFC Tag Writer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply_checkpoint_nfc_writer.py
+      - .github/workflows/apply-checkpoint-nfc-writer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply checkpoint NFC writer patch
+        run: python3 scripts/apply_checkpoint_nfc_writer.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit validated NFC writer changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- \
+            lib/core/nfc/nfc_service.dart \
+            lib/core/nfc/mock_nfc_service.dart \
+            lib/core/nfc/real_nfc_service.dart \
+            lib/features/admin/department_maintenance_screen.dart; then
+            echo 'No NFC writer changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            lib/core/nfc/nfc_service.dart \
+            lib/core/nfc/mock_nfc_service.dart \
+            lib/core/nfc/real_nfc_service.dart \
+            lib/features/admin/department_maintenance_screen.dart
+          git commit -m 'Write checkpoint IDs to NFC tags'
+          git push origin HEAD:main
