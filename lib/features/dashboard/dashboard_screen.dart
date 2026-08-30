@@ -662,10 +662,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                       onTap: _openPatrol,
                     ),
                     _MenuData(
-                      icon: Icons.how_to_reg_rounded,
+                      icon: Icons.fingerprint_rounded,
                       title: 'Kehadiran',
-                      subtitle: 'Punch masuk dan keluar',
-                      onTap: () => _open(AttendanceScreen(api: widget.api)),
+                      subtitle: 'Rekod masuk/keluar dengan lokasi dan selfie',
+                      onTap: () => _open(AttendanceScreen(api: widget.api, user: _user)),
                     ),
                     _MenuData(
                       icon: Icons.history_rounded,

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/nfc/nfc_service.dart';
-import 'command_center_screen.dart';
 import 'attendance_history_screen.dart';
+import 'command_center_screen.dart';
 import 'department_maintenance_screen.dart';
 import 'live_patrol_map_screen.dart';
 import 'report_screen.dart';
@@ -49,6 +49,13 @@ class AdminScreen extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           _AdminMenuCard(
+            icon: Icons.fingerprint_rounded,
+            title: 'Sejarah Kehadiran',
+            subtitle: 'Semak punch masuk/keluar, geofence dan detail pengesahan wajah.',
+            onTap: () => _open(context, AttendanceHistoryScreen(api: api)),
+          ),
+          const SizedBox(height: 10),
+          _AdminMenuCard(
             icon: Icons.sos_rounded,
             title: 'Pengurusan SOS',
             subtitle:
@@ -61,13 +68,6 @@ class AdminScreen extends StatelessWidget {
             title: 'Senarai Pengguna',
             subtitle: 'Tambah pengguna dan tetapkan Jabatan.',
             onTap: () => _open(context, UserMaintenanceScreen(api: api)),
-          ),
-          const SizedBox(height: 10),
-          _AdminMenuCard(
-            icon: Icons.fact_check_rounded,
-            title: 'Sejarah Kehadiran',
-            subtitle: 'Semak punch masuk/keluar, lokasi dan bukti padanan muka.',
-            onTap: () => _open(context, AttendanceHistoryScreen(api: api)),
           ),
           const SizedBox(height: 10),
           _AdminMenuCard(
