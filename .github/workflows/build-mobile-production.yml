@@ -106,9 +106,15 @@ jobs:
           --dart-define=FIREBASE_IOS_APP_ID=${{ env.FIREBASE_IOS_APP_ID }}
           --dart-define=FIREBASE_WEB_VAPID_KEY=${{ env.FIREBASE_WEB_VAPID_KEY }}
 
-      - name: Package unsigned iOS app
-        working-directory: ${{ runner.temp }}/rimbakawal-mobile/build/ios/iphoneos
-        run: zip -qry "$RUNNER_TEMP/RimbaKawal-iOS-Production-Unsigned.zip" Runner.app
+      - name: Package unsigned iOS IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/Payload"
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$RUNNER_TEMP/rimbakawal-mobile/build/ios/iphoneos/Runner.app" "$RUNNER_TEMP/Payload/Runner.app"
+          cd "$RUNNER_TEMP"
+          zip -qry RimbaKawal-iOS-Production-Unsigned.ipa Payload
 
       - name: Upload iOS release file
         uses: actions/upload-artifact@v4
@@ -116,4 +122,4 @@ jobs:
           name: RimbaKawal-iOS-Production-Unsigned
           if-no-files-found: error
           retention-days: 14
-          path: ${{ runner.temp }}/RimbaKawal-iOS-Production-Unsigned.zip
+          path: ${{ runner.temp }}/RimbaKawal-iOS-Production-Unsigned.ipa
