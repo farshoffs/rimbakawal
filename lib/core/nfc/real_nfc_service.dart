@@ -39,7 +39,7 @@ class RealNfcService implements NfcService {
     unawaited(
       completer.future.then<void>(
         (_) {},
-        onError: (Object _, StackTrace __) {},
+        onError: (Object _, StackTrace _) {},
       ),
     );
 
