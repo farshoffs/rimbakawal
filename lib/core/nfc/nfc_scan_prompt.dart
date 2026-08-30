@@ -60,7 +60,7 @@ class _NfcScanPromptState extends State<_NfcScanPrompt> {
     try {
       if (!await widget.nfcService.isAvailable()) {
         throw StateError(
-          'NFC tidak tersedia. Pastikan telefon menyokong NFC dan hidupkan NFC dalam Tetapan Android.',
+          'NFC tidak tersedia. Pastikan peranti menyokong NFC. Pada Android, hidupkan NFC dalam Tetapan. Pada iPhone, gunakan peranti yang menyokong Core NFC.',
         );
       }
       if (!mounted || _closing) return;

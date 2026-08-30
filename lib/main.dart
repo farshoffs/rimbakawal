@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'core/api/api_service.dart';
@@ -144,7 +145,9 @@ class _AuthGateState extends State<_AuthGate> {
   @override
   void initState() {
     super.initState();
-    _nfcService = useMockNfc ? MockNfcService() : RealNfcService();
+    _nfcService = kIsWeb
+        ? (useMockNfc ? MockNfcService() : RealNfcService())
+        : RealNfcService();
     _session = _api.getSession();
   }
 

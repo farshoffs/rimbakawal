@@ -37,9 +37,21 @@ class _NotificationAlertGateState extends State<NotificationAlertGate> {
       await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
+          backgroundColor: const Color(0xFF222636),
           icon: Icon(_icon(alert.kind), size: 48, color: _accent(alert.kind)),
-          title: Text(alert.title, textAlign: TextAlign.center),
-          content: Text(alert.body, textAlign: TextAlign.center),
+          title: Text(
+            alert.title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          content: Text(
+            alert.body,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white),
+          ),
           actionsAlignment: MainAxisAlignment.center,
           actions: [
             FilledButton.icon(

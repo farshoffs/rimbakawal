@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:torch_light/torch_light.dart';
@@ -544,6 +545,60 @@ class _PatrolScreenState extends State<PatrolScreen> {
     ).showSnackBar(const SnackBar(content: Text('Status “Saya OK” disimpan.')));
   }
 
+  Future<void> _triggerSos() async {
+    if (_ending) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Aktifkan SOS?'),
+        content: const Text(
+          'SOS akan direkod bersama lokasi rondaan semasa dan dihantar kepada pemantauan RimbaKawal. Ia tidak menghubungi talian kecemasan secara automatik.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Batal'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFC0392B),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.sos_rounded),
+            label: const Text('AKTIFKAN SOS'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await _store.queueEvent(
+        userId: widget.user.id,
+        type: 'sos',
+        location: await _captureEventLocation(),
+        payload: {
+          'note': 'SOS dicetuskan semasa Rondaan Aktif',
+          'clientSessionId': _clientSessionId,
+        },
+      );
+      unawaited(_sync.syncNow());
+      await SystemSound.play(SystemSoundType.alert);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'SOS telah direkod dan sedang dihantar kepada pusat pemantauan.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = _cleanError(error));
+    }
+  }
+
   Future<void> _toggleTorch() async {
     if (_torchChanging) return;
     setState(() => _torchChanging = true);
@@ -950,6 +1005,29 @@ class _PatrolScreenState extends State<PatrolScreen> {
                     bootstrap?.sessionIntervalMinutes ??
                     widget.user.sessionIntervalMinutes,
                 sessionLabel: sessionLabel,
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 58,
+                child: FilledButton.icon(
+                  onPressed: _ending ? null : _triggerSos,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFC0392B),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  icon: const Icon(Icons.sos_rounded, size: 28),
+                  label: const Text(
+                    'SOS',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),

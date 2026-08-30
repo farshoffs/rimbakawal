@@ -1,6 +1,5 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 import 'package:nfc_manager/nfc_manager.dart';
 import 'package:nfc_manager/nfc_manager_android.dart';
@@ -18,8 +17,17 @@ class RealNfcService implements NfcService {
 
   @override
   Future<bool> isAvailable() async {
-    final availability = await _manager.checkAvailability();
-    return availability == NfcAvailability.enabled;
+    if (kIsWeb) return false;
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return false;
+    }
+    try {
+      final availability = await _manager.checkAvailability();
+      return availability == NfcAvailability.enabled;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
@@ -116,7 +124,7 @@ class RealNfcService implements NfcService {
   }
 
   NfcScanResult _normalizeTag(NfcTag tag) {
-    if (Platform.isAndroid) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
       final androidTag = NfcTagAndroid.from(tag);
       if (androidTag == null) {
         throw StateError('Android mengesan tag tetapi ID tidak dapat dibaca.');
@@ -131,7 +139,7 @@ class RealNfcService implements NfcService {
       );
     }
 
-    if (Platform.isIOS) {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
       final miFare = MiFareIos.from(tag);
       if (miFare != null) {
         return NfcScanResult(
@@ -172,7 +180,7 @@ class RealNfcService implements NfcService {
     String? errorMessage,
   }) async {
     try {
-      if (Platform.isIOS) {
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
         await _manager.stopSession(
           alertMessageIos: alertMessage,
           errorMessageIos: errorMessage,

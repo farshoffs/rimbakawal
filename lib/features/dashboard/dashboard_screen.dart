@@ -1,10 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:geolocator/geolocator.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
@@ -42,7 +39,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     with WidgetsBindingObserver {
   final OfflineStore _store = OfflineStore.instance;
   final OfflineSyncService _sync = OfflineSyncService.instance;
-  final AudioPlayer _alarmPlayer = AudioPlayer();
 
   late AppUser _user;
   late int _sessionIntervalMinutes;
@@ -50,7 +46,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   Timer? _sessionTimer;
   Timer? _configTimer;
   String? _lastSessionKey;
-  bool _alarmShowing = false;
   bool _forcingRelogin = false;
 
   @override
@@ -92,7 +87,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     _sync.removeListener(_changed);
     _sessionTimer?.cancel();
     _configTimer?.cancel();
-    _alarmPlayer.dispose();
     super.dispose();
   }
 
@@ -154,7 +148,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (_forcingRelogin || !mounted) return;
     _forcingRelogin = true;
     try {
-      await _alarmPlayer.stop();
       try {
         await NotificationService.instance.unregisterCurrentDevice();
       } catch (_) {}
@@ -173,231 +166,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     } finally {
       _forcingRelogin = false;
     }
-  }
-
-  Future<void> _playAlarm() async {
-    try {
-      await _alarmPlayer.setReleaseMode(ReleaseMode.loop);
-      await _alarmPlayer.setVolume(1);
-      await _alarmPlayer.play(AssetSource('audio/patrol_alarm.wav'));
-    } catch (_) {
-      await SystemSound.play(SystemSoundType.alert);
-    }
-  }
-
-  Future<void> _showSessionAlarm({bool testMode = false}) async {
-    if (!mounted || _alarmShowing) return;
-    _alarmShowing = true;
-    try {
-      await _playAlarm();
-      if (!mounted) return;
-      final startPatrol = await showGeneralDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        barrierColor: Colors.black.withValues(alpha: 0.92),
-        transitionDuration: const Duration(milliseconds: 260),
-        pageBuilder: (context, _, _) => Scaffold(
-          backgroundColor: const Color(0xFF080910),
-          body: SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(28),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 520),
-                  child: Container(
-                    padding: const EdgeInsets.all(28),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(32),
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFF331315),
-                          Color(0xFF171827),
-                          Color(0xFF251A4F),
-                        ],
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        const Icon(
-                          Icons.notifications_active_rounded,
-                          size: 92,
-                          color: Color(0xFFFF6B6B),
-                        ),
-                        const SizedBox(height: 20),
-                        Text(
-                          testMode ? 'UJIAN PENGGERA' : 'SESI RONDAAN BARU',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                              ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _user.jabatan,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          testMode
-                              ? 'Ini ialah ujian paparan dan bunyi penggera RimbaKawal.'
-                              : 'Sesi baharu telah bermula. Lengkapkan semua checkpoint dalam tempoh sesi. Rekod rondaan akan disimpan pada peranti sebelum disegerakkan.',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(height: 1.5),
-                        ),
-                        const SizedBox(height: 26),
-                        if (!testMode)
-                          FilledButton.icon(
-                            onPressed: () => Navigator.of(context).pop(true),
-                            icon: const Icon(Icons.directions_walk_rounded),
-                            label: const Text('MULA RONDAAN'),
-                          ),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(false),
-                          child: const Text('Tutup penggera'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-      if (startPatrol == true && mounted) _openPatrol();
-    } finally {
-      await _alarmPlayer.stop();
-      _alarmShowing = false;
-    }
-  }
-
-  Future<Map<String, dynamic>?> _lastLocation() async {
-    try {
-      final position = await Geolocator.getLastKnownPosition();
-      if (position == null) return null;
-      return {
-        'latitude': position.latitude,
-        'longitude': position.longitude,
-        'accuracy': position.accuracy,
-      };
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> _triggerSos() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rekod SOS?'),
-        content: const Text(
-          'SOS akan disimpan pada telefon dahulu dan dihantar secara automatik apabila ada internet. Ia tidak menghubungi talian kecemasan secara automatik.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('REKOD SOS'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    await _store.queueEvent(
-      userId: _user.id,
-      type: 'sos',
-      location: await _lastLocation(),
-      payload: const {'note': 'SOS dicetuskan dari dashboard'},
-    );
-    unawaited(_sync.syncNow());
-    await SystemSound.play(SystemSoundType.alert);
-    if (!mounted) return;
-    await showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.black,
-      pageBuilder: (context, _, _) => Scaffold(
-        backgroundColor: const Color(0xFF210608),
-        body: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.sos_rounded,
-                    size: 110,
-                    color: Colors.redAccent,
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'SOS DISIMPAN',
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Rekod SOS telah disimpan pada peranti dan akan dihantar secara automatik apabila sambungan tersedia.',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Tutup'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showQuickActions() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.alarm_rounded)),
-                title: const Text('Uji Penggera'),
-                subtitle: const Text('Uji paparan penuh dan bunyi penggera.'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  unawaited(_showSessionAlarm(testMode: true));
-                },
-              ),
-              ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.sos_rounded)),
-                title: const Text('SOS'),
-                subtitle: const Text('Simpan SOS pada telefon dahulu.'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  unawaited(_triggerSos());
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   Future<void> _enableNotifications() async {
@@ -528,11 +296,6 @@ class _DashboardScreenState extends State<DashboardScreen>
             tooltip: 'Aktifkan pemberitahuan',
             onPressed: _enableNotifications,
             icon: const Icon(Icons.notifications_active_rounded),
-          ),
-          IconButton(
-            tooltip: 'Penggera / SOS',
-            onPressed: _showQuickActions,
-            icon: const Icon(Icons.crisis_alert_rounded),
           ),
           IconButton(
             tooltip: 'Log keluar',
