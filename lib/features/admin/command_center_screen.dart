@@ -212,6 +212,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     final patrols = _filteredPatrols;
     final incidents = data?.incidents ?? const <Map<String, dynamic>>[];
     final sos = data?.sosEvents ?? const <Map<String, dynamic>>[];
+    final attendance = data?.attendance ?? const <Map<String, dynamic>>[];
 
     return Scaffold(
       appBar: AppBar(
@@ -241,11 +242,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                       summary: summary,
                       generatedAt: data?.generatedAt,
                       onMap: _openLiveMap,
-                    ),
-                    const SizedBox(height: 12),
-                    _AttendanceOverview(
-                      summary: data?.attendanceSummary ?? const <String, dynamic>{},
-                      recent: data?.attendanceRecent ?? const <Map<String, dynamic>>[],
                     ),
                     if (_error != null) ...[
                       const SizedBox(height: 12),
@@ -347,6 +343,45 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                                 .toList(),
                           );
                         },
+                      ),
+                    const SizedBox(height: 22),
+                    _SectionHeader(
+                      title: 'Kehadiran Hari Ini',
+                      subtitle: '${attendance.length} rekod masuk/keluar',
+                    ),
+                    const SizedBox(height: 10),
+                    if (attendance.isEmpty)
+                      const _EmptyState(
+                        icon: Icons.how_to_reg_outlined,
+                        text: 'Belum ada rekod kehadiran hari ini.',
+                      )
+                    else
+                      ...attendance.take(12).map(
+                        (row) => Card(
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              child: Icon(row['status'] == 'accepted'
+                                  ? Icons.verified_user_rounded
+                                  : Icons.gpp_bad_rounded),
+                            ),
+                            title: Text(
+                              '${row['nama'] ?? 'Pengguna'} • ${row['eventType'] == 'in' ? 'MASUK' : 'KELUAR'}',
+                              style: const TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                            subtitle: Text(
+                              '${row['jabatan'] ?? '-'} • ${_time(row['recordedAt'])}\n'
+                              'Jarak ${((row['distanceMeters'] as num?) ?? 0).toStringAsFixed(0)}m • '
+                              'Muka ${((((row['faceSimilarity'] as num?) ?? 0) * 100)).toStringAsFixed(1)}%',
+                            ),
+                            isThreeLine: true,
+                            trailing: Icon(
+                              row['status'] == 'accepted'
+                                  ? Icons.check_circle_rounded
+                                  : Icons.cancel_rounded,
+                              color: row['status'] == 'accepted' ? Colors.green : Colors.red,
+                            ),
+                          ),
+                        ),
                       ),
                     const SizedBox(height: 22),
                     _SectionHeader(
@@ -495,6 +530,24 @@ class _OperationsHero extends StatelessWidget {
                       label: 'PENGAWAL',
                       icon: Icons.shield_rounded,
                       color: const Color(0xFF74B9FF),
+                    ),
+                  ),
+                  SizedBox(
+                    width: width,
+                    child: _HeroMetric(
+                      value: _value('attendancePresent'),
+                      label: 'HADIR',
+                      icon: Icons.groups_rounded,
+                      color: const Color(0xFF00CEC9),
+                    ),
+                  ),
+                  SizedBox(
+                    width: width,
+                    child: _HeroMetric(
+                      value: _value('attendancePunches'),
+                      label: 'PUNCH',
+                      icon: Icons.how_to_reg_rounded,
+                      color: const Color(0xFF81ECEC),
                     ),
                   ),
                   SizedBox(
@@ -854,72 +907,3 @@ String _incidentSeverityLabel(String severity) => switch (severity.toLowerCase()
       'normal' => 'BIASA',
       _ => severity.toUpperCase(),
     };
-
-
-class _AttendanceOverview extends StatelessWidget {
-  const _AttendanceOverview({required this.summary, required this.recent});
-  final Map<String, dynamic> summary;
-  final List<Map<String, dynamic>> recent;
-
-  String _time(Object? value) {
-    final date = DateTime.tryParse(value as String? ?? '')?.toLocal();
-    if (date == null) return '-';
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(date.hour)}:${two(date.minute)}';
-  }
-
-  @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(children: [
-                const Icon(Icons.fingerprint_rounded),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Kehadiran Hari Ini', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900))),
-              ]),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _AttendanceMetric(label: 'Hadir', value: '${summary['presentUsers'] ?? 0}'),
-                  _AttendanceMetric(label: 'Dalam Kawasan', value: '${summary['currentlyIn'] ?? 0}'),
-                  _AttendanceMetric(label: 'Tidak Hadir', value: '${summary['absentUsers'] ?? 0}'),
-                  _AttendanceMetric(label: 'Semak Wajah', value: '${summary['faceReviewRequired'] ?? 0}'),
-                ],
-              ),
-              if (recent.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Divider(),
-                ...recent.take(5).map((row) => ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(row['punchType'] == 'IN' ? Icons.login_rounded : Icons.logout_rounded),
-                      title: Text(row['userName'] as String? ?? 'Pengguna', style: const TextStyle(fontWeight: FontWeight.w800)),
-                      subtitle: Text('${row['department'] ?? '-'} • ${row['punchType'] == 'IN' ? 'MASUK' : 'KELUAR'} ${_time(row['punchedAt'])}'),
-                      trailing: Text(row['faceScore'] == null ? 'SEMAK' : '${(row['faceScore'] as num).round()}%', style: const TextStyle(fontWeight: FontWeight.w900)),
-                    )),
-              ],
-            ],
-          ),
-        ),
-      );
-}
-
-class _AttendanceMetric extends StatelessWidget {
-  const _AttendanceMetric({required this.label, required this.value});
-  final String label;
-  final String value;
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [Text(value, style: const TextStyle(fontWeight: FontWeight.w900)), const SizedBox(width: 5), Text(label)]),
-      );
-}

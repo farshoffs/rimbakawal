@@ -6,7 +6,6 @@ import '../../core/api/api_service.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
   const AttendanceHistoryScreen({required this.api, super.key});
-
   final ApiService api;
 
   @override
@@ -15,136 +14,76 @@ class AttendanceHistoryScreen extends StatefulWidget {
 
 class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   DateTime _date = DateTime.now();
-  late Future<AttendanceAdminData> _future = widget.api.getAdminAttendance(_date);
+  int? _departmentId;
+  late Future<List<AttendanceRecord>> _records;
+  late Future<List<DepartmentRecord>> _departments;
 
-  void _refresh() => setState(() => _future = widget.api.getAdminAttendance(_date));
+  @override
+  void initState() {
+    super.initState();
+    _departments = widget.api.getAdminDepartments();
+    _reload();
+  }
+
+  void _reload() => setState(() {
+        _records = widget.api.getAdminAttendance(
+          _date,
+          departmentId: _departmentId,
+        );
+      });
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
-      firstDate: DateTime(2025),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
       initialDate: _date,
+      firstDate: DateTime(2024),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
     );
     if (picked != null) {
       _date = picked;
-      _refresh();
+      _reload();
     }
   }
 
-  String _time(DateTime value) {
-    final local = value.toLocal();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(local.hour)}:${two(local.minute)}';
-  }
-
-  String _dateLabel(DateTime value) {
-    final local = value.toLocal();
-    return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year}';
-  }
-
-  Color _faceColor(String status) => switch (status) {
-        'matched' => const Color(0xFF00B894),
-        'different' => const Color(0xFFFF7675),
-        _ => const Color(0xFFFDCB6E),
-      };
-
-  ImageProvider<Object>? _image(String? source) {
-    if (source == null || source.isEmpty) return null;
-    if (source.startsWith('data:image') && source.contains(',')) {
-      try { return MemoryImage(base64Decode(source.split(',').last)); } catch (_) { return null; }
-    }
-    final uri = Uri.tryParse(source);
-    return uri != null && uri.hasScheme ? NetworkImage(source) : null;
-  }
-
-  Future<void> _showDetail(AttendanceRecord record) async {
-    var current = record;
-    var savingReview = false;
-    final profile = _image(record.profilePicture);
-    final selfie = _image(record.selfieData);
-    await showDialog<void>(
+  Future<void> _showEvidence(AttendanceRecord record) async {
+    showDialog<void>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => Dialog(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text('Detail Kehadiran', style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+      builder: (dialogContext) => FutureBuilder<String>(
+        future: widget.api.getAttendanceEvidence(record.id),
+        builder: (context, snapshot) => AlertDialog(
+          title: Text('${record.nama ?? 'Pengguna'} • Bukti muka'),
+          content: SizedBox(
+            width: 440,
+            child: snapshot.connectionState == ConnectionState.waiting
+                ? const Center(child: CircularProgressIndicator())
+                : snapshot.hasError
+                    ? Text(snapshot.error.toString())
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Image.memory(
+                              base64Decode(snapshot.requireData.split(',').last),
+                              height: 320,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Skor padanan: ${((record.faceSimilarity ?? 0) * 100).toStringAsFixed(1)}% • '
+                            '${record.faceMatched ? 'DISAHKAN' : 'TIDAK SEPADAN'}',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ],
                       ),
-                      IconButton(onPressed: () => Navigator.pop(dialogContext), icon: const Icon(Icons.close_rounded)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text('${current.userName ?? 'Pengguna'} • ${current.department ?? '-'}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                  Text('${current.punchType == 'IN' ? 'MASUK' : 'KELUAR'} • ${_time(current.punchedAt)} • ${current.distanceMeters.toStringAsFixed(0)}m dari pusat'),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Expanded(child: _PhotoPanel(title: 'Gambar Profil', image: profile)),
-                      const SizedBox(width: 12),
-                      Expanded(child: _PhotoPanel(title: 'Selfie Punch', image: selfie)),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _InfoChip(icon: Icons.face_retouching_natural_rounded, text: 'Status: ${current.faceStatus}'),
-                      _InfoChip(icon: Icons.analytics_rounded, text: 'Skor: ${current.faceScore?.round() ?? '-'}%'),
-                      _InfoChip(icon: Icons.gps_fixed_rounded, text: 'GPS ±${current.accuracyMeters?.toStringAsFixed(0) ?? '-'}m'),
-                      _InfoChip(icon: Icons.location_on_rounded, text: '${current.latitude.toStringAsFixed(6)}, ${current.longitude.toStringAsFixed(6)}'),
-                      if (current.isReviewed)
-                        _InfoChip(icon: Icons.verified_rounded, text: 'Disemak${current.reviewedByName == null ? '' : ' oleh ${current.reviewedByName}'}'),
-                    ],
-                  ),
-                  if (current.faceReason != null && current.faceReason!.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    Text('Catatan pengecaman: ${current.faceReason}'),
-                  ],
-                  const SizedBox(height: 20),
-                  FilledButton.icon(
-                    onPressed: current.isReviewed || savingReview
-                        ? null
-                        : () async {
-                            setDialogState(() => savingReview = true);
-                            try {
-                              final updated = await widget.api.reviewAttendanceRecord(current.id);
-                              if (!dialogContext.mounted) return;
-                              setDialogState(() {
-                                current = updated;
-                                savingReview = false;
-                              });
-                              _refresh();
-                            } catch (error) {
-                              if (!dialogContext.mounted) return;
-                              setDialogState(() => savingReview = false);
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                SnackBar(content: Text(error.toString())),
-                              );
-                            }
-                          },
-                    icon: Icon(current.isReviewed ? Icons.verified_rounded : Icons.task_alt_rounded),
-                    label: Text(
-                      current.isReviewed
-                          ? 'TELAH DISEMAK'
-                          : savingReview
-                              ? 'MENYIMPAN…'
-                              : 'DISEMAK',
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Tutup'),
+            ),
+          ],
         ),
       ),
     );
@@ -152,109 +91,101 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    String two(int value) => value.toString().padLeft(2, '0');
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sejarah Kehadiran'),
-        actions: [
-          TextButton.icon(onPressed: _pickDate, icon: const Icon(Icons.calendar_month_rounded), label: Text(_dateLabel(_date))),
-          IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh_rounded)),
-        ],
-      ),
-      body: FutureBuilder<AttendanceAdminData>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-          if (snapshot.hasError) return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(snapshot.error.toString())));
-          final data = snapshot.data!;
-          final summary = data.summary;
-          return RefreshIndicator(
-            onRefresh: () async => _refresh(),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 30),
+      appBar: AppBar(title: const Text('Sejarah Kehadiran')),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               children: [
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _SummaryCard(label: 'Hadir', value: '${summary['presentUsers'] ?? 0}', icon: Icons.how_to_reg_rounded),
-                    _SummaryCard(label: 'Dalam Kawasan', value: '${summary['currentlyIn'] ?? 0}', icon: Icons.location_on_rounded),
-                    _SummaryCard(label: 'Tidak Hadir', value: '${summary['absentUsers'] ?? 0}', icon: Icons.person_off_rounded),
-                    _SummaryCard(label: 'Semak Wajah', value: '${summary['faceReviewRequired'] ?? 0}', icon: Icons.face_retouching_natural_rounded),
-                  ],
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickDate,
+                    icon: const Icon(Icons.calendar_month_rounded),
+                    label: Text('${two(_date.day)}/${two(_date.month)}/${_date.year}'),
+                  ),
                 ),
-                const SizedBox(height: 18),
-                if (data.records.isEmpty)
-                  const Card(child: Padding(padding: EdgeInsets.all(18), child: Text('Tiada rekod kehadiran pada tarikh ini.')))
-                else
-                  ...data.records.map((record) {
-                    final color = _faceColor(record.faceStatus);
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FutureBuilder<List<DepartmentRecord>>(
+                    future: _departments,
+                    builder: (context, snapshot) => DropdownButtonFormField<int?>(
+                      initialValue: _departmentId,
+                      decoration: const InputDecoration(labelText: 'Jabatan'),
+                      items: [
+                        const DropdownMenuItem<int?>(value: null, child: Text('Semua Jabatan')),
+                        ...(snapshot.data ?? const <DepartmentRecord>[]).map(
+                          (department) => DropdownMenuItem<int?>(
+                            value: department.id,
+                            child: Text(department.name, overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        _departmentId = value;
+                        _reload();
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: FutureBuilder<List<AttendanceRecord>>(
+              future: _records,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text(snapshot.error.toString()));
+                }
+                final records = snapshot.data ?? const <AttendanceRecord>[];
+                if (records.isEmpty) {
+                  return const Center(child: Text('Tiada rekod kehadiran untuk tarikh ini.'));
+                }
+                return ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: records.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final record = records[index];
+                    final local = record.recordedAt.toLocal();
                     return Card(
                       child: ListTile(
-                        onTap: () => _showDetail(record),
-                        leading: CircleAvatar(backgroundImage: _image(record.profilePicture), child: _image(record.profilePicture) == null ? const Icon(Icons.person_rounded) : null),
-                        title: Text(record.userName ?? 'Pengguna', style: const TextStyle(fontWeight: FontWeight.w900)),
-                        subtitle: Text('${record.department ?? '-'} • ${record.punchType == 'IN' ? 'MASUK' : 'KELUAR'} ${_time(record.punchedAt)} • ${record.distanceMeters.toStringAsFixed(0)}m'),
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                          decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(99)),
-                          child: Text(record.faceScore == null ? 'SEMAK' : '${record.faceScore!.round()}%', style: TextStyle(color: color, fontWeight: FontWeight.w900)),
+                        onTap: () => _showEvidence(record),
+                        leading: CircleAvatar(
+                          child: Icon(record.status == 'accepted'
+                              ? Icons.verified_user_rounded
+                              : Icons.gpp_bad_rounded),
+                        ),
+                        title: Text(
+                          '${record.nama ?? 'Pengguna'} • ${record.eventType == 'in' ? 'MASUK' : 'KELUAR'}',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        subtitle: Text(
+                          '${record.jabatan ?? ''}\n'
+                          '${two(local.hour)}:${two(local.minute)} • Jarak ${record.distanceMeters.toStringAsFixed(0)}m • '
+                          'Muka ${((record.faceSimilarity ?? 0) * 100).toStringAsFixed(1)}%'
+                          '${record.rejectionReason == null ? '' : '\n${record.rejectionReason}'}',
+                        ),
+                        isThreeLine: true,
+                        trailing: Icon(
+                          record.status == 'accepted' ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                          color: record.status == 'accepted' ? Colors.green : Colors.red,
                         ),
                       ),
                     );
-                  }),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _PhotoPanel extends StatelessWidget {
-  const _PhotoPanel({required this.title, required this.image});
-  final String title;
-  final ImageProvider<Object>? image;
-  @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 8),
-          AspectRatio(
-            aspectRatio: 1,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: image == null
-                  ? Container(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: const Icon(Icons.image_not_supported_rounded, size: 42))
-                  : Image(image: image!, fit: BoxFit.cover),
+                  },
+                );
+              },
             ),
           ),
         ],
-      );
-}
-
-class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.icon, required this.text});
-  final IconData icon;
-  final String text;
-  @override
-  Widget build(BuildContext context) => Chip(avatar: Icon(icon, size: 16), label: Text(text));
-}
-
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.label, required this.value, required this.icon});
-  final String label;
-  final String value;
-  final IconData icon;
-  @override
-  Widget build(BuildContext context) => SizedBox(
-        width: 160,
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(icon), const SizedBox(height: 8), Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)), Text(label)]),
-          ),
-        ),
-      );
+      ),
+    );
+  }
 }

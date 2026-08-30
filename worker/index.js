@@ -69,11 +69,6 @@ export default {
         return updateUserDepartment(request, env, Number(match[1]));
       }
 
-      match = url.pathname.match(/^\/api\/admin\/patrol-sessions\/(.+)$/);
-      if (match && request.method === 'DELETE') {
-        return deletePatrolSession(request, env, decodeURIComponent(match[1]));
-      }
-
       return json({ error: 'Not found' }, 404);
     } catch (error) {
       console.error(error);
@@ -180,34 +175,6 @@ async function updateProfilePicture(request, env) {
 
   const updated = await getUserById(env, auth.user.id);
   return json({ user: publicUser(updated) });
-}
-
-async function deletePatrolSession(request, env, clientSessionId) {
-  const auth = await requireUser(request, env);
-  if (auth.response) return auth.response;
-  const role = String(auth.user.jawatan || '').trim().toLowerCase();
-  if (role !== 'management') {
-    return json({ error: 'Hanya Pengurusan boleh memadam sesi rondaan.' }, 403);
-  }
-
-  const sessionId = String(clientSessionId || '').trim();
-  if (!sessionId || sessionId.length > 220) {
-    return json({ error: 'Sesi rondaan tidak sah.' }, 400);
-  }
-
-  const existing = await env.DB.prepare(
-    `SELECT id FROM patrol_session_history WHERE client_session_id = ? LIMIT 1`,
-  ).bind(sessionId).first();
-  if (!existing) return json({ error: 'Sesi rondaan tidak ditemui.' }, 404);
-
-  await env.DB.batch([
-    env.DB.prepare('DELETE FROM live_patrol_trail WHERE client_session_id = ?').bind(sessionId),
-    env.DB.prepare('DELETE FROM live_patrol_presence WHERE client_session_id = ?').bind(sessionId),
-    env.DB.prepare('DELETE FROM nfc_scans WHERE client_session_id = ?').bind(sessionId),
-    env.DB.prepare('DELETE FROM patrol_activity_log WHERE client_session_id = ?').bind(sessionId),
-    env.DB.prepare('DELETE FROM patrol_session_history WHERE client_session_id = ?').bind(sessionId),
-  ]);
-  return json({ ok: true });
 }
 
 async function getScans(request, env, url) {
@@ -538,6 +505,7 @@ async function adminDepartments(request, env) {
 
   const result = await env.DB.prepare(
     `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
+            d.attendance_latitude, d.attendance_longitude, d.attendance_radius_meters,
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
      LEFT JOIN checkpoints c ON c.department_id = d.id
@@ -556,8 +524,13 @@ async function createDepartment(request, env) {
   const name = String(body.name ?? '').trim();
   const interval = Number(body.sessionIntervalMinutes ?? 120);
   const startMinutes = Number(body.sessionStartMinutes ?? 420);
+  const latitude = optionalCoordinate(body.attendanceLatitude, -90, 90);
+  const longitude = optionalCoordinate(body.attendanceLongitude, -180, 180);
+  const radius = Number(body.attendanceRadiusMeters ?? 200);
   const validation = validateDepartment(name, interval, startMinutes);
   if (validation) return json({ error: validation }, 400);
+  const geofenceValidation = validateGeofence(latitude, longitude, radius);
+  if (geofenceValidation) return json({ error: geofenceValidation }, 400);
 
   const duplicate = await env.DB.prepare('SELECT id FROM departments WHERE LOWER(name) = LOWER(?) LIMIT 1')
     .bind(name)
@@ -565,9 +538,11 @@ async function createDepartment(request, env) {
   if (duplicate) return json({ error: 'Jabatan dengan nama ini sudah wujud.' }, 409);
 
   const result = await env.DB.prepare(
-    `INSERT INTO departments (name, session_interval_minutes, session_start_minutes, active, updated_at)
-     VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)`,
-  ).bind(name, interval, startMinutes).run();
+    `INSERT INTO departments
+      (name, session_interval_minutes, session_start_minutes, active,
+       attendance_latitude, attendance_longitude, attendance_radius_meters, updated_at)
+     VALUES (?, ?, ?, 1, ?, ?, ?, CURRENT_TIMESTAMP)`,
+  ).bind(name, interval, startMinutes, latitude, longitude, radius).run();
   const department = await getDepartmentById(env, result.meta?.last_row_id);
   return json({ department: departmentJson(department) }, 201);
 }
@@ -580,9 +555,14 @@ async function updateDepartment(request, env, departmentId) {
   const name = String(body.name ?? '').trim();
   const interval = Number(body.sessionIntervalMinutes ?? 120);
   const startMinutes = Number(body.sessionStartMinutes ?? 420);
+  const latitude = optionalCoordinate(body.attendanceLatitude, -90, 90);
+  const longitude = optionalCoordinate(body.attendanceLongitude, -180, 180);
+  const radius = Number(body.attendanceRadiusMeters ?? 200);
   const active = body.active === false ? 0 : 1;
   const validation = validateDepartment(name, interval, startMinutes);
   if (validation) return json({ error: validation }, 400);
+  const geofenceValidation = validateGeofence(latitude, longitude, radius);
+  if (geofenceValidation) return json({ error: geofenceValidation }, 400);
 
   const duplicate = await env.DB.prepare(
     'SELECT id FROM departments WHERE LOWER(name) = LOWER(?) AND id <> ? LIMIT 1',
@@ -595,9 +575,11 @@ async function updateDepartment(request, env, departmentId) {
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE departments
-       SET name = ?, session_interval_minutes = ?, session_start_minutes = ?, active = ?, updated_at = CURRENT_TIMESTAMP
+       SET name = ?, session_interval_minutes = ?, session_start_minutes = ?, active = ?,
+           attendance_latitude = ?, attendance_longitude = ?, attendance_radius_meters = ?,
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-    ).bind(name, interval, startMinutes, active, departmentId),
+    ).bind(name, interval, startMinutes, active, latitude, longitude, radius, departmentId),
     env.DB.prepare('UPDATE users SET jabatan = ? WHERE department_id = ?').bind(name, departmentId),
   ]);
 
@@ -685,7 +667,6 @@ async function updateAdminUser(request, env, userId) {
   const nama = String(body.nama ?? '').trim().toUpperCase();
   const jawatan = String(body.jawatan ?? '').trim();
   const departmentId = Number(body.departmentId);
-  const noPk = String(body.noPk ?? '').trim().slice(0, 50);
 
   if (nama.length < 3) return json({ error: 'Nama pengguna tidak sah.' }, 400);
   if (!['Patrol', 'Supervisor', 'Management'].includes(jawatan)) {
@@ -721,9 +702,9 @@ async function updateAdminUser(request, env, userId) {
 
   await env.DB.prepare(
     `UPDATE users
-     SET nama = ?, jawatan = ?, department_id = ?, jabatan = ?, profile_picture = ?, no_pk = ?
+     SET nama = ?, jawatan = ?, department_id = ?, jabatan = ?, profile_picture = ?
      WHERE id = ?`,
-  ).bind(nama, jawatan, departmentId, department.name, profilePicture, noPk || null, userId).run();
+  ).bind(nama, jawatan, departmentId, department.name, profilePicture, userId).run();
 
   const updated = await getUserById(env, userId);
   return json({ user: publicUser(updated) });
@@ -802,7 +783,7 @@ async function requireUser(request, env) {
 }
 
 function userSelect() {
-  return `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan, u.profile_picture,
+  return `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
                  u.jabatan, u.department_id, u.active,
                  COALESCE(d.name, u.jabatan) AS department_name,
                  COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
@@ -819,6 +800,7 @@ async function getDepartmentById(env, id) {
   if (!Number.isInteger(Number(id)) || Number(id) <= 0) return null;
   return env.DB.prepare(
     `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
+            d.attendance_latitude, d.attendance_longitude, d.attendance_radius_meters,
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
      LEFT JOIN checkpoints c ON c.department_id = d.id
@@ -856,7 +838,6 @@ function publicUser(user) {
     id: Number(user.id),
     nama: user.nama,
     noKadPengenalan: user.no_kad_pengenalan,
-    noPk: user.no_pk || '',
     jawatan: user.jawatan,
     profilePicture: user.profile_picture,
     jabatan: user.department_name || user.jabatan || 'Belum ditetapkan',
@@ -875,7 +856,27 @@ function departmentJson(row) {
     sessionStartMinutes: Number(row.session_start_minutes ?? 420),
     active: Boolean(row.active),
     checkpointCount: Number(row.checkpoint_count || 0),
+    attendanceLatitude: row.attendance_latitude == null ? null : Number(row.attendance_latitude),
+    attendanceLongitude: row.attendance_longitude == null ? null : Number(row.attendance_longitude),
+    attendanceRadiusMeters: Number(row.attendance_radius_meters || 200),
   };
+}
+
+function optionalCoordinate(value, min, max) {
+  if (value === null || value === undefined || value === '') return null;
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) && coordinate >= min && coordinate <= max
+    ? coordinate
+    : Number.NaN;
+}
+
+function validateGeofence(latitude, longitude, radius) {
+  if (Number.isNaN(latitude) || Number.isNaN(longitude)) return 'Koordinat kawasan sekolah tidak sah.';
+  if ((latitude == null) !== (longitude == null)) return 'Tetapkan latitud dan longitud kawasan sekolah.';
+  if (!Number.isInteger(radius) || radius < 30 || radius > 2000) {
+    return 'Radius kehadiran mestilah antara 30 hingga 2000 meter.';
+  }
+  return null;
 }
 
 function checkpointJson(row) {
