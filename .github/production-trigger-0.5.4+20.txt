@@ -1,0 +1,3 @@
+RimbaKawal 0.5.4+20
+Source commit: ad067edf8fe5003b4c5b8e36370bf6e87306b380
+Purpose: deploy validated daily patrol coverage and guard presence changes.
