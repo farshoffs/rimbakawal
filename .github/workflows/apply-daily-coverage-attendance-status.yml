@@ -1,0 +1,90 @@
+name: Apply Daily Coverage Attendance Status
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply_daily_coverage_attendance_status.py
+      - .github/workflows/apply-daily-coverage-attendance-status.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply refinement
+        run: python3 scripts/apply_daily_coverage_attendance_status.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Format touched Dart files
+        run: |
+          dart format \
+            lib/features/dashboard/dashboard_screen.dart \
+            lib/features/admin/command_center_screen.dart
+
+      - name: Validate Worker JavaScript
+        run: |
+          node --check worker/app.js
+          node --check worker/attendance.js
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Verify requested behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -q "title: 'Tetapan NFC'" lib/features/dashboard/dashboard_screen.dart
+          grep -q "title: 'Tetapan NFC'" lib/features/admin/admin_screen.dart
+          grep -q "coverageDate: todayKey" worker/app.js
+          grep -q "todayBounds.startIso" worker/app.js
+          grep -q "departmentUsers" worker/app.js
+          grep -q "present: presentByUser.has" worker/attendance.js
+          grep -q "isSessionPatroller" worker/attendance.js
+          grep -q "Status Pengawal • Hadir" lib/features/admin/command_center_screen.dart
+          grep -q "BELUM ADA SESI TAMAT" lib/features/admin/command_center_screen.dart
+          grep -q "version: 0.5.4+20" pubspec.yaml
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit validated refinement
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- \
+            lib/features/dashboard/dashboard_screen.dart \
+            lib/features/admin/command_center_screen.dart \
+            worker/app.js \
+            worker/attendance.js \
+            pubspec.yaml; then
+            echo 'No refinement changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            lib/features/dashboard/dashboard_screen.dart \
+            lib/features/admin/command_center_screen.dart \
+            worker/app.js \
+            worker/attendance.js \
+            pubspec.yaml
+          git commit -m 'Refine daily patrol coverage and guard presence'
+          git push origin HEAD:main
