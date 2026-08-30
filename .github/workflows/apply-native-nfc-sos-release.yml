@@ -47,6 +47,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git restore .github/workflows/build-mobile-production.yml
           if git diff --quiet -- \
             lib/main.dart \
             lib/core/nfc/real_nfc_service.dart \
@@ -54,7 +55,6 @@ jobs:
             lib/features/dashboard/dashboard_screen.dart \
             lib/features/patrol/patrol_screen.dart \
             lib/core/notifications/notification_alert_gate.dart \
-            .github/workflows/build-mobile-production.yml \
             pubspec.yaml; then
             echo 'No release changes to commit.'
             exit 0
@@ -68,7 +68,6 @@ jobs:
             lib/features/dashboard/dashboard_screen.dart \
             lib/features/patrol/patrol_screen.dart \
             lib/core/notifications/notification_alert_gate.dart \
-            .github/workflows/build-mobile-production.yml \
             pubspec.yaml
           git commit -m 'Enable native NFC and patrol SOS'
           git push origin HEAD:main
