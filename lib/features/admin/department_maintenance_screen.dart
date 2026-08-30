@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../core/api/api_service.dart';
+import '../../core/nfc/nfc_scan_prompt.dart';
 import '../../core/nfc/nfc_service.dart';
 
 class DepartmentMaintenanceScreen extends StatefulWidget {
@@ -521,9 +522,12 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
       _error = null;
     });
     try {
-      final available = await widget.nfcService.isAvailable();
-      if (!available) throw StateError('NFC tidak tersedia pada peranti ini.');
-      final result = await widget.nfcService.scan();
+      final result = await showNfcScanPrompt(
+        context: context,
+        nfcService: widget.nfcService,
+        title: 'Imbas UID Tag NFC',
+      );
+      if (result == null) return;
       if (!mounted) return;
       _uidController.text = result.tagId.toUpperCase();
     } catch (error) {
