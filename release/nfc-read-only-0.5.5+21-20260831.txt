@@ -1,0 +1,3 @@
+RimbaKawal 0.5.5+21
+Source commit: a75f919d5f81d512c2ffbc3f0d8fd86df02fb285
+Checkpoint NFC provisioning is read-only: pre-written NDEF Text/URI is read and stored; hardware UID is fallback.
