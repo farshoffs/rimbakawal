@@ -32,7 +32,7 @@ async function monthlyReport(request, env, ctx, url) {
     ? [fromStart, toEnd]
     : [fromStart, toEnd, departmentId];
 
-  const scanSql = `SELECT s.id, s.user_id, s.scanned_at, s.nfc_uid, s.session_index,
+  const scanSql = `SELECT s.id, s.user_id, s.checkpoint_id, s.scanned_at, s.nfc_uid, s.session_index,
               u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan,
               COALESCE(d.name, u.jabatan) AS jabatan,
               COALESCE(c.name, 'Checkpoint') AS checkpoint_name,
@@ -60,9 +60,19 @@ async function monthlyReport(request, env, ctx, url) {
     'SELECT id, name, company_name, zone FROM departments WHERE id = ? LIMIT 1',
   ).bind(departmentId).first();
 
-  const [scanResult, attendanceResult] = await Promise.all([
+  const checkpointPromise = departmentId == null
+    ? Promise.resolve({ results: [] })
+    : env.DB.prepare(
+      `SELECT id, name, position, nfc_uid
+       FROM checkpoints
+       WHERE department_id = ? AND active = 1
+       ORDER BY position ASC, id ASC`,
+    ).bind(departmentId).all();
+
+  const [scanResult, attendanceResult, checkpointResult] = await Promise.all([
     env.DB.prepare(scanSql).bind(...bindings).all(),
     env.DB.prepare(attendanceSql).bind(...bindings).all(),
+    checkpointPromise,
   ]);
 
   if (departmentMeta) {
@@ -75,10 +85,17 @@ async function monthlyReport(request, env, ctx, url) {
   }
   payload.scans = scanResult.results ?? [];
   payload.attendance = attendanceResult.results ?? [];
+  payload.checkpoints = (checkpointResult.results ?? []).map((row) => ({
+    id: Number(row.id),
+    name: row.name,
+    position: Number(row.position || 0),
+    nfcUid: row.nfc_uid || '',
+  }));
   payload.summary = {
     ...(payload.summary ?? {}),
     totalScans: payload.scans.length,
     attendancePunches: payload.attendance.length,
+    activeCheckpoints: payload.checkpoints.length,
   };
   return json(payload);
 }
