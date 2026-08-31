@@ -5,9 +5,18 @@ text = path.read_text(encoding='utf-8')
 
 old = """    final rows = <_Pkk4Row>[];\n    final days = DateTime(year, month + 1, 0).day;\n    for (var day = 1; day <= days; day++) {\n"""
 new = """    final rows = <_Pkk4Row>[];\n    final activeDays = scans\n        .map((row) => (row['_local'] as DateTime).day)\n        .toSet()\n        .toList()\n      ..sort();\n    for (final day in activeDays) {\n"""
-if old not in text:
+if old in text:
+    text = text.replace(old, new, 1)
+elif 'final activeDays = scans' not in text:
     raise SystemExit('PKK4 day loop anchor not found')
-text = text.replace(old, new, 1)
+
+# The supplied PKK4 reference ends page 1 at CP3 on 22/11 and starts the
+# continuation page at CP4. With four checkpoints and the sample date range,
+# that is 51 data rows on the first page.
+text = text.replace(
+    'final firstCount = math.min(50, rows.length);',
+    'final firstCount = math.min(51, rows.length);',
+)
 
 replacements = {
     "margin: const pw.EdgeInsets.fromLTRB(11, 10, 11, 9),":
@@ -70,15 +79,11 @@ for before, after in replacements.items():
     if before in text:
         text = text.replace(before, after)
 
-# The PKK2 section-2 header has the same 25pt pattern but the first generic
-# replacement only changes the first exact occurrence. Make any remaining
-# contract-summary header compact as well without touching PKK3/PKK4 tables.
 summary_start = text.index('static pw.Widget _pkk2ContractSummary')
 summary_end = text.index('static pw.Widget _pkk2AttendanceBlock')
 summary = text[summary_start:summary_end].replace('height: 25,', 'height: 18,')
 text = text[:summary_start] + summary + text[summary_end:]
 
-# Compact PKK2 attendance block only.
 block_start = text.index('static pw.Widget _pkk2AttendanceBlock')
 block_end = text.index('static pw.Widget _pkk3Page')
 block = text[block_start:block_end]
