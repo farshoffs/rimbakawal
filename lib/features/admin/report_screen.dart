@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 
-import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 
 import '../../core/api/api_service.dart';
-import 'pkk_excel_generator.dart';
+import 'pkk_pdf_generator.dart';
 
 class ReportScreen extends StatefulWidget {
   const ReportScreen({required this.api, super.key});
@@ -65,39 +65,20 @@ class _ReportScreenState extends State<ReportScreen> {
     try {
       final data = await _reportData();
       final Uint8List bytes = switch (type) {
-        _PkkType.pkk2 => PkkExcelGenerator.generatePkk2(
-          data: data,
-          month: _month,
-          year: _year,
-        ),
-        _PkkType.pkk3 => PkkExcelGenerator.generatePkk3(
-          data: data,
-          month: _month,
-          year: _year,
-        ),
-        _PkkType.pkk4 => PkkExcelGenerator.generatePkk4(
-          data: data,
-          month: _month,
-          year: _year,
-        ),
+        _PkkType.pkk2 => await PkkPdfGenerator.generatePkk2(data: data, month: _month, year: _year),
+        _PkkType.pkk3 => await PkkPdfGenerator.generatePkk3(data: data, month: _month, year: _year),
+        _PkkType.pkk4 => await PkkPdfGenerator.generatePkk4(data: data, month: _month, year: _year),
       };
-      if (bytes.isEmpty) {
-        throw Exception('Fail Excel tidak berjaya dijana.');
-      }
+      if (bytes.isEmpty) throw Exception('Fail PDF tidak berjaya dijana.');
 
       final month = _month.toString().padLeft(2, '0');
-      final name = '${type.filePrefix}_${_year}_$month';
-      await FileSaver.instance.saveFile(
-        name: name,
+      await Printing.sharePdf(
         bytes: bytes,
-        fileExtension: 'xlsx',
-        mimeType: MimeType.microsoftExcel,
+        filename: '${type.filePrefix}_${_year}_$month.pdf',
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${type.label} berjaya dijana sebagai fail Excel.'),
-        ),
+        SnackBar(content: Text('${type.label} berjaya dijana sebagai PDF.')),
       );
     } catch (error) {
       if (!mounted) return;
@@ -127,14 +108,10 @@ class _ReportScreenState extends State<ReportScreen> {
                 children: [
                   Text(
                     'Jana Laporan PKK',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Hanya PKK 2, PKK 3 dan PKK 4 dijana. Semua laporan menggunakan format Excel Lampiran A (kontrak bermula 1 Oktober 2025 dan seterusnya).',
-                  ),
+                  const Text('Hanya PKK 2, PKK 3 dan PKK 4 dijana sebagai PDF berdasarkan data sebenar RimbaKawal.'),
                   const SizedBox(height: 18),
                   DropdownButtonFormField<int?>(
                     initialValue: _departmentId,
@@ -143,15 +120,9 @@ class _ReportScreenState extends State<ReportScreen> {
                       prefixIcon: Icon(Icons.account_tree_outlined),
                     ),
                     items: [
-                      const DropdownMenuItem<int?>(
-                        value: null,
-                        child: Text('Pilih Jabatan'),
-                      ),
+                      const DropdownMenuItem<int?>(value: null, child: Text('Pilih Jabatan')),
                       ..._departments.map(
-                        (department) => DropdownMenuItem<int?>(
-                          value: department.id,
-                          child: Text(department.name),
-                        ),
+                        (department) => DropdownMenuItem<int?>(value: department.id, child: Text(department.name)),
                       ),
                     ],
                     onChanged: _loadingDepartments || _generating
@@ -172,15 +143,10 @@ class _ReportScreenState extends State<ReportScreen> {
                             for (var month = 1; month <= 12; month++)
                               DropdownMenuItem(
                                 value: month,
-                                child: Text(
-                                  PkkExcelGenerator.months[month - 1],
-                                ),
+                                child: Text(PkkPdfGenerator.months[month - 1]),
                               ),
                           ],
-                          onChanged: _generating
-                              ? null
-                              : (value) =>
-                                    setState(() => _month = value ?? _month),
+                          onChanged: _generating ? null : (value) => setState(() => _month = value ?? _month),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -188,53 +154,36 @@ class _ReportScreenState extends State<ReportScreen> {
                         child: DropdownButtonFormField<int>(
                           initialValue: _year,
                           decoration: const InputDecoration(labelText: 'Tahun'),
-                          items: years
-                              .map(
-                                (year) => DropdownMenuItem(
-                                  value: year,
-                                  child: Text('$year'),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: _generating
-                              ? null
-                              : (value) =>
-                                    setState(() => _year = value ?? _year),
+                          items: years.map((year) => DropdownMenuItem(value: year, child: Text('$year'))).toList(),
+                          onChanged: _generating ? null : (value) => setState(() => _year = value ?? _year),
                         ),
                       ),
                     ],
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
+                    Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                   ],
                   const SizedBox(height: 20),
                   _ReportButton(
                     icon: Icons.groups_rounded,
-                    title: 'Jana PKK 2',
-                    subtitle:
-                        'Pengesahan bilangan pengawal dan rekod kehadiran',
+                    title: 'Jana PKK 2 (PDF)',
+                    subtitle: 'Pengesahan bilangan pengawal dan rekod kehadiran',
                     enabled: !_generating && !_loadingDepartments,
                     onPressed: () => _generate(_PkkType.pkk2),
                   ),
                   const SizedBox(height: 10),
                   _ReportButton(
                     icon: Icons.badge_rounded,
-                    title: 'Jana PKK 3',
-                    subtitle:
-                        'Pengesahan kehadiran pengawal berdasarkan rekod kehadiran',
+                    title: 'Jana PKK 3 (PDF)',
+                    subtitle: 'Pengesahan kehadiran pengawal berdasarkan rekod kehadiran',
                     enabled: !_generating && !_loadingDepartments,
                     onPressed: () => _generate(_PkkType.pkk3),
                   ),
                   const SizedBox(height: 10),
                   _ReportButton(
                     icon: Icons.nfc_rounded,
-                    title: 'Jana PKK 4',
+                    title: 'Jana PKK 4 (PDF)',
                     subtitle: 'Pengesahan pelaksanaan rondaan dan clocking',
                     enabled: !_generating && !_loadingDepartments,
                     onPressed: () => _generate(_PkkType.pkk4),
@@ -243,10 +192,7 @@ class _ReportScreenState extends State<ReportScreen> {
                     const SizedBox(height: 16),
                     const LinearProgressIndicator(),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Menjana fail Excel…',
-                      textAlign: TextAlign.center,
-                    ),
+                    const Text('Menjana PDF daripada data RimbaKawal…', textAlign: TextAlign.center),
                   ],
                   const SizedBox(height: 18),
                   const Divider(),
@@ -258,8 +204,7 @@ class _ReportScreenState extends State<ReportScreen> {
                       SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Format laporan dikekalkan mengikut Lampiran A yang dibekalkan. Jika data memerlukan lebih daripada satu muka surat, laporan dipecahkan kepada worksheet Muka 2, Muka 3 dan seterusnya; setiap muka surat mempunyai ruangan Disediakan Oleh, Disemak Oleh dan Disahkan Oleh.',
-                          style: TextStyle(fontSize: 12),
+                          'Setiap klik menjana satu fail PDF PKK sahaja. Jika laporan mempunyai lebih daripada satu muka surat, blok tandatangan disediakan pada setiap muka surat.',
                         ),
                       ),
                     ],
@@ -280,7 +225,6 @@ enum _PkkType {
   pkk4('PKK 4', 'PKK_4');
 
   const _PkkType(this.label, this.filePrefix);
-
   final String label;
   final String filePrefix;
 }
@@ -302,12 +246,9 @@ class _ReportButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.tonal(
+    return OutlinedButton(
       onPressed: enabled ? onPressed : null,
-      style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        alignment: Alignment.centerLeft,
-      ),
+      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
       child: Row(
         children: [
           Icon(icon),
@@ -316,16 +257,13 @@ class _ReportButton extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 2),
                 Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),
-          const Icon(Icons.table_view_rounded),
+          const Icon(Icons.picture_as_pdf_rounded),
         ],
       ),
     );
