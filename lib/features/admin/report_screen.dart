@@ -54,11 +54,7 @@ class _ReportScreenState extends State<ReportScreen> {
     if (_departmentId == null) {
       throw Exception('Pilih satu Jabatan sebelum menjana laporan PKK.');
     }
-    return widget.api.getAdminReport(
-      _from,
-      _to,
-      departmentId: _departmentId,
-    );
+    return widget.api.getAdminReport(_from, _to, departmentId: _departmentId);
   }
 
   Future<void> _generate(_PkkType type) async {
@@ -70,20 +66,20 @@ class _ReportScreenState extends State<ReportScreen> {
       final data = await _reportData();
       final Uint8List bytes = switch (type) {
         _PkkType.pkk2 => PkkExcelGenerator.generatePkk2(
-            data: data,
-            month: _month,
-            year: _year,
-          ),
+          data: data,
+          month: _month,
+          year: _year,
+        ),
         _PkkType.pkk3 => PkkExcelGenerator.generatePkk3(
-            data: data,
-            month: _month,
-            year: _year,
-          ),
+          data: data,
+          month: _month,
+          year: _year,
+        ),
         _PkkType.pkk4 => PkkExcelGenerator.generatePkk4(
-            data: data,
-            month: _month,
-            year: _year,
-          ),
+          data: data,
+          month: _month,
+          year: _year,
+        ),
       };
       if (bytes.isEmpty) {
         throw Exception('Fail Excel tidak berjaya dijana.');
@@ -105,9 +101,7 @@ class _ReportScreenState extends State<ReportScreen> {
       );
     } catch (error) {
       if (!mounted) return;
-      setState(
-        () => _error = error.toString().replaceFirst('Exception: ', ''),
-      );
+      setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _generating = false);
     }
@@ -134,8 +128,8 @@ class _ReportScreenState extends State<ReportScreen> {
                   Text(
                     'Jana Laporan PKK',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   const Text(
@@ -178,14 +172,15 @@ class _ReportScreenState extends State<ReportScreen> {
                             for (var month = 1; month <= 12; month++)
                               DropdownMenuItem(
                                 value: month,
-                                child: Text(PkkExcelGenerator.months[month - 1]),
+                                child: Text(
+                                  PkkExcelGenerator.months[month - 1],
+                                ),
                               ),
                           ],
                           onChanged: _generating
                               ? null
-                              : (value) => setState(
-                                    () => _month = value ?? _month,
-                                  ),
+                              : (value) =>
+                                    setState(() => _month = value ?? _month),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -203,9 +198,8 @@ class _ReportScreenState extends State<ReportScreen> {
                               .toList(),
                           onChanged: _generating
                               ? null
-                              : (value) => setState(
-                                    () => _year = value ?? _year,
-                                  ),
+                              : (value) =>
+                                    setState(() => _year = value ?? _year),
                         ),
                       ),
                     ],
@@ -327,10 +321,7 @@ class _ReportButton extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),

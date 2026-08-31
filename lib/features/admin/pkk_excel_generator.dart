@@ -24,13 +24,18 @@ class PkkExcelGenerator {
     required int year,
   }) {
     final department = _department(data);
-    final sessions = _attendanceSessions(data['attendance'] as List<dynamic>? ?? const []);
+    final sessions = _attendanceSessions(
+      data['attendance'] as List<dynamic>? ?? const [],
+    );
     final days = DateTime(year, month + 1, 0).day;
 
     final actual = <int, Map<int, Set<int>>>{};
     for (final session in sessions) {
       if (session.start.year != year || session.start.month != month) continue;
-      final byShift = actual.putIfAbsent(session.start.day, () => <int, Set<int>>{});
+      final byShift = actual.putIfAbsent(
+        session.start.day,
+        () => <int, Set<int>>{},
+      );
       byShift.putIfAbsent(session.shift, () => <int>{}).add(session.userId);
     }
 
@@ -78,7 +83,9 @@ class PkkExcelGenerator {
     required int year,
   }) {
     final department = _department(data);
-    final sessions = _attendanceSessions(data['attendance'] as List<dynamic>? ?? const []);
+    final sessions = _attendanceSessions(
+      data['attendance'] as List<dynamic>? ?? const [],
+    );
     final guardNames = <int, String>{};
     for (final item in data['attendance'] as List<dynamic>? ?? const []) {
       final row = Map<String, dynamic>.from(item as Map);
@@ -166,7 +173,9 @@ class PkkExcelGenerator {
         for (var slot = 0; slot < 12; slot++) {
           DateTime? earliest;
           for (final scan in scans) {
-            if ((scan['checkpoint_id'] as num?)?.toInt() != checkpointId) continue;
+            if ((scan['checkpoint_id'] as num?)?.toInt() != checkpointId) {
+              continue;
+            }
             final at = scan['_local'] as DateTime;
             if (at.day != day || (at.hour ~/ 2) != slot) continue;
             if (earliest == null || at.isBefore(earliest)) earliest = at;
@@ -211,11 +220,34 @@ class PkkExcelGenerator {
     required int requiredShift2,
   }) {
     _pkk2Dimensions(sheet);
-    _text(sheet, 'W1', 'PKK 2 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2025 DAN SETERUSNYA)', style: _smallBoldRight);
-    _mergeText(sheet, 'A3', 'W3', 'BORANG PENGESAHAN BILANGAN PENGAWAL DAN REKOD KEHADIRAN PENGAWAL KESELAMATAN', _title);
-    _mergeText(sheet, 'A4', 'W4', 'PERKHIDMATAN KAWALAN KESELAMATAN DI SEKOLAH/INSTITUSI PENDIDIKAN', _title);
+    _text(
+      sheet,
+      'W1',
+      'PKK 2 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2025 DAN SETERUSNYA)',
+      style: _smallBoldRight,
+    );
+    _mergeText(
+      sheet,
+      'A3',
+      'W3',
+      'BORANG PENGESAHAN BILANGAN PENGAWAL DAN REKOD KEHADIRAN PENGAWAL KESELAMATAN',
+      _title,
+    );
+    _mergeText(
+      sheet,
+      'A4',
+      'W4',
+      'PERKHIDMATAN KAWALAN KESELAMATAN DI SEKOLAH/INSTITUSI PENDIDIKAN',
+      _title,
+    );
     _mergeText(sheet, 'A5', 'W5', 'DI BAWAH KEMENTERIAN PENDIDIKAN', _title);
-    _mergeText(sheet, 'A7', 'U7', 'BULAN: ${months[month - 1]}     TAHUN: $year', _centerBold);
+    _mergeText(
+      sheet,
+      'A7',
+      'U7',
+      'BULAN: ${months[month - 1]}     TAHUN: $year',
+      _centerBold,
+    );
     _text(sheet, 'A9', 'NAMA SYARIKAT:', style: _bold);
     _text(sheet, 'B9', (department['companyName'] ?? '').toString());
     _text(sheet, 'P9', 'ZON:', style: _bold);
@@ -223,7 +255,13 @@ class PkkExcelGenerator {
     _text(sheet, 'A11', 'SEKOLAH/\nINSTITUSI\nPENDIDIKAN:', style: _boldWrap);
     _text(sheet, 'C11', (department['name'] ?? '').toString());
 
-    _mergeText(sheet, 'A16', 'J16', 'Bilangan Pengawal Keselamatan Yang Ditetapkan Mengikut Syif Dalam Dokumen Perjanjian Kontrak', _header);
+    _mergeText(
+      sheet,
+      'A16',
+      'J16',
+      'Bilangan Pengawal Keselamatan Yang Ditetapkan Mengikut Syif Dalam Dokumen Perjanjian Kontrak',
+      _header,
+    );
     _mergeText(sheet, 'L16', 'V16', 'Waktu Bertugas Setiap Syif', _header);
     _mergeText(sheet, 'A17', 'D17', 'Syif 1', _tableCenter);
     _mergeText(sheet, 'E17', 'J17', 'Syif 2', _tableCenter);
@@ -231,10 +269,28 @@ class PkkExcelGenerator {
     _mergeText(sheet, 'Q17', 'V17', 'Syif 2', _tableCenter);
     _mergeText(sheet, 'A18', 'D18', '$requiredShift1', _tableCenter);
     _mergeText(sheet, 'E18', 'J18', '$requiredShift2', _tableCenter);
-    _mergeText(sheet, 'L18', 'P18', 'Jam 07:00 hingga\nJam 19:00', _tableCenter);
-    _mergeText(sheet, 'Q18', 'V18', 'Jam 19:00 hingga\nJam 07:00', _tableCenter);
+    _mergeText(
+      sheet,
+      'L18',
+      'P18',
+      'Jam 07:00 hingga\nJam 19:00',
+      _tableCenter,
+    );
+    _mergeText(
+      sheet,
+      'Q18',
+      'V18',
+      'Jam 19:00 hingga\nJam 07:00',
+      _tableCenter,
+    );
 
-    _mergeText(sheet, 'A21', 'V21', 'Rumusan Bilangan Pengawal Keselamatan Mengikut Syif', _header);
+    _mergeText(
+      sheet,
+      'A21',
+      'V21',
+      'Rumusan Bilangan Pengawal Keselamatan Mengikut Syif',
+      _header,
+    );
     final blocks = <(int, int, int)>[(22, 23, 24), (25, 26, 27), (28, 29, 30)];
     var dayCursor = 0;
     for (final block in blocks) {
@@ -243,7 +299,13 @@ class PkkExcelGenerator {
       final countRow = block.$3;
       _mergeText(sheet, 'A$syifRow', 'B$syifRow', 'Syif', _tableHeader);
       _mergeText(sheet, 'A$dateRow', 'B$dateRow', 'Tarikh', _tableHeader);
-      _mergeText(sheet, 'A$countRow', 'B$countRow', 'Bilangan PK', _tableHeader);
+      _mergeText(
+        sheet,
+        'A$countRow',
+        'B$countRow',
+        'Bilangan PK',
+        _tableHeader,
+      );
       for (var slot = 0; slot < 10; slot++) {
         final c1 = 2 + slot * 2;
         final c2 = c1 + 1;
@@ -251,11 +313,29 @@ class PkkExcelGenerator {
         _textAt(sheet, c2, syifRow - 1, 'Syif 2', style: _tableCenter);
         _mergeByIndex(sheet, c1, dateRow - 1, c2, dateRow - 1);
         final day = dayCursor < pageDays.length ? pageDays[dayCursor] : null;
-        _textAt(sheet, c1, dateRow - 1, day == null ? '' : '$day', style: _tableCenter);
+        _textAt(
+          sheet,
+          c1,
+          dateRow - 1,
+          day == null ? '' : '$day',
+          style: _tableCenter,
+        );
         final a1 = day == null ? 0 : actual[day]?[1]?.length ?? 0;
         final a2 = day == null ? 0 : actual[day]?[2]?.length ?? 0;
-        _textAt(sheet, c1, countRow - 1, day == null ? '' : '$a1/$requiredShift1', style: _tableCenter);
-        _textAt(sheet, c2, countRow - 1, day == null ? '' : '$a2/$requiredShift2', style: _tableCenter);
+        _textAt(
+          sheet,
+          c1,
+          countRow - 1,
+          day == null ? '' : '$a1/$requiredShift1',
+          style: _tableCenter,
+        );
+        _textAt(
+          sheet,
+          c2,
+          countRow - 1,
+          day == null ? '' : '$a2/$requiredShift2',
+          style: _tableCenter,
+        );
         dayCursor++;
       }
     }
@@ -272,11 +352,34 @@ class PkkExcelGenerator {
     required List<_GuardSession> sessions,
   }) {
     _pkk3Dimensions(sheet);
-    _text(sheet, 'W1', 'PKK 3 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2025 DAN SETERUSNYA)', style: _smallBoldRight);
-    _mergeText(sheet, 'A3', 'V3', 'BORANG PENGESAHAN KEHADIRAN PENGAWAL BERDASARKAN REKOD KEHADIRAN PENGAWAL KESELAMATAN', _title);
-    _mergeText(sheet, 'A4', 'V4', 'PERKHIDMATAN KAWALAN KESELAMATAN DI SEKOLAH/INSTITUSI PENDIDIKAN', _title);
+    _text(
+      sheet,
+      'W1',
+      'PKK 3 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2025 DAN SETERUSNYA)',
+      style: _smallBoldRight,
+    );
+    _mergeText(
+      sheet,
+      'A3',
+      'V3',
+      'BORANG PENGESAHAN KEHADIRAN PENGAWAL BERDASARKAN REKOD KEHADIRAN PENGAWAL KESELAMATAN',
+      _title,
+    );
+    _mergeText(
+      sheet,
+      'A4',
+      'V4',
+      'PERKHIDMATAN KAWALAN KESELAMATAN DI SEKOLAH/INSTITUSI PENDIDIKAN',
+      _title,
+    );
     _mergeText(sheet, 'A5', 'V5', 'DI BAWAH KEMENTERIAN PENDIDIKAN', _title);
-    _mergeText(sheet, 'A7', 'U7', 'BULAN: ${months[month - 1]}     TAHUN: $year', _centerBold);
+    _mergeText(
+      sheet,
+      'A7',
+      'U7',
+      'BULAN: ${months[month - 1]}     TAHUN: $year',
+      _centerBold,
+    );
     _text(sheet, 'A9', 'NAMA SYARIKAT:', style: _bold);
     _text(sheet, 'B9', (department['companyName'] ?? '').toString());
     _text(sheet, 'P9', 'ZON:', style: _bold);
@@ -294,9 +397,23 @@ class PkkExcelGenerator {
       _mergeByIndex(sheet, start, 13, end, 13);
       _mergeByIndex(sheet, start, 14, end, 14);
       final id = g < guardIds.length ? guardIds[g] : null;
-      _textAt(sheet, start, 13, id == null ? '' : guardNames[id] ?? '', style: _header);
+      _textAt(
+        sheet,
+        start,
+        13,
+        id == null ? '' : guardNames[id] ?? '',
+        style: _header,
+      );
       _textAt(sheet, start, 14, '', style: _header);
-      const labels = ['SYIF', 'MASUK', 'KELUAR', 'SYIF', 'MASUK', 'KELUAR', 'CATATAN'];
+      const labels = [
+        'SYIF',
+        'MASUK',
+        'KELUAR',
+        'SYIF',
+        'MASUK',
+        'KELUAR',
+        'CATATAN',
+      ];
       for (var i = 0; i < 7; i++) {
         _textAt(sheet, start + i, 15, labels[i], style: _tableHeader);
       }
@@ -307,8 +424,15 @@ class PkkExcelGenerator {
     for (final session in sessions) {
       if (session.start.year != year || session.start.month != month) continue;
       byGuardDay
-          .putIfAbsent(session.userId, () => <int, Map<int, _GuardSession>>{})
-          .putIfAbsent(session.start.day, () => <int, _GuardSession>{})[session.shift] = session;
+              .putIfAbsent(
+                session.userId,
+                () => <int, Map<int, _GuardSession>>{},
+              )
+              .putIfAbsent(
+                session.start.day,
+                () => <int, _GuardSession>{},
+              )[session.shift] =
+          session;
     }
 
     for (var rowIndex = 17; rowIndex <= 65; rowIndex++) {
@@ -318,18 +442,61 @@ class PkkExcelGenerator {
     }
     for (var day = 1; day <= days; day++) {
       final row = 17 + (day - 1);
-      _textAt(sheet, 0, row, '${day.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}/$year', style: _tableCenter);
+      _textAt(
+        sheet,
+        0,
+        row,
+        '${day.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}/$year',
+        style: _tableCenter,
+      );
       for (var g = 0; g < guardIds.length; g++) {
         final start = starts[g];
-        final map = byGuardDay[guardIds[g]]?[day] ?? const <int, _GuardSession>{};
+        final map =
+            byGuardDay[guardIds[g]]?[day] ?? const <int, _GuardSession>{};
         final s1 = map[1];
         final s2 = map[2];
-        _textAt(sheet, start, row, s1 == null ? '' : 'SYIF 1', style: _tableCenter);
-        _textAt(sheet, start + 1, row, s1 == null ? '' : _time(s1.start), style: _tableCenter);
-        _textAt(sheet, start + 2, row, s1?.end == null ? '' : _time(s1!.end!), style: _tableCenter);
-        _textAt(sheet, start + 3, row, s2 == null ? '' : 'SYIF 2', style: _tableCenter);
-        _textAt(sheet, start + 4, row, s2 == null ? '' : _time(s2.start), style: _tableCenter);
-        _textAt(sheet, start + 5, row, s2?.end == null ? '' : _time(s2!.end!), style: _tableCenter);
+        _textAt(
+          sheet,
+          start,
+          row,
+          s1 == null ? '' : 'SYIF 1',
+          style: _tableCenter,
+        );
+        _textAt(
+          sheet,
+          start + 1,
+          row,
+          s1 == null ? '' : _time(s1.start),
+          style: _tableCenter,
+        );
+        _textAt(
+          sheet,
+          start + 2,
+          row,
+          s1?.end == null ? '' : _time(s1!.end!),
+          style: _tableCenter,
+        );
+        _textAt(
+          sheet,
+          start + 3,
+          row,
+          s2 == null ? '' : 'SYIF 2',
+          style: _tableCenter,
+        );
+        _textAt(
+          sheet,
+          start + 4,
+          row,
+          s2 == null ? '' : _time(s2.start),
+          style: _tableCenter,
+        );
+        _textAt(
+          sheet,
+          start + 5,
+          row,
+          s2?.end == null ? '' : _time(s2!.end!),
+          style: _tableCenter,
+        );
         _textAt(sheet, start + 6, row, '', style: _tableBody);
       }
     }
@@ -344,11 +511,34 @@ class PkkExcelGenerator {
     required List<_Pkk4Row> rows,
   }) {
     _pkk4Dimensions(sheet);
-    _text(sheet, 'O1', 'PKK 4 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2025 DAN SETERUSNYA)', style: _smallBoldRight);
-    _mergeText(sheet, 'A3', 'O3', 'BORANG PENGESAHAN PELAKSANAAN RONDAAN DAN CLOCKING', _title);
-    _mergeText(sheet, 'A4', 'O4', 'PERKHIDMATAN KAWALAN KESELAMATAN DI SEKOLAH/INSTITUSI PENDIDIKAN', _title);
+    _text(
+      sheet,
+      'O1',
+      'PKK 4 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2025 DAN SETERUSNYA)',
+      style: _smallBoldRight,
+    );
+    _mergeText(
+      sheet,
+      'A3',
+      'O3',
+      'BORANG PENGESAHAN PELAKSANAAN RONDAAN DAN CLOCKING',
+      _title,
+    );
+    _mergeText(
+      sheet,
+      'A4',
+      'O4',
+      'PERKHIDMATAN KAWALAN KESELAMATAN DI SEKOLAH/INSTITUSI PENDIDIKAN',
+      _title,
+    );
     _mergeText(sheet, 'A5', 'O5', 'DI BAWAH KEMENTERIAN PENDIDIKAN', _title);
-    _mergeText(sheet, 'A7', 'O7', 'BULAN: ${months[month - 1]}     TAHUN: $year', _centerBold);
+    _mergeText(
+      sheet,
+      'A7',
+      'O7',
+      'BULAN: ${months[month - 1]}     TAHUN: $year',
+      _centerBold,
+    );
     _text(sheet, 'A9', 'NAMA SYARIKAT:', style: _bold);
     _text(sheet, 'B9', (department['companyName'] ?? '').toString());
     _text(sheet, 'J9', 'ZON:', style: _bold);
@@ -360,8 +550,34 @@ class PkkExcelGenerator {
     _mergeText(sheet, 'B14', 'B16', 'GUARDTOUR POINT', _header);
     _mergeText(sheet, 'C14', 'N14', 'LAPORAN SISTEM GUARD TOUR', _header);
     _mergeText(sheet, 'O14', 'O16', 'RUMUSAN', _header);
-    const starts = ['0000 -', '0200 -', '0400 -', '0600 -', '0800 -', '1000 -', '1200 -', '1400 -', '1600 -', '1800 -', '2000 -', '2200 -'];
-    const ends = ['0200', '0400', '0600', '0800', '1000', '1200', '1400', '1600', '1800', '2000', '2200', '2400'];
+    const starts = [
+      '0000 -',
+      '0200 -',
+      '0400 -',
+      '0600 -',
+      '0800 -',
+      '1000 -',
+      '1200 -',
+      '1400 -',
+      '1600 -',
+      '1800 -',
+      '2000 -',
+      '2200 -',
+    ];
+    const ends = [
+      '0200',
+      '0400',
+      '0600',
+      '0800',
+      '1000',
+      '1200',
+      '1400',
+      '1600',
+      '1800',
+      '2000',
+      '2200',
+      '2400',
+    ];
     for (var i = 0; i < 12; i++) {
       _textAt(sheet, 2 + i, 14, starts[i], style: _tableHeader);
       _textAt(sheet, 2 + i, 15, ends[i], style: _tableHeader);
@@ -380,7 +596,9 @@ class PkkExcelGenerator {
         sheet,
         0,
         target,
-        previousDay == row.day ? '' : '${row.day.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}/$year',
+        previousDay == row.day
+            ? ''
+            : '${row.day.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}/$year',
         style: _tableCenter,
       );
       previousDay = row.day;
@@ -397,24 +615,66 @@ class PkkExcelGenerator {
   }
 
   static void _signatureAndNoticePkk2(Sheet sheet) {
-    _mergeText(sheet, 'A32', 'U33', 'Nota: \nLaporan sistem guard tour ini dijana secara digital. Sila pastikan segala maklumat yang dicetak adalah jelas dan sahih. Ruangan tandatangan penyedia, penyemak, dan Pengesah hendaklah dilengkapkan di setiap helaian.', _note);
+    _mergeText(
+      sheet,
+      'A32',
+      'U33',
+      'Nota: \nLaporan sistem guard tour ini dijana secara digital. Sila pastikan segala maklumat yang dicetak adalah jelas dan sahih. Ruangan tandatangan penyedia, penyemak, dan Pengesah hendaklah dilengkapkan di setiap helaian.',
+      _note,
+    );
     _text(sheet, 'A35', 'Peringatan:', style: _bold);
     _mergeText(sheet, 'A36', 'U36', _sprm, _note);
-    _signatureBlock(sheet, prepared: 'A38', checked: 'F38', approved: 'P38', lineRow: 41, roleRow: 43, dateRow: 44);
+    _signatureBlock(
+      sheet,
+      prepared: 'A38',
+      checked: 'F38',
+      approved: 'P38',
+      lineRow: 41,
+      roleRow: 43,
+      dateRow: 44,
+    );
   }
 
   static void _signatureAndNoticePkk3(Sheet sheet) {
-    _mergeText(sheet, 'A70', 'U71', 'Nota: \nLaporan sistem guard tour ini dijana secara digital. Sila pastikan segala maklumat yang dicetak adalah jelas dan sahih. Ruangan tandatangan penyedia, penyemak, dan Pengesah hendaklah dilengkapkan di setiap helaian.', _note);
+    _mergeText(
+      sheet,
+      'A70',
+      'U71',
+      'Nota: \nLaporan sistem guard tour ini dijana secara digital. Sila pastikan segala maklumat yang dicetak adalah jelas dan sahih. Ruangan tandatangan penyedia, penyemak, dan Pengesah hendaklah dilengkapkan di setiap helaian.',
+      _note,
+    );
     _text(sheet, 'A73', 'Peringatan:', style: _bold);
     _mergeText(sheet, 'A74', 'U74', _sprm, _note);
-    _signatureBlock(sheet, prepared: 'A76', checked: 'F76', approved: 'P76', lineRow: 79, roleRow: 81, dateRow: 82);
+    _signatureBlock(
+      sheet,
+      prepared: 'A76',
+      checked: 'F76',
+      approved: 'P76',
+      lineRow: 79,
+      roleRow: 81,
+      dateRow: 82,
+    );
   }
 
   static void _signatureAndNoticePkk4(Sheet sheet) {
-    _mergeText(sheet, 'A78', 'O78', 'Nota: \nLaporan sistem guard tour ini dijana secara digital. Sila pastikan segala maklumat yang dicetak adalah jelas dan sahih. Ruangan tandatangan penyedia, penyemak, dan Pengesah hendaklah dilengkapkan di setiap helaian.', _note);
+    _mergeText(
+      sheet,
+      'A78',
+      'O78',
+      'Nota: \nLaporan sistem guard tour ini dijana secara digital. Sila pastikan segala maklumat yang dicetak adalah jelas dan sahih. Ruangan tandatangan penyedia, penyemak, dan Pengesah hendaklah dilengkapkan di setiap helaian.',
+      _note,
+    );
     _text(sheet, 'A80', 'Peringatan:', style: _bold);
     _mergeText(sheet, 'A81', 'O81', _sprm, _note);
-    _signatureBlock(sheet, prepared: 'A83', checked: 'C83', approved: 'J83', lineRow: 90, roleRow: 92, dateRow: 93);
+    _signatureBlock(
+      sheet,
+      prepared: 'A83',
+      checked: 'C83',
+      approved: 'J83',
+      lineRow: 90,
+      roleRow: 92,
+      dateRow: 93,
+    );
   }
 
   static void _signatureBlock(
@@ -439,17 +699,62 @@ class PkkExcelGenerator {
     _textAt(sheet, cCol, lineRow, '(Tandatangan & Cap Rasmi)');
     _textAt(sheet, aCol, lineRow, '(Tandatangan & Cap Rasmi)');
     _textAt(sheet, pCol, roleRow - 1, 'Pengurus/Wakil Syarikat');
-    _textAt(sheet, cCol, roleRow - 1, 'Institusi Pendidikan: Pegawai/Penolong Jurutera/Pegawai Eksekutif Kanan/');
+    _textAt(
+      sheet,
+      cCol,
+      roleRow - 1,
+      'Institusi Pendidikan: Pegawai/Penolong Jurutera/Pegawai Eksekutif Kanan/',
+    );
     _textAt(sheet, cCol, roleRow, 'Ketua Unit Khidmat Pengurusan');
-    _textAt(sheet, cCol, roleRow + 1, 'Sekolah: Guru Penolong Kanan Pentadbiran');
-    _textAt(sheet, cCol, roleRow + 2, 'Pusat Kokurikulum: Pegawai/Penyelia Pusat Kokurikulum');
-    _textAt(sheet, cCol, roleRow + 3, 'Pegawai Pembangunan JPN atau Institusi Pendidikan atau PPD');
-    _textAt(sheet, aCol, roleRow - 1, 'Institusi Pendidikan: Ketua/Timbalan Ketua Jabatan/');
-    _textAt(sheet, aCol, roleRow, 'Pengarah/Timbalan Pengarah JPN atau Institusi/');
-    _textAt(sheet, aCol, roleRow + 1, 'Pegawai Pendidikan Daerah (PPD)/Timbalan PPD/Ketua Sektor');
+    _textAt(
+      sheet,
+      cCol,
+      roleRow + 1,
+      'Sekolah: Guru Penolong Kanan Pentadbiran',
+    );
+    _textAt(
+      sheet,
+      cCol,
+      roleRow + 2,
+      'Pusat Kokurikulum: Pegawai/Penyelia Pusat Kokurikulum',
+    );
+    _textAt(
+      sheet,
+      cCol,
+      roleRow + 3,
+      'Pegawai Pembangunan JPN atau Institusi Pendidikan atau PPD',
+    );
+    _textAt(
+      sheet,
+      aCol,
+      roleRow - 1,
+      'Institusi Pendidikan: Ketua/Timbalan Ketua Jabatan/',
+    );
+    _textAt(
+      sheet,
+      aCol,
+      roleRow,
+      'Pengarah/Timbalan Pengarah JPN atau Institusi/',
+    );
+    _textAt(
+      sheet,
+      aCol,
+      roleRow + 1,
+      'Pegawai Pendidikan Daerah (PPD)/Timbalan PPD/Ketua Sektor',
+    );
     _textAt(sheet, aCol, roleRow + 2, 'Sekolah: Pengetua/Guru Besar');
-    _textAt(sheet, aCol, roleRow + 3, 'Pusat Kokurikulum: Ketua Unit Pusat Kokurikulum');
-    _textAt(sheet, aCol, roleRow + 4, 'Timbalan Pengarah JPN atau Institusi/PPD/Timbalan PPD/Ketua Sektor');
+    _textAt(
+      sheet,
+      aCol,
+      roleRow + 3,
+      'Pusat Kokurikulum: Ketua Unit Pusat Kokurikulum',
+    );
+    _textAt(
+      sheet,
+      aCol,
+      roleRow + 4,
+      'Timbalan Pengarah JPN atau Institusi/PPD/Timbalan PPD/Ketua Sektor',
+    );
     _textAt(sheet, pCol, dateRow - 1, 'Tarikh:');
     _textAt(sheet, cCol, roleRow + 4, 'Tarikh:');
     _textAt(sheet, aCol, roleRow + 5, 'Tarikh:');
@@ -475,7 +780,11 @@ class PkkExcelGenerator {
     }
     final result = <_GuardSession>[];
     for (final entry in byUser.entries) {
-      final rows = entry.value..sort((a, b) => (a['_local'] as DateTime).compareTo(b['_local'] as DateTime));
+      final rows = entry.value
+        ..sort(
+          (a, b) =>
+              (a['_local'] as DateTime).compareTo(b['_local'] as DateTime),
+        );
       Map<String, dynamic>? pending;
       for (final row in rows) {
         final type = (row['punch_type'] ?? '').toString().toUpperCase();
@@ -498,7 +807,10 @@ class PkkExcelGenerator {
     return result;
   }
 
-  static _GuardSession _sessionFrom(Map<String, dynamic> startRow, Map<String, dynamic>? endRow) {
+  static _GuardSession _sessionFrom(
+    Map<String, dynamic> startRow,
+    Map<String, dynamic>? endRow,
+  ) {
     final start = startRow['_local'] as DateTime;
     return _GuardSession(
       userId: (startRow['user_id'] as num?)?.toInt() ?? 0,
@@ -516,41 +828,85 @@ class PkkExcelGenerator {
     return parsed.toUtc().add(const Duration(hours: 8));
   }
 
-  static String _time(DateTime value) => '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+  static String _time(DateTime value) =>
+      '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
   static void _pkk2Dimensions(Sheet sheet) {
-    final widths = <int, double>{0: 22.36328125, 1: 11.08984375, for (var c = 2; c <= 21; c++) c: 12.81640625, 22: 11.90625};
+    final widths = <int, double>{
+      0: 22.36328125,
+      1: 11.08984375,
+      for (var c = 2; c <= 21; c++) c: 12.81640625,
+      22: 11.90625,
+    };
     widths.forEach(sheet.setColumnWidth);
-    for (var r = 0; r < 56; r++) sheet.setRowHeight(r, 20.15);
-    for (final r in [20, 21, 22, 23, 24, 25, 26, 27, 28, 29]) sheet.setRowHeight(r, 42);
+    for (var r = 0; r < 56; r++) {
+      sheet.setRowHeight(r, 20.15);
+    }
+    for (final r in [20, 21, 22, 23, 24, 25, 26, 27, 28, 29]) {
+      sheet.setRowHeight(r, 42);
+    }
     sheet.setRowHeight(35, 100.5);
   }
 
   static void _pkk3Dimensions(Sheet sheet) {
     sheet.setColumnWidth(0, 22.36328125);
-    for (var c = 1; c <= 2; c++) sheet.setColumnWidth(c, 11.08984375);
-    for (var c = 3; c <= 22; c++) sheet.setColumnWidth(c, 11.90625);
-    for (var r = 0; r < 94; r++) sheet.setRowHeight(r, 18);
-    for (final r in [13, 14, 15]) sheet.setRowHeight(r, 24.5);
+    for (var c = 1; c <= 2; c++) {
+      sheet.setColumnWidth(c, 11.08984375);
+    }
+    for (var c = 3; c <= 22; c++) {
+      sheet.setColumnWidth(c, 11.90625);
+    }
+    for (var r = 0; r < 94; r++) {
+      sheet.setRowHeight(r, 18);
+    }
+    for (final r in [13, 14, 15]) {
+      sheet.setRowHeight(r, 24.5);
+    }
     sheet.setRowHeight(73, 69);
   }
 
   static void _pkk4Dimensions(Sheet sheet) {
     sheet.setColumnWidth(0, 27.453125);
     sheet.setColumnWidth(1, 28);
-    for (var c = 2; c <= 14; c++) sheet.setColumnWidth(c, 14.453125);
-    for (var r = 0; r < 105; r++) sheet.setRowHeight(r, 18);
+    for (var c = 2; c <= 14; c++) {
+      sheet.setColumnWidth(c, 14.453125);
+    }
+    for (var r = 0; r < 105; r++) {
+      sheet.setRowHeight(r, 18);
+    }
     sheet.setRowHeight(77, 46.5);
     sheet.setRowHeight(80, 50.15);
   }
 
-  static final _thin = Border(borderStyle: BorderStyle.Thin, borderColorHex: ExcelColor.black);
-  static final _base = CellStyle(fontFamily: 'Arial', fontSize: 8, verticalAlign: VerticalAlign.Center);
+  static final _thin = Border(
+    borderStyle: BorderStyle.Thin,
+    borderColorHex: ExcelColor.black,
+  );
+  static final _base = CellStyle(
+    fontFamily: 'Arial',
+    fontSize: 8,
+    verticalAlign: VerticalAlign.Center,
+  );
   static final _bold = _base.copyWith(boldVal: true);
-  static final _boldWrap = _base.copyWith(boldVal: true, textWrappingVal: TextWrapping.WrapText);
-  static final _title = _base.copyWith(boldVal: true, fontSizeVal: 9, horizontalAlignVal: HorizontalAlign.Center, verticalAlignVal: VerticalAlign.Center);
-  static final _centerBold = _base.copyWith(boldVal: true, horizontalAlignVal: HorizontalAlign.Center);
-  static final _smallBoldRight = _base.copyWith(boldVal: true, fontSizeVal: 7, horizontalAlignVal: HorizontalAlign.Right);
+  static final _boldWrap = _base.copyWith(
+    boldVal: true,
+    textWrappingVal: TextWrapping.WrapText,
+  );
+  static final _title = _base.copyWith(
+    boldVal: true,
+    fontSizeVal: 9,
+    horizontalAlignVal: HorizontalAlign.Center,
+    verticalAlignVal: VerticalAlign.Center,
+  );
+  static final _centerBold = _base.copyWith(
+    boldVal: true,
+    horizontalAlignVal: HorizontalAlign.Center,
+  );
+  static final _smallBoldRight = _base.copyWith(
+    boldVal: true,
+    fontSizeVal: 7,
+    horizontalAlignVal: HorizontalAlign.Right,
+  );
   static final _header = _base.copyWith(
     boldVal: true,
     horizontalAlignVal: HorizontalAlign.Center,
@@ -563,11 +919,25 @@ class PkkExcelGenerator {
     bottomBorderVal: _thin,
   );
   static final _tableHeader = _header.copyWith(fontSizeVal: 8);
-  static final _tableBody = _base.copyWith(leftBorderVal: _thin, rightBorderVal: _thin, topBorderVal: _thin, bottomBorderVal: _thin, textWrappingVal: TextWrapping.WrapText);
-  static final _tableCenter = _tableBody.copyWith(horizontalAlignVal: HorizontalAlign.Center, verticalAlignVal: VerticalAlign.Center);
-  static final _note = _base.copyWith(fontSizeVal: 7, textWrappingVal: TextWrapping.WrapText, verticalAlignVal: VerticalAlign.Top);
+  static final _tableBody = _base.copyWith(
+    leftBorderVal: _thin,
+    rightBorderVal: _thin,
+    topBorderVal: _thin,
+    bottomBorderVal: _thin,
+    textWrappingVal: TextWrapping.WrapText,
+  );
+  static final _tableCenter = _tableBody.copyWith(
+    horizontalAlignVal: HorizontalAlign.Center,
+    verticalAlignVal: VerticalAlign.Center,
+  );
+  static final _note = _base.copyWith(
+    fontSizeVal: 7,
+    textWrappingVal: TextWrapping.WrapText,
+    verticalAlignVal: VerticalAlign.Top,
+  );
 
-  static const _sprm = 'Seksyen 18, Akta SPRM: "Seseorang melakukan kesalahan jika dia memberi seseorang ejen, atau sebagai seorang ejen dia menggunakan, dengan niat hendak memperdayakan prinsipalnya, apa-apa resit, akaun atau dokumen lain yang berkenaan dengan prinsipalnya itu mempunyai kepentingan, dan yang dia mempunyai sebab untuk mempercayai mengandungi apa-apa pernyataan yang palsu atau silap atau tidak lengkap tentang apa-apa butir matan, dan yang dimaksudkan untuk mengelirukan prinsipalnya."';
+  static const _sprm =
+      'Seksyen 18, Akta SPRM: "Seseorang melakukan kesalahan jika dia memberi seseorang ejen, atau sebagai seorang ejen dia menggunakan, dengan niat hendak memperdayakan prinsipalnya, apa-apa resit, akaun atau dokumen lain yang berkenaan dengan prinsipalnya itu mempunyai kepentingan, dan yang dia mempunyai sebab untuk mempercayai mengandungi apa-apa pernyataan yang palsu atau silap atau tidak lengkap tentang apa-apa butir matan, dan yang dimaksudkan untuk mengelirukan prinsipalnya."';
 
   static void _text(Sheet sheet, String ref, String value, {CellStyle? style}) {
     final cell = sheet.cell(CellIndex.indexByString(ref));
@@ -575,18 +945,42 @@ class PkkExcelGenerator {
     cell.cellStyle = style ?? _base;
   }
 
-  static void _textAt(Sheet sheet, int col, int row, String value, {CellStyle? style}) {
-    final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row));
+  static void _textAt(
+    Sheet sheet,
+    int col,
+    int row,
+    String value, {
+    CellStyle? style,
+  }) {
+    final cell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row),
+    );
     cell.value = TextCellValue(value);
     cell.cellStyle = style ?? _base;
   }
 
-  static void _mergeText(Sheet sheet, String start, String end, String value, CellStyle style) {
-    sheet.merge(CellIndex.indexByString(start), CellIndex.indexByString(end), customValue: TextCellValue(value));
+  static void _mergeText(
+    Sheet sheet,
+    String start,
+    String end,
+    String value,
+    CellStyle style,
+  ) {
+    sheet.merge(
+      CellIndex.indexByString(start),
+      CellIndex.indexByString(end),
+      customValue: TextCellValue(value),
+    );
     sheet.setMergedCellStyle(CellIndex.indexByString(start), style);
   }
 
-  static void _mergeByIndex(Sheet sheet, int startCol, int startRow, int endCol, int endRow) {
+  static void _mergeByIndex(
+    Sheet sheet,
+    int startCol,
+    int startRow,
+    int endCol,
+    int endRow,
+  ) {
     sheet.merge(
       CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: startRow),
       CellIndex.indexByColumnRow(columnIndex: endCol, rowIndex: endRow),
@@ -598,7 +992,13 @@ class PkkExcelGenerator {
 }
 
 class _GuardSession {
-  const _GuardSession({required this.userId, required this.name, required this.start, required this.end, required this.shift});
+  const _GuardSession({
+    required this.userId,
+    required this.name,
+    required this.start,
+    required this.end,
+    required this.shift,
+  });
   final int userId;
   final String name;
   final DateTime start;
@@ -607,7 +1007,11 @@ class _GuardSession {
 }
 
 class _Pkk4Row {
-  const _Pkk4Row({required this.day, required this.checkpoint, required this.slots});
+  const _Pkk4Row({
+    required this.day,
+    required this.checkpoint,
+    required this.slots,
+  });
   final int day;
   final String checkpoint;
   final List<String> slots;
