@@ -1,10 +1,16 @@
-name: Validate PKK PDF Reports
+name: Validate Strict PKK PDF Formats
 
 on:
   push:
     branches:
       - main
     paths:
+      - lib/features/admin/pkk_pdf_generator.dart
+      - lib/features/admin/report_screen.dart
+      - worker/reports.js
+      - tool/pkk_pdf_reference_smoke.dart
+      - pubspec.yaml
+      - pubspec.lock
       - .github/workflows/validate-pkk-excel-reports.yml
   workflow_dispatch:
 
@@ -32,11 +38,11 @@ jobs:
       - name: Apply safe analyzer fixes
         run: |
           dart fix --apply
-          dart format lib/features/admin/report_screen.dart lib/features/admin/pkk_pdf_generator.dart
+          dart format lib/features/admin/report_screen.dart lib/features/admin/pkk_pdf_generator.dart tool/pkk_pdf_reference_smoke.dart
           dart fix --apply
 
       - name: Format report sources
-        run: dart format lib/features/admin/report_screen.dart lib/features/admin/pkk_pdf_generator.dart
+        run: dart format lib/features/admin/report_screen.dart lib/features/admin/pkk_pdf_generator.dart tool/pkk_pdf_reference_smoke.dart
 
       - name: Validate Worker JavaScript
         run: node --check worker/reports.js
@@ -44,7 +50,7 @@ jobs:
       - name: Analyze Flutter code
         run: flutter analyze
 
-      - name: Verify PKK-only PDF behavior
+      - name: Verify strict reference behavior
         shell: bash
         run: |
           set -euo pipefail
@@ -56,11 +62,36 @@ jobs:
           ! grep -n "flutterExcel" lib/features/admin/report_screen.dart
           ! grep -n "excel:" pubspec.yaml
           ! grep -n "file_saver:" pubspec.yaml
+          grep -n "1 JANUARI 2019" lib/features/admin/pkk_pdf_generator.dart
+          grep -n "1 OKTOBER 2024" lib/features/admin/pkk_pdf_generator.dart
+          grep -n "NAMA PEKERJA" lib/features/admin/pkk_pdf_generator.dart
+          grep -n "Summarize" lib/features/admin/pkk_pdf_generator.dart
           grep -n "Disediakan Oleh" lib/features/admin/pkk_pdf_generator.dart
           grep -n "Disemak Oleh" lib/features/admin/pkk_pdf_generator.dart
           grep -n "Disahkan Oleh" lib/features/admin/pkk_pdf_generator.dart
-          grep -n "version: 0.5.7+23" pubspec.yaml
-          grep -n "payload.checkpoints" worker/reports.js
+          grep -n "version: 0.5.8+24" pubspec.yaml
+          grep -n "payload.guards" worker/reports.js
+          grep -n "attendanceToEnd" worker/reports.js
+
+      - name: Generate reference PDFs
+        run: dart run tool/pkk_pdf_reference_smoke.dart
+
+      - name: Verify generated reference PDFs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build/pkk-reference/PKK_2_REFERENCE.pdf
+          test -s build/pkk-reference/PKK_3_REFERENCE.pdf
+          test -s build/pkk-reference/PKK_4_REFERENCE.pdf
+          file build/pkk-reference/*.pdf
+
+      - name: Upload reference PDFs
+        uses: actions/upload-artifact@v4
+        with:
+          name: RimbaKawal-PKK-Strict-Reference-PDFs
+          path: build/pkk-reference/*.pdf
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Check diff
         run: git diff --check
@@ -71,10 +102,10 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/features/admin/report_screen.dart lib/features/admin/pkk_pdf_generator.dart pubspec.yaml pubspec.lock worker/reports.js
+          git add lib/features/admin/report_screen.dart lib/features/admin/pkk_pdf_generator.dart tool/pkk_pdf_reference_smoke.dart pubspec.yaml pubspec.lock worker/reports.js
           if git diff --cached --quiet; then
             echo "No validation fixes to commit."
             exit 0
           fi
-          git commit -m "Validate PKK PDF report generation"
+          git commit -m "Validate strict PKK PDF reference formats"
           git push
