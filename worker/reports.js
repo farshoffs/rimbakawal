@@ -1,4 +1,4 @@
-import attendanceWorker from './attendance.js';
+import commandCenterWorker from './command_center_period.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -6,17 +6,17 @@ export default {
     if (url.pathname === '/api/admin/reports' && request.method === 'GET') {
       return monthlyReport(request, env, ctx, url);
     }
-    return attendanceWorker.fetch(request, env, ctx);
+    return commandCenterWorker.fetch(request, env, ctx);
   },
   async scheduled(event, env, ctx) {
-    if (typeof attendanceWorker.scheduled === 'function') {
-      return attendanceWorker.scheduled(event, env, ctx);
+    if (typeof commandCenterWorker.scheduled === 'function') {
+      return commandCenterWorker.scheduled(event, env, ctx);
     }
   },
 };
 
 async function monthlyReport(request, env, ctx, url) {
-  const downstream = await attendanceWorker.fetch(request, env, ctx);
+  const downstream = await commandCenterWorker.fetch(request, env, ctx);
   if (!downstream.ok) return downstream;
 
   const payload = await downstream.json();
