@@ -36,6 +36,9 @@ jobs:
       - name: Format touched Dart files
         run: dart format lib/features/admin/department_maintenance_screen.dart lib/core/nfc/nfc_service.dart lib/core/nfc/mock_nfc_service.dart lib/core/nfc/real_nfc_service.dart
 
+      - name: Apply safe Dart lint fixes
+        run: dart fix --apply lib/core/nfc/real_nfc_service.dart
+
       - name: Analyze Flutter code
         run: flutter analyze
 
