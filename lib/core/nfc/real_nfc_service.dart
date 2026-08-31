@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:nfc_manager/ndef_record.dart';
@@ -13,7 +12,7 @@ import 'nfc_service.dart';
 
 class RealNfcService implements NfcService {
   RealNfcService({NfcManager? manager})
-      : _manager = manager ?? NfcManager.instance;
+    : _manager = manager ?? NfcManager.instance;
 
   static const _checkpointRecordType = 'dev.rimbakawal:checkpoint';
 
@@ -42,7 +41,9 @@ class RealNfcService implements NfcService {
     var discoveryHandled = false;
     Timer? timeoutTimer;
 
-    unawaited(completer.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
+    unawaited(
+      completer.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+    );
 
     try {
       await _manager.startSession(
@@ -61,55 +62,19 @@ class RealNfcService implements NfcService {
             if (!completer.isCompleted) completer.complete(result);
           } catch (error, stackTrace) {
             await _stopQuietly(errorMessage: 'Tag NFC ini tidak dapat dibaca.');
-            if (!completer.isCompleted) completer.completeError(error, stackTrace);
+            if (!completer.isCompleted) {
+              completer.completeError(error, stackTrace);
+            }
           }
         },
         onSessionErrorIos: (error) => _completeIosError(completer, error),
       );
 
       if (!completer.isCompleted) {
-        timeoutTimer = _timeout(completer, 'Tiada tag NFC dikesan dalam masa 30 saat.');
-      }
-      return await completer.future;
-    } finally {
-      timeoutTimer?.cancel();
-      _endOperation(completer);
-    }
-  }
-
-  @override
-  Future<String> writeCheckpointTag() async {
-    final completer = Completer<String>();
-    _beginOperation(completer);
-    var discoveryHandled = false;
-    Timer? timeoutTimer;
-    final checkpointId = _newCheckpointId();
-    final message = _checkpointMessage(checkpointId);
-
-    unawaited(completer.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
-
-    try {
-      await _manager.startSession(
-        pollingOptions: const {NfcPollingOption.iso14443},
-        alertMessageIos: 'Dekatkan bahagian atas iPhone pada tag untuk menetapkan checkpoint.',
-        invalidateAfterFirstReadIos: true,
-        onDiscovered: (tag) async {
-          if (completer.isCompleted || discoveryHandled) return;
-          discoveryHandled = true;
-          try {
-            await _writeMessage(tag, message);
-            await _stopQuietly(alertMessage: 'Tag checkpoint berjaya ditetapkan.');
-            if (!completer.isCompleted) completer.complete(checkpointId);
-          } catch (error, stackTrace) {
-            await _stopQuietly(errorMessage: 'Tag NFC tidak dapat ditulis.');
-            if (!completer.isCompleted) completer.completeError(error, stackTrace);
-          }
-        },
-        onSessionErrorIos: (error) => _completeIosError(completer, error),
-      );
-
-      if (!completer.isCompleted) {
-        timeoutTimer = _timeout(completer, 'Tiada tag NFC dikesan dalam masa 30 saat.');
+        timeoutTimer = _timeout(
+          completer,
+          'Tiada tag NFC dikesan dalam masa 30 saat.',
+        );
       }
       return await completer.future;
     } finally {
@@ -150,7 +115,7 @@ class RealNfcService implements NfcService {
   }
 
   Future<NfcScanResult> _normalizeTag(NfcTag tag) async {
-    final checkpointId = _checkpointIdFromMessage(_cachedMessage(tag));
+    final ndefId = _readOnlyIdFromMessage(_cachedMessage(tag));
 
     if (defaultTargetPlatform == TargetPlatform.android) {
       final androidTag = NfcTagAndroid.from(tag);
@@ -158,33 +123,47 @@ class RealNfcService implements NfcService {
         throw StateError('Android mengesan tag tetapi ID tidak dapat dibaca.');
       }
       return NfcScanResult(
-        tagId: checkpointId ?? _hex(androidTag.id),
+        tagId: ndefId ?? _hex(androidTag.id),
         scannedAt: DateTime.now(),
-        technology: androidTag.techList.isEmpty ? 'Android NFC' : androidTag.techList.join(', '),
-        ndefPayload: checkpointId == null ? null : 'rimbakawal://checkpoint/$checkpointId',
+        technology: androidTag.techList.isEmpty
+            ? 'Android NFC'
+            : androidTag.techList.join(', '),
+        ndefPayload: ndefId,
       );
     }
 
     if (defaultTargetPlatform == TargetPlatform.iOS) {
-      if (checkpointId != null) {
+      if (ndefId != null) {
         return NfcScanResult(
-          tagId: checkpointId,
+          tagId: ndefId,
           scannedAt: DateTime.now(),
           technology: 'iOS NDEF',
-          ndefPayload: 'rimbakawal://checkpoint/$checkpointId',
+          ndefPayload: ndefId,
         );
       }
       final miFare = MiFareIos.from(tag);
       if (miFare != null) {
-        return NfcScanResult(tagId: _hex(miFare.identifier), scannedAt: DateTime.now(), technology: 'iOS MiFare (${miFare.mifareFamily.name})');
+        return NfcScanResult(
+          tagId: _hex(miFare.identifier),
+          scannedAt: DateTime.now(),
+          technology: 'iOS MiFare (${miFare.mifareFamily.name})',
+        );
       }
       final iso7816 = Iso7816Ios.from(tag);
       if (iso7816 != null) {
-        return NfcScanResult(tagId: _hex(iso7816.identifier), scannedAt: DateTime.now(), technology: 'iOS ISO 7816');
+        return NfcScanResult(
+          tagId: _hex(iso7816.identifier),
+          scannedAt: DateTime.now(),
+          technology: 'iOS ISO 7816',
+        );
       }
       final iso15693 = Iso15693Ios.from(tag);
       if (iso15693 != null) {
-        return NfcScanResult(tagId: _hex(iso15693.identifier), scannedAt: DateTime.now(), technology: 'iOS ISO 15693');
+        return NfcScanResult(
+          tagId: _hex(iso15693.identifier),
+          scannedAt: DateTime.now(),
+          technology: 'iOS ISO 15693',
+        );
       }
       throw StateError('iPhone mengesan tag tetapi ID tag tidak dapat dibaca.');
     }
@@ -202,66 +181,130 @@ class RealNfcService implements NfcService {
     return null;
   }
 
-  String? _checkpointIdFromMessage(NdefMessage? message) {
+  String? _readOnlyIdFromMessage(NdefMessage? message) {
     if (message == null) return null;
+
+    // Preserve compatibility with tags written by older RimbaKawal builds.
     for (final record in message.records) {
       if (record.typeNameFormat != TypeNameFormat.external) continue;
       final type = utf8.decode(record.type, allowMalformed: true).toLowerCase();
       if (type != _checkpointRecordType) continue;
-      final value = utf8.decode(record.payload, allowMalformed: true).trim().toUpperCase();
-      if (value.startsWith('RK-') && value.length >= 12) return value;
+      final value = utf8.decode(record.payload, allowMalformed: true).trim();
+      if (value.isNotEmpty) return value.toUpperCase();
+    }
+
+    // NFC Tools and similar apps commonly write NFC Forum Text or URI records.
+    for (final record in message.records) {
+      if (record.typeNameFormat != TypeNameFormat.wellKnown) continue;
+      final type = utf8.decode(record.type, allowMalformed: true);
+      if (type == 'T') {
+        final value = _textRecordValue(record.payload);
+        if (value != null && value.isNotEmpty) return _bounded('TEXT:$value');
+      }
+      if (type == 'U') {
+        final value = _uriRecordValue(record.payload);
+        if (value != null && value.isNotEmpty) return _bounded('URI:$value');
+      }
+    }
+
+    // For another pre-written NDEF record, derive a stable read-only identifier
+    // from its bytes. No tag content is modified.
+    for (final record in message.records) {
+      if (record.payload.isEmpty && record.type.isEmpty) continue;
+      return 'NDEF:${_stableNdefFingerprint(record)}';
     }
     return null;
   }
 
-  NdefMessage _checkpointMessage(String checkpointId) {
-    return NdefMessage(
-      records: [
-        NdefRecord(
-          typeNameFormat: TypeNameFormat.external,
-          type: Uint8List.fromList(utf8.encode(_checkpointRecordType)),
-          identifier: Uint8List(0),
-          payload: Uint8List.fromList(utf8.encode(checkpointId)),
-        ),
-      ],
-    );
+  String? _textRecordValue(Uint8List payload) {
+    if (payload.isEmpty) return null;
+    final status = payload[0];
+    final utf16 = (status & 0x80) != 0;
+    final languageLength = status & 0x3F;
+    final textStart = 1 + languageLength;
+    if (utf16 || textStart >= payload.length) return null;
+    return utf8.decode(payload.sublist(textStart), allowMalformed: true).trim();
   }
 
-  Future<void> _writeMessage(NfcTag tag, NdefMessage message) async {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      final ndef = NdefAndroid.from(tag);
-      if (ndef != null) {
-        if (!ndef.isWritable) throw StateError('Tag NFC ini dikunci atau read-only.');
-        if (message.byteLength > ndef.maxSize) throw StateError('Kapasiti tag NFC tidak mencukupi.');
-        await ndef.writeNdefMessage(message);
-        return;
-      }
-      final formatable = NdefFormatableAndroid.from(tag);
-      if (formatable != null) {
-        await formatable.format(message);
-        return;
-      }
-      throw StateError('Tag ini tidak menyokong penulisan NDEF.');
+  String? _uriRecordValue(Uint8List payload) {
+    if (payload.isEmpty) return null;
+    const prefixes = <String>[
+      '',
+      'http://www.',
+      'https://www.',
+      'http://',
+      'https://',
+      'tel:',
+      'mailto:',
+      'ftp://anonymous:anonymous@',
+      'ftp://ftp.',
+      'ftps://',
+      'sftp://',
+      'smb://',
+      'nfs://',
+      'ftp://',
+      'dav://',
+      'news:',
+      'telnet://',
+      'imap:',
+      'rtsp://',
+      'urn:',
+      'pop:',
+      'sip:',
+      'sips:',
+      'tftp:',
+      'btspp://',
+      'btl2cap://',
+      'btgoep://',
+      'tcpobex://',
+      'irdaobex://',
+      'file://',
+      'urn:epc:id:',
+      'urn:epc:tag:',
+      'urn:epc:pat:',
+      'urn:epc:raw:',
+      'urn:epc:',
+      'urn:nfc:',
+    ];
+    final code = payload[0];
+    final prefix = code < prefixes.length ? prefixes[code] : '';
+    final rest = utf8.decode(payload.sublist(1), allowMalformed: true).trim();
+    return '$prefix$rest';
+  }
+
+  String _bounded(String value) {
+    final trimmed = value.trim();
+    if (trimmed.length <= 120) return trimmed;
+    return 'NDEF:${_fingerprintBytes(Uint8List.fromList(utf8.encode(trimmed)))}';
+  }
+
+  String _stableNdefFingerprint(NdefRecord record) {
+    final bytes = Uint8List.fromList([
+      ...record.type,
+      0,
+      ...record.identifier,
+      0,
+      ...record.payload,
+    ]);
+    return _fingerprintBytes(bytes);
+  }
+
+  String _fingerprintBytes(Uint8List bytes) {
+    var a = 0x811C9DC5;
+    var b = 0x9E3779B9;
+    for (final byte in bytes) {
+      a = ((a ^ byte) * 0x01000193) & 0xFFFFFFFF;
+      b = ((b + byte + ((b << 6) & 0xFFFFFFFF) + (b >> 2))) & 0xFFFFFFFF;
     }
-
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      final ndef = NdefIos.from(tag);
-      if (ndef == null) throw StateError('Tag ini tidak menyokong penulisan NDEF pada iPhone.');
-      if (message.byteLength > ndef.capacity) throw StateError('Kapasiti tag NFC tidak mencukupi.');
-      await ndef.writeNdef(message);
-      return;
-    }
-
-    throw UnsupportedError('Penulisan NFC hanya tersedia pada Android dan iOS.');
+    String hex32(int value) =>
+        value.toRadixString(16).padLeft(8, '0').toUpperCase();
+    return '${hex32(a)}${hex32(b)}';
   }
 
-  String _newCheckpointId() {
-    final random = Random.secure();
-    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
-    return 'RK-${bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join().toUpperCase()}';
-  }
-
-  void _completeIosError<T>(Completer<T> completer, NfcReaderSessionErrorIos error) {
+  void _completeIosError<T>(
+    Completer<T> completer,
+    NfcReaderSessionErrorIos error,
+  ) {
     if (completer.isCompleted) return;
     final message = error.toString();
     final normalized = message.toLowerCase().replaceAll(' ', '');
@@ -272,10 +315,16 @@ class RealNfcService implements NfcService {
     }
   }
 
-  Future<void> _stopQuietly({String? alertMessage, String? errorMessage}) async {
+  Future<void> _stopQuietly({
+    String? alertMessage,
+    String? errorMessage,
+  }) async {
     try {
       if (defaultTargetPlatform == TargetPlatform.iOS) {
-        await _manager.stopSession(alertMessageIos: alertMessage, errorMessageIos: errorMessage);
+        await _manager.stopSession(
+          alertMessageIos: alertMessage,
+          errorMessageIos: errorMessage,
+        );
       } else {
         await _manager.stopSession();
       }
@@ -283,6 +332,8 @@ class RealNfcService implements NfcService {
   }
 
   String _hex(Uint8List bytes) {
-    return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0').toUpperCase()).join(':');
+    return bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0').toUpperCase())
+        .join(':');
   }
 }

@@ -656,12 +656,14 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
       if (!available) {
         throw StateError('NFC tidak tersedia pada peranti ini.');
       }
-      final checkpointId = await widget.nfcService.writeCheckpointTag();
+      final scan = await widget.nfcService.scan();
       if (!mounted) return;
-      setState(() => _uidController.text = checkpointId);
+      setState(() => _uidController.text = scan.tagId);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Tag NFC berjaya ditetapkan untuk checkpoint ini.'),
+          content: Text(
+            'Tag NFC berjaya dibaca dan disimpan untuk checkpoint ini.',
+          ),
         ),
       );
     } on NfcScanCancelledException {
@@ -743,8 +745,8 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
                 controller: _uidController,
                 textCapitalization: TextCapitalization.characters,
                 decoration: const InputDecoration(
-                  labelText: 'ID tag NFC',
-                  hintText: 'Tekan Scan Tag untuk menetapkan tag',
+                  labelText: 'Data / ID tag NFC',
+                  hintText: 'Tekan Scan Tag untuk membaca tag sedia ada',
                   prefixIcon: Icon(Icons.nfc_rounded),
                 ),
               ),
@@ -754,14 +756,14 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
                 child: FilledButton.tonalIcon(
                   onPressed: _scanning ? null : _scanTag,
                   icon: const Icon(Icons.nfc_rounded),
-                  label: Text(_scanning ? 'MENULIS TAG…' : 'SCAN TAG'),
+                  label: Text(_scanning ? 'MEMBACA TAG…' : 'SCAN TAG'),
                 ),
               ),
               const SizedBox(height: 6),
               const Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Untuk checkpoint baharu, tag akan ditulis dengan ID RimbaKawal. Untuk checkpoint sedia ada, Scan Tag akan menulis semula tag yang disentuh.',
+                  'Scan Tag hanya membaca tag yang telah disediakan. RimbaKawal tidak akan menulis atau mengubah kandungan NFC. NDEF Text/URI akan digunakan jika ada; jika tiada, UID fizikal tag digunakan.',
                   style: TextStyle(fontSize: 12),
                 ),
               ),
@@ -770,7 +772,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Versi web menggunakan simulasi penulisan NFC untuk ujian konfigurasi.',
+                    'Versi web menggunakan simulasi bacaan NFC untuk ujian konfigurasi.',
                     style: TextStyle(fontSize: 12),
                   ),
                 ),
