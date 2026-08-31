@@ -1,0 +1,11 @@
+RimbaKawal production release 0.5.9+25
+
+Validated command-center period source:
+64f4622fae8c1fa295946cf358e51bf8a6de4bb2
+
+Includes:
+- Pemantauan Rondaan Day / Week / Month filters
+- period-based patrol coverage, attendance, incidents and SOS
+- drill-down to existing Sejarah Rondaan / Sejarah Kehadiran / SOS screens
+- explicit missed-checkpoint details and history filter
+- clarified attendance vs current IN semantics
