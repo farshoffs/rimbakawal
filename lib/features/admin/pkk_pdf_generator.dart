@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:pdf/pdf.dart';
@@ -19,6 +20,8 @@ class PkkPdfGenerator {
     'DISEMBER',
   ];
 
+  static final PdfColor _headerBlue = PdfColor.fromInt(0xff0d6efd);
+
   static Future<Uint8List> generatePkk2({
     required Map<String, dynamic> data,
     required int month,
@@ -28,46 +31,29 @@ class PkkPdfGenerator {
     final sessions = _attendanceSessions(
       data['attendance'] as List<dynamic>? ?? const [],
     );
-    final days = DateTime(year, month + 1, 0).day;
-    final actual = <int, Map<int, Set<int>>>{};
+    final guards = _guards(data, sessions);
+    final guardPages = guards.isEmpty
+        ? const <List<_GuardMeta>>[<_GuardMeta>[]]
+        : <List<_GuardMeta>>[
+            for (var start = 0; start < guards.length; start += 4)
+              guards.skip(start).take(4).toList(),
+          ];
 
-    for (final session in sessions) {
-      if (session.start.year != year || session.start.month != month) continue;
-      actual
-          .putIfAbsent(session.start.day, () => <int, Set<int>>{})
-          .putIfAbsent(session.shift, () => <int>{})
-          .add(session.userId);
-    }
-
-    var requiredShift1 = 0;
-    var requiredShift2 = 0;
-    for (final day in actual.values) {
-      if ((day[1]?.length ?? 0) > requiredShift1) {
-        requiredShift1 = day[1]!.length;
-      }
-      if ((day[2]?.length ?? 0) > requiredShift2) {
-        requiredShift2 = day[2]!.length;
-      }
-    }
-
+    final requiredByShift = _requiredGuardsByShift(sessions, month, year);
     final doc = pw.Document();
-    final pages = <List<int>>[
-      List<int>.generate(days > 30 ? 30 : days, (index) => index + 1),
-      if (days == 31) const [31],
-    ];
-    for (final pageDays in pages) {
+    for (final pageGuards in guardPages) {
       doc.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.fromLTRB(18, 15, 18, 14),
+          margin: const pw.EdgeInsets.fromLTRB(11, 10, 11, 9),
           build: (_) => _pkk2Page(
             department: department,
             month: month,
             year: year,
-            pageDays: pageDays,
-            actual: actual,
-            requiredShift1: requiredShift1,
-            requiredShift2: requiredShift2,
+            guards: pageGuards,
+            sessions: sessions,
+            requiredShift1: requiredByShift[1] ?? 0,
+            requiredShift2: requiredByShift[2] ?? 0,
           ),
         ),
       );
@@ -84,35 +70,44 @@ class PkkPdfGenerator {
     final sessions = _attendanceSessions(
       data['attendance'] as List<dynamic>? ?? const [],
     );
-    final guardNames = <int, String>{};
-    final guardStatus = <int, String>{};
-    for (final session in sessions) {
-      if (session.start.year != year || session.start.month != month) continue;
-      guardNames[session.userId] = session.name;
-      guardStatus[session.userId] = 'TETAP';
-    }
-    final ids = guardNames.keys.toList()
-      ..sort((a, b) => guardNames[a]!.compareTo(guardNames[b]!));
-    final pages = ids.isEmpty ? 1 : ((ids.length + 2) ~/ 3);
-    final doc = pw.Document();
+    final guards = _guards(data, sessions);
+    final effectiveGuards = guards.isEmpty
+        ? const <_GuardMeta>[_GuardMeta(id: 0, name: '-', noPk: '')]
+        : guards;
 
-    for (var page = 0; page < pages; page++) {
-      final pageIds = ids.skip(page * 3).take(3).toList();
-      doc.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.fromLTRB(12, 12, 12, 12),
-          build: (_) => _pkk3Page(
-            department: department,
-            month: month,
-            year: year,
-            guardIds: pageIds,
-            guardNames: guardNames,
-            guardStatus: guardStatus,
-            sessions: sessions,
+    final doc = pw.Document();
+    for (final guard in effectiveGuards) {
+      final guardSessions = sessions
+          .where(
+            (item) =>
+                item.userId == guard.id &&
+                item.start.year == year &&
+                item.start.month == month,
+          )
+          .toList()
+        ..sort((a, b) => a.start.compareTo(b.start));
+
+      const rowsPerPage = 20;
+      final pageCount = math.max(1, (guardSessions.length / rowsPerPage).ceil());
+      for (var page = 0; page < pageCount; page++) {
+        final pageRows = guardSessions
+            .skip(page * rowsPerPage)
+            .take(rowsPerPage)
+            .toList();
+        doc.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.fromLTRB(24, 18, 24, 20),
+            build: (_) => _pkk3Page(
+              department: department,
+              month: month,
+              year: year,
+              guard: guard,
+              sessions: pageRows,
+            ),
           ),
-        ),
-      );
+        );
+      }
     }
     return doc.save();
   }
@@ -136,8 +131,7 @@ class PkkPdfGenerator {
     var checkpoints = <Map<String, dynamic>>[];
     for (final item in data['checkpoints'] as List<dynamic>? ?? const []) {
       final row = Map<String, dynamic>.from(item as Map);
-      final active = row['active'];
-      if (active == false || active == 0) continue;
+      if (row['active'] == false || row['active'] == 0) continue;
       checkpoints.add(row);
     }
     if (checkpoints.isEmpty) {
@@ -147,7 +141,7 @@ class PkkPdfGenerator {
         if (id <= 0) continue;
         derived[id] = {
           'id': id,
-          'name': row['checkpoint_name'] ?? 'GUARDTOUR POINT',
+          'name': row['checkpoint_name'] ?? 'Checkpoint',
           'position': row['checkpoint_position'] ?? 9999,
         };
       }
@@ -163,7 +157,10 @@ class PkkPdfGenerator {
     final rows = <_Pkk4Row>[];
     final days = DateTime(year, month + 1, 0).day;
     for (var day = 1; day <= days; day++) {
-      for (final checkpoint in checkpoints) {
+      for (var checkpointIndex = 0;
+          checkpointIndex < checkpoints.length;
+          checkpointIndex++) {
+        final checkpoint = checkpoints[checkpointIndex];
         final checkpointId = (checkpoint['id'] as num?)?.toInt() ?? 0;
         final slots = List<String>.filled(12, '');
         for (var slot = 0; slot < 12; slot++) {
@@ -176,33 +173,36 @@ class PkkPdfGenerator {
             if (at.day != day || (at.hour ~/ 2) != slot) continue;
             if (earliest == null || at.isBefore(earliest)) earliest = at;
           }
-          if (earliest != null) slots[slot] = _time(earliest);
+          if (earliest != null) slots[slot] = _hhmm(earliest);
         }
         rows.add(
           _Pkk4Row(
             day: day,
-            checkpoint: (checkpoint['name'] ?? 'GUARDTOUR POINT').toString(),
+            showDate: checkpointIndex == 0,
+            checkpoint: (checkpoint['name'] ?? 'Checkpoint').toString(),
             slots: slots,
           ),
         );
       }
     }
 
-    const rowsPerPage = 20;
-    final pageCount = rows.isEmpty
-        ? 1
-        : ((rows.length + rowsPerPage - 1) ~/ rowsPerPage);
+    final pages = _splitPkk4Rows(rows);
     final doc = pw.Document();
-    for (var page = 0; page < pageCount; page++) {
+    for (var page = 0; page < pages.length; page++) {
+      final isFirst = page == 0;
+      final isContinuation = page > 0;
+      final isSinglePage = pages.length == 1;
       doc.addPage(
         pw.Page(
-          pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.fromLTRB(9, 10, 9, 10),
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.fromLTRB(18, 16, 18, 18),
           build: (_) => _pkk4Page(
             department: department,
             month: month,
             year: year,
-            rows: rows.skip(page * rowsPerPage).take(rowsPerPage).toList(),
+            rows: pages[page],
+            showDocumentHeader: isFirst,
+            showSignatureArea: isSinglePage || isContinuation,
           ),
         ),
       );
@@ -214,73 +214,425 @@ class PkkPdfGenerator {
     required Map<String, dynamic> department,
     required int month,
     required int year,
-    required List<int> pageDays,
-    required Map<int, Map<int, Set<int>>> actual,
+    required List<_GuardMeta> guards,
+    required List<_GuardSession> sessions,
     required int requiredShift1,
     required int requiredShift2,
   }) {
-    final blocks = <List<int>>[];
-    for (var start = 0; start < pageDays.length; start += 10) {
-      blocks.add(pageDays.skip(start).take(10).toList());
-    }
-    while (blocks.length < 3) {
-      blocks.add(const []);
-    }
+    final days = DateTime(year, month + 1, 0).day;
+    final blocks = <List<int>>[
+      for (var start = 1; start <= 31; start += 10)
+        <int>[
+          for (var day = start; day <= math.min(start + 9, 31); day++)
+            if (day <= days) day,
+        ],
+    ];
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        _cornerLabel(
-          'PKK 2 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2025 DAN SETERUSNYA)',
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'PKK 2 (BAGI KONTRAK YANG BERMULA PADA 1 JANUARI 2019 DAN SETERUSNYA) - PINDAAN JULAI 2019',
+            style: pw.TextStyle(fontSize: 5.2, fontWeight: pw.FontWeight.bold),
+          ),
         ),
-        _mainTitle(
+        _centerTitle(
           'BORANG PENGESAHAN BILANGAN PENGAWAL DAN REKOD KEHADIRAN PENGAWAL KESELAMATAN',
+          7.5,
         ),
-        _subTitle(
+        _centerTitle(
           'PERKHIDMATAN KAWALAN KESELAMATAN DI SEKOLAH/INSTITUSI PENDIDIKAN',
+          7.1,
         ),
-        _subTitle('DI BAWAH KEMENTERIAN PENDIDIKAN'),
-        pw.SizedBox(height: 7),
-        _centerLine('BULAN: ${months[month - 1]}     TAHUN: $year'),
-        pw.SizedBox(height: 6),
-        _metaRow(department),
-        pw.SizedBox(height: 7),
+        _centerTitle('DI BAWAH KEMENTERIAN PENDIDIKAN MALAYSIA', 7.1),
+        pw.SizedBox(height: 5),
+        pw.Center(
+          child: pw.Text(
+            'BULAN: ${months[month - 1]}       TAHUN: $year',
+            style: pw.TextStyle(fontSize: 6.4, fontWeight: pw.FontWeight.bold),
+          ),
+        ),
+        pw.SizedBox(height: 4),
+        _pkk2Meta(department),
+        pw.SizedBox(height: 5),
+        _pkk2ContractSummary(requiredShift1, requiredShift2),
+        pw.SizedBox(height: 5),
+        pw.Text(
+          '3   SENARAI NAMA PENGAWAL KESELAMATAN YANG BERTUGAS MENGIKUT SYIF',
+          style: pw.TextStyle(fontSize: 5.6, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 2),
+        for (var i = 0; i < blocks.length; i++) ...[
+          _pkk2AttendanceBlock(
+            days: blocks[i],
+            guards: guards,
+            sessions: sessions,
+            month: month,
+            year: year,
+          ),
+          if (i != blocks.length - 1) pw.SizedBox(height: 2.4),
+        ],
+        pw.SizedBox(height: 3),
+        _pkk2Note(),
+        pw.SizedBox(height: 2),
+        _sprmNotice(),
+        pw.SizedBox(height: 3),
+        _signatureRow(),
+      ],
+    );
+  }
+
+  static pw.Widget _pkk2Meta(Map<String, dynamic> department) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
         pw.Row(
           children: [
             pw.Expanded(
-              child: _simpleTable(
-                headers: const [
-                  'Bilangan Pengawal Keselamatan Yang Ditetapkan Mengikut Syif Dalam Dokumen Perjanjian Kontrak',
-                ],
-                rows: [
-                  ['Syif 1', 'Syif 2'],
-                  ['$requiredShift1', '$requiredShift2'],
+              flex: 3,
+              child: _plainMeta(
+                'NAMA SYARIKAT:',
+                '${department['companyName'] ?? ''}',
+              ),
+            ),
+            pw.SizedBox(width: 20),
+            pw.Expanded(
+              flex: 2,
+              child: _plainMeta('ZON:', '${department['zone'] ?? ''}'),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 2),
+        _plainMeta(
+          'SEKOLAH/INSTITUSI PENDIDIKAN:',
+          '${department['name'] ?? ''}',
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _pkk2ContractSummary(int requiredShift1, int requiredShift2) {
+    pw.Widget shiftCount() => pw.Expanded(
+      child: pw.Column(
+        children: [
+          _boxText(
+            '1   BILANGAN PENGAWAL KESELAMATAN YANG DITETAPKAN MENGIKUT SYIF DALAM DOKUMEN PERJANJIAN KONTRAK\n(Sila nyatakan)',
+            fontSize: 5.1,
+            bold: true,
+            height: 25,
+            fill: PdfColors.grey300,
+          ),
+          pw.Row(
+            children: [
+              pw.Expanded(child: _boxText('SYIF 1', height: 13)),
+              pw.Expanded(child: _boxText('SYIF 2', height: 13)),
+              pw.Expanded(child: _boxText('SYIF 3', height: 13)),
+            ],
+          ),
+          pw.Row(
+            children: [
+              pw.Expanded(child: _boxText('$requiredShift1', height: 13)),
+              pw.Expanded(child: _boxText('$requiredShift2', height: 13)),
+              pw.Expanded(child: _boxText('', height: 13)),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    pw.Widget shiftHours() => pw.Expanded(
+      child: pw.Column(
+        children: [
+          _boxText(
+            '2   WAKTU BERTUGAS SETIAP SYIF\n(Sila nyatakan)',
+            fontSize: 5.1,
+            bold: true,
+            height: 25,
+            fill: PdfColors.grey300,
+          ),
+          pw.Row(
+            children: [
+              pw.Expanded(child: _boxText('SYIF 1', height: 13)),
+              pw.Expanded(child: _boxText('SYIF 2', height: 13)),
+              pw.Expanded(child: _boxText('SYIF 3', height: 13)),
+            ],
+          ),
+          pw.Row(
+            children: [
+              pw.Expanded(
+                child: _boxText('Jam 08.00 hingga\njam 20.00', height: 19),
+              ),
+              pw.Expanded(
+                child: _boxText('Jam 20.00 hingga\njam 08.00', height: 19),
+              ),
+              pw.Expanded(
+                child: _boxText('Jam ______ hingga\njam ______', height: 19),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        shiftCount(),
+        pw.SizedBox(width: 18),
+        shiftHours(),
+      ],
+    );
+  }
+
+  static pw.Widget _pkk2AttendanceBlock({
+    required List<int> days,
+    required List<_GuardMeta> guards,
+    required List<_GuardSession> sessions,
+    required int month,
+    required int year,
+  }) {
+    final paddedDays = <int?>[
+      ...days,
+      ...List<int?>.filled(10 - days.length, null),
+    ];
+
+    pw.Widget sideCell(
+      String text, {
+      double? height,
+      bool bold = false,
+      PdfColor? fill,
+      pw.Alignment alignment = pw.Alignment.center,
+    }) {
+      return pw.Container(
+        height: height,
+        alignment: alignment,
+        decoration: pw.BoxDecoration(
+          color: fill,
+          border: pw.Border.all(width: 0.35),
+        ),
+        padding: const pw.EdgeInsets.symmetric(horizontal: 1.5, vertical: 1.2),
+        child: pw.Text(
+          text,
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(
+            fontSize: 4.2,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          ),
+        ),
+      );
+    }
+
+    pw.Widget dailyHeader() => pw.Column(
+      children: [
+        pw.Row(
+          children: [
+            for (final day in paddedDays)
+              pw.Expanded(
+                child: _boxText(
+                  day == null ? '' : '$day',
+                  height: 11,
+                  fontSize: 4.1,
+                  fill: PdfColors.grey200,
+                ),
+              ),
+          ],
+        ),
+        pw.Row(
+          children: [
+            for (final day in paddedDays)
+              pw.Expanded(
+                child: pw.Row(
+                  children: [
+                    pw.Expanded(
+                      child: _boxText(
+                        day == null ? '' : 'SYIF 1',
+                        height: 11,
+                        fontSize: 3.8,
+                        fill: PdfColors.grey200,
+                      ),
+                    ),
+                    pw.Expanded(
+                      child: _boxText(
+                        day == null ? '' : 'SYIF 2',
+                        height: 11,
+                        fontSize: 3.8,
+                        fill: PdfColors.grey200,
+                      ),
+                    ),
+                    pw.Expanded(
+                      child: _boxText(
+                        day == null ? '' : 'SYIF 3',
+                        height: 11,
+                        fontSize: 3.8,
+                        fill: PdfColors.grey200,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+
+    pw.Widget guardDaily(_GuardMeta guard) {
+      return pw.Row(
+        children: [
+          for (final day in paddedDays)
+            pw.Expanded(
+              child: pw.Row(
+                children: [
+                  for (var shift = 1; shift <= 3; shift++)
+                    pw.Expanded(
+                      child: _boxText(
+                        day == null
+                            ? ''
+                            : _hoursFor(
+                                sessions,
+                                guard.id,
+                                year,
+                                month,
+                                day,
+                                shift,
+                              ),
+                        height: 12,
+                        fontSize: 4.0,
+                      ),
+                    ),
                 ],
               ),
             ),
-            pw.SizedBox(width: 18),
+        ],
+      );
+    }
+
+    const headerText = 'BILANGAN JAM BERTUGAS MENGIKUT TARIKH DAN SYIF';
+    return pw.Column(
+      children: [
+        pw.Row(
+          children: [
+            pw.SizedBox(
+              width: 22,
+              child: sideCell(
+                'BIL.',
+                height: 25,
+                bold: true,
+                fill: PdfColors.grey200,
+              ),
+            ),
+            pw.SizedBox(
+              width: 155,
+              child: sideCell(
+                'NAMA PENGAWAL KESELAMATAN\n(TERMASUK PENGAWAL KESELAMATAN GANTIAN)\n(Sila pastikan nama adalah SAMA dengan Borang PKK 3 dan Borang PKK 5)',
+                height: 25,
+                bold: true,
+                fill: PdfColors.grey200,
+              ),
+            ),
+            pw.SizedBox(
+              width: 54,
+              child: sideCell(
+                'STATUS PENGAWAL KESELAMATAN\n(Tandakan pada ruangan berkaitan)',
+                height: 25,
+                bold: true,
+                fill: PdfColors.grey200,
+              ),
+            ),
             pw.Expanded(
-              child: _simpleTable(
-                headers: const ['Waktu Bertugas Setiap Syif'],
-                rows: const [
-                  ['Syif 1', 'Syif 2'],
-                  [
-                    'Jam 07:00 hingga\nJam 19:00',
-                    'Jam 19:00 hingga\nJam 07:00',
-                  ],
-                ],
+              child: sideCell(
+                headerText,
+                height: 25,
+                bold: true,
+                fill: PdfColors.grey200,
               ),
             ),
           ],
         ),
-        pw.SizedBox(height: 7),
-        _pkk2Summary(blocks, actual, requiredShift1, requiredShift2),
-        pw.Spacer(),
-        _systemNote(),
-        pw.SizedBox(height: 4),
-        _sprmNotice(),
-        pw.SizedBox(height: 5),
-        _signatures(),
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.SizedBox(
+              width: 22,
+              child: sideCell('', height: 22, fill: PdfColors.grey200),
+            ),
+            pw.SizedBox(
+              width: 155,
+              child: sideCell('', height: 22, fill: PdfColors.grey200),
+            ),
+            pw.SizedBox(
+              width: 54,
+              child: pw.Row(
+                children: [
+                  pw.Expanded(
+                    child: sideCell(
+                      'TETAP',
+                      height: 22,
+                      bold: true,
+                      fill: PdfColors.grey200,
+                    ),
+                  ),
+                  pw.Expanded(
+                    child: sideCell(
+                      'GANTIAN',
+                      height: 22,
+                      bold: true,
+                      fill: PdfColors.grey200,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            pw.Expanded(child: dailyHeader()),
+          ],
+        ),
+        for (var index = 0; index < 4; index++)
+          pw.Row(
+            children: [
+              pw.SizedBox(
+                width: 22,
+                child: sideCell(
+                  index < guards.length ? '${index + 1}' : '',
+                  height: 12,
+                ),
+              ),
+              pw.SizedBox(
+                width: 155,
+                child: sideCell(
+                  index < guards.length ? guards[index].name : '',
+                  height: 12,
+                  alignment: pw.Alignment.centerLeft,
+                ),
+              ),
+              pw.SizedBox(
+                width: 54,
+                child: pw.Row(
+                  children: [
+                    pw.Expanded(
+                      child: sideCell(
+                        index < guards.length ? 'X' : '',
+                        height: 12,
+                      ),
+                    ),
+                    pw.Expanded(child: sideCell('', height: 12)),
+                  ],
+                ),
+              ),
+              pw.Expanded(
+                child: index < guards.length
+                    ? guardDaily(guards[index])
+                    : pw.Row(
+                        children: [
+                          for (var i = 0; i < 30; i++)
+                            pw.Expanded(
+                              child: _boxText('', height: 12, fontSize: 4),
+                            ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
       ],
     );
   }
@@ -289,97 +641,151 @@ class PkkPdfGenerator {
     required Map<String, dynamic> department,
     required int month,
     required int year,
-    required List<int> guardIds,
-    required Map<int, String> guardNames,
-    required Map<int, String> guardStatus,
+    required _GuardMeta guard,
     required List<_GuardSession> sessions,
   }) {
-    final dayCount = DateTime(year, month + 1, 0).day;
-    final columns = <pw.TableRow>[];
-
-    final top = <pw.Widget>[_greyCell('NAMA PK')];
-    final status = <pw.Widget>[_greyCell('STATUS PK')];
-    final hdr = <pw.Widget>[_greyCell('TARIKH')];
-    for (var g = 0; g < 3; g++) {
-      final id = g < guardIds.length ? guardIds[g] : null;
-      top.add(_greyCell(id == null ? '' : guardNames[id]!, span: 7));
-      status.add(
-        _greyCell(id == null ? '' : guardStatus[id] ?? 'TETAP', span: 7),
-      );
-      hdr.addAll([
-        _greyCell('SYIF'),
-        _greyCell('MASUK'),
-        _greyCell('KELUAR'),
-        _greyCell('SYIF'),
-        _greyCell('MASUK'),
-        _greyCell('KELUAR'),
-        _greyCell('CATATAN'),
+    final rows = <List<String>>[];
+    for (var i = 0; i < sessions.length; i++) {
+      final item = sessions[i];
+      rows.add([
+        '${i + 1}',
+        _ymd(item.start),
+        _ymdhms(item.start),
+        item.end == null ? '' : _ymdhms(item.end!),
+        '',
+        '',
       ]);
-    }
-    columns.add(pw.TableRow(children: top));
-    columns.add(pw.TableRow(children: status));
-    columns.add(pw.TableRow(children: hdr));
-
-    for (var day = 1; day <= dayCount; day++) {
-      final cells = <pw.Widget>[_tinyCell('$day')];
-      for (var g = 0; g < 3; g++) {
-        final id = g < guardIds.length ? guardIds[g] : null;
-        final daySessions =
-            id == null
-                  ? <_GuardSession>[]
-                  : sessions
-                        .where(
-                          (s) =>
-                              s.userId == id &&
-                              s.start.year == year &&
-                              s.start.month == month &&
-                              s.start.day == day,
-                        )
-                        .toList()
-              ..sort((a, b) => a.start.compareTo(b.start));
-        for (var s = 0; s < 2; s++) {
-          final item = s < daySessions.length ? daySessions[s] : null;
-          cells.add(_tinyCell(item == null ? '' : 'SYIF ${item.shift}'));
-          cells.add(_tinyCell(item == null ? '' : _time(item.start)));
-          cells.add(_tinyCell(item?.end == null ? '' : _time(item!.end!)));
-        }
-        cells.add(_tinyCell(''));
-      }
-      columns.add(pw.TableRow(children: cells));
     }
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        _cornerLabel(
-          'PKK 3 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2025 DAN SETERUSNYA)',
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'PKK 3 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2024 DAN SETERUSNYA)',
+            style: pw.TextStyle(fontSize: 5.2, fontWeight: pw.FontWeight.bold),
+          ),
         ),
-        _mainTitle(
+        pw.SizedBox(height: 5),
+        _centerTitle(
           'BORANG PENGESAHAN KEHADIRAN PENGAWAL BERDASARKAN REKOD KEHADIRAN PENGAWAL KESELAMATAN',
+          7.6,
         ),
-        _subTitle(
+        _centerTitle(
           'PERKHIDMATAN KAWALAN KESELAMATAN DI SEKOLAH/INSTITUSI PENDIDIKAN',
+          7.3,
         ),
-        _subTitle('DI BAWAH KEMENTERIAN PENDIDIKAN'),
-        pw.SizedBox(height: 5),
-        _centerLine('BULAN: ${months[month - 1]}     TAHUN: $year'),
-        pw.SizedBox(height: 5),
-        _metaRow(department),
-        pw.SizedBox(height: 5),
-        pw.Table(
-          border: pw.TableBorder.all(width: 0.45),
-          columnWidths: {
-            0: const pw.FlexColumnWidth(1.55),
-            for (var i = 1; i <= 21; i++) i: const pw.FlexColumnWidth(1),
-          },
-          children: columns,
-        ),
-        pw.Spacer(),
-        _systemNote(),
-        pw.SizedBox(height: 3),
+        _centerTitle('DI BAWAH KEMENTERIAN PENDIDIKAN MALAYSIA', 7.3),
+        pw.SizedBox(height: 9),
+        _pkk3Meta(department, guard, month, year),
+        pw.SizedBox(height: 7),
+        _pkk3Table(rows),
+        pw.SizedBox(height: 8),
+        _pkk3Note(),
+        pw.SizedBox(height: 6),
         _sprmNotice(),
-        pw.SizedBox(height: 4),
-        _signatures(),
+        pw.SizedBox(height: 8),
+        _signatureRow(),
+      ],
+    );
+  }
+
+  static pw.Widget _pkk3Meta(
+    Map<String, dynamic> department,
+    _GuardMeta guard,
+    int month,
+    int year,
+  ) {
+    final left = [
+      ['BULAN:', months[month - 1]],
+      ['NEGERI:', _state(department)],
+      ['NAMA SYARIKAT:', '${department['companyName'] ?? ''}'],
+      ['SEKOLAH/INSTITUSI PENDIDIKAN:', '${department['name'] ?? ''}'],
+    ];
+    final right = [
+      ['TAHUN:', '$year'],
+      ['ZON:', '${department['zone'] ?? ''}'],
+      ['', ''],
+      ['NAMA PEKERJA:', guard.name],
+    ];
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Expanded(
+          child: pw.Column(
+            children: [for (final pair in left) _inlineMeta(pair[0], pair[1])],
+          ),
+        ),
+        pw.SizedBox(width: 28),
+        pw.Expanded(
+          child: pw.Column(
+            children: [for (final pair in right) _inlineMeta(pair[0], pair[1])],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _pkk3Table(List<List<String>> rows) {
+    const widths = <int, pw.TableColumnWidth>{
+      0: pw.FlexColumnWidth(0.55),
+      1: pw.FlexColumnWidth(1.45),
+      2: pw.FlexColumnWidth(2.4),
+      3: pw.FlexColumnWidth(2.4),
+      4: pw.FlexColumnWidth(1.45),
+      5: pw.FlexColumnWidth(1.45),
+    };
+    return pw.Table(
+      border: pw.TableBorder.all(width: 0.5),
+      columnWidths: widths,
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: _headerBlue),
+          children: [
+            for (final header in const [
+              'BIL',
+              'TARIKH',
+              'MASUK',
+              'KELUAR',
+              'TANDA TANGAN',
+              'CATATAN',
+            ])
+              pw.Container(
+                height: 18,
+                alignment: pw.Alignment.centerLeft,
+                padding: const pw.EdgeInsets.symmetric(horizontal: 4),
+                child: pw.Text(
+                  header,
+                  style: pw.TextStyle(
+                    color: PdfColors.white,
+                    fontSize: 6.1,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        for (final row in rows)
+          pw.TableRow(
+            children: [
+              for (var i = 0; i < row.length; i++)
+                pw.Container(
+                  height: 14.2,
+                  alignment: i == 0
+                      ? pw.Alignment.center
+                      : pw.Alignment.centerLeft,
+                  padding: const pw.EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 2,
+                  ),
+                  child: pw.Text(
+                    row[i],
+                    style: const pw.TextStyle(fontSize: 5.8),
+                  ),
+                ),
+            ],
+          ),
       ],
     );
   }
@@ -389,254 +795,246 @@ class PkkPdfGenerator {
     required int month,
     required int year,
     required List<_Pkk4Row> rows,
+    required bool showDocumentHeader,
+    required bool showSignatureArea,
   }) {
-    const slotHeaders = <String>[
-      '0000 -\n0200',
-      '0200 -\n0400',
-      '0400 -\n0600',
-      '0600 -\n0800',
-      '0800 -\n1000',
-      '1000 -\n1200',
-      '1200 -\n1400',
-      '1400 -\n1600',
-      '1600 -\n1800',
-      '1800 -\n2000',
-      '2000 -\n2200',
-      '2200 -\n2400',
-    ];
-    final tableRows = <pw.TableRow>[
-      pw.TableRow(
-        children: [
-          _greyCell('TARIKH'),
-          _greyCell('GUARDTOUR POINT'),
-          for (final h in slotHeaders) _greyCell(h),
-          _greyCell('RUMUSAN'),
-        ],
-      ),
-    ];
-    for (final row in rows) {
-      final complete = row.slots.where((value) => value.isNotEmpty).length;
-      tableRows.add(
-        pw.TableRow(
-          children: [
-            _tinyCell('${row.day}'),
-            _tinyCell(row.checkpoint, align: pw.TextAlign.left),
-            for (final value in row.slots) _tinyCell(value),
-            _tinyCell('$complete/12'),
-          ],
-        ),
-      );
-    }
-
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        _cornerLabel(
-          'PKK 4 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2025 DAN SETERUSNYA)',
-        ),
-        _mainTitle('BORANG PENGESAHAN PELAKSANAAN RONDAAN DAN CLOCKING'),
-        _subTitle(
-          'PERKHIDMATAN KAWALAN KESELAMATAN DI SEKOLAH/INSTITUSI PENDIDIKAN',
-        ),
-        _subTitle('DI BAWAH KEMENTERIAN PENDIDIKAN'),
-        pw.SizedBox(height: 5),
-        _centerLine('BULAN: ${months[month - 1]}     TAHUN: $year'),
-        pw.SizedBox(height: 5),
-        _metaRow(department),
-        pw.SizedBox(height: 5),
-        pw.Center(
-          child: pw.Text(
-            'LAPORAN SISTEM GUARD TOUR',
-            style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+        if (showDocumentHeader) ...[
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'PKK 4 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2024 DAN SETERUSNYA)',
+              style: pw.TextStyle(fontSize: 5.2, fontWeight: pw.FontWeight.bold),
+            ),
           ),
-        ),
-        pw.SizedBox(height: 2),
-        pw.Table(
-          border: pw.TableBorder.all(width: 0.45),
-          columnWidths: {
-            0: const pw.FlexColumnWidth(1.2),
-            1: const pw.FlexColumnWidth(1.9),
-            for (var i = 2; i <= 13; i++) i: const pw.FlexColumnWidth(1),
-            14: const pw.FlexColumnWidth(1),
-          },
-          children: tableRows,
-        ),
-        pw.Spacer(),
-        _systemNote(),
-        pw.SizedBox(height: 3),
-        _sprmNotice(),
-        pw.SizedBox(height: 4),
-        _signatures(),
-      ],
-    );
-  }
-
-  static pw.Widget _pkk2Summary(
-    List<List<int>> blocks,
-    Map<int, Map<int, Set<int>>> actual,
-    int required1,
-    int required2,
-  ) {
-    final rows = <pw.TableRow>[
-      pw.TableRow(
-        children: [
-          _greyCell(
-            'Rumusan Bilangan Pengawal Keselamatan Mengikut Syif',
-            span: 21,
+          pw.SizedBox(height: 7),
+          _centerTitle(
+            'BORANG PENGESAHAN PELAKSANAAN RONDAAN DAN CLOCKING',
+            7.6,
           ),
+          _centerTitle(
+            'PERKHIDMATAN KAWALAN KESELAMATAN DI SEKOLAH/INSTITUSI PENDIDIKAN',
+            7.2,
+          ),
+          _centerTitle('DI BAWAH KEMENTERIAN PENDIDIKAN MALAYSIA', 7.2),
+          pw.SizedBox(height: 11),
+          _pkk4Meta(department, month, year),
+          pw.SizedBox(height: 10),
         ],
-      ),
-    ];
-    for (final block in blocks.take(3)) {
-      final syif = <pw.Widget>[_greyCell('Syif')];
-      final date = <pw.Widget>[_greyCell('Tarikh')];
-      final count = <pw.Widget>[_greyCell('Bilangan PK')];
-      for (var i = 0; i < 10; i++) {
-        final day = i < block.length ? block[i] : null;
-        syif.add(_tinyCell('Syif 1'));
-        syif.add(_tinyCell('Syif 2'));
-        date.add(_tinyCell(day == null ? '' : '$day', span: 2));
-        final a1 = day == null
-            ? ''
-            : '${actual[day]?[1]?.length ?? 0}/$required1';
-        final a2 = day == null
-            ? ''
-            : '${actual[day]?[2]?.length ?? 0}/$required2';
-        count.add(_tinyCell(a1));
-        count.add(_tinyCell(a2));
-      }
-      rows.add(pw.TableRow(children: syif));
-      rows.add(pw.TableRow(children: date));
-      rows.add(pw.TableRow(children: count));
-    }
-    return pw.Table(
-      border: pw.TableBorder.all(width: 0.45),
-      columnWidths: {
-        0: const pw.FlexColumnWidth(1.9),
-        for (var i = 1; i <= 20; i++) i: const pw.FlexColumnWidth(1),
-      },
-      children: rows,
-    );
-  }
-
-  static pw.Widget _simpleTable({
-    required List<String> headers,
-    required List<List<String>> rows,
-  }) {
-    return pw.Table(
-      border: pw.TableBorder.all(width: 0.45),
-      children: [
-        for (final header in headers)
-          pw.TableRow(children: [_greyCell(header, span: 2)]),
-        for (final row in rows)
-          pw.TableRow(children: row.map((v) => _tinyCell(v)).toList()),
+        _pkk4Header(),
+        for (final row in rows) _pkk4DataRow(row, month, year),
+        if (showSignatureArea) ...[
+          pw.SizedBox(height: 8),
+          _pkk4Note(),
+          pw.SizedBox(height: 6),
+          _sprmNotice(),
+          pw.SizedBox(height: 8),
+          _signatureRow(),
+        ],
       ],
     );
   }
 
-  static pw.Widget _metaRow(Map<String, dynamic> department) {
+  static pw.Widget _pkk4Meta(
+    Map<String, dynamic> department,
+    int month,
+    int year,
+  ) {
     return pw.Column(
       children: [
         pw.Row(
           children: [
-            pw.Expanded(
-              child: _field(
-                'NAMA SYARIKAT:',
-                '${department['companyName'] ?? ''}',
-              ),
-            ),
-            pw.SizedBox(width: 40),
-            pw.Expanded(child: _field('ZON:', '${department['zone'] ?? ''}')),
+            pw.Expanded(child: _inlineMeta('BULAN:', months[month - 1])),
+            pw.SizedBox(width: 30),
+            pw.Expanded(child: _inlineMeta('TAHUN:', '$year')),
           ],
         ),
-        pw.SizedBox(height: 4),
-        _field('SEKOLAH/INSTITUSI PENDIDIKAN:', '${department['name'] ?? ''}'),
+        pw.Row(
+          children: [
+            pw.Expanded(child: _inlineMeta('NEGERI:', _state(department))),
+            pw.SizedBox(width: 30),
+            pw.Expanded(
+              child: _inlineMeta('ZON:', '${department['zone'] ?? ''}'),
+            ),
+          ],
+        ),
+        _inlineMeta('NAMA SYARIKAT:', '${department['companyName'] ?? ''}'),
+        _inlineMeta(
+          'SEKOLAH/INSTITUSI PENDIDIKAN:',
+          '${department['name'] ?? ''}',
+        ),
       ],
     );
   }
 
-  static pw.Widget _field(String label, String value) {
-    return pw.Row(
-      children: [
-        pw.Text(
-          label,
-          style: pw.TextStyle(fontSize: 6.4, fontWeight: pw.FontWeight.bold),
+  static pw.Widget _pkk4Header() {
+    const totalHeight = 38.0;
+    pw.Widget blueCell(String text, {double? height}) => pw.Container(
+      height: height,
+      alignment: pw.Alignment.center,
+      decoration: pw.BoxDecoration(
+        color: _headerBlue,
+        border: pw.Border.all(color: PdfColors.black, width: 0.45),
+      ),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+      child: pw.Text(
+        text,
+        textAlign: pw.TextAlign.center,
+        style: pw.TextStyle(
+          color: PdfColors.white,
+          fontSize: 5.1,
+          fontWeight: pw.FontWeight.bold,
         ),
-        pw.SizedBox(width: 4),
+      ),
+    );
+
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.SizedBox(width: 48, child: blueCell('Date', height: totalHeight)),
+        pw.SizedBox(
+          width: 54,
+          child: blueCell('Checkpoint', height: totalHeight),
+        ),
         pw.Expanded(
-          child: pw.Container(
-            decoration: const pw.BoxDecoration(
-              border: pw.Border(bottom: pw.BorderSide(width: 0.45)),
-            ),
-            padding: const pw.EdgeInsets.only(left: 3, bottom: 1),
-            child: pw.Text(value, style: const pw.TextStyle(fontSize: 6.4)),
+          child: pw.Column(
+            children: [
+              blueCell('Session', height: 16),
+              pw.Row(
+                children: [
+                  for (final label in const [
+                    '00:00 -\n02:00',
+                    '02:00 -\n04:00',
+                    '04:00 -\n06:00',
+                    '06:00 -\n08:00',
+                    '08:00 -\n10:00',
+                    '10:00 -\n12:00',
+                    '12:00 -\n14:00',
+                    '14:00 -\n16:00',
+                    '16:00 -\n18:00',
+                    '18:00 -\n20:00',
+                    '20:00 -\n22:00',
+                    '22:00 -\n00:00',
+                  ])
+                    pw.Expanded(child: blueCell(label, height: 22)),
+                ],
+              ),
+            ],
           ),
         ),
+        pw.SizedBox(
+          width: 52,
+          child: blueCell('Summarize', height: totalHeight),
+        ),
       ],
     );
   }
 
-  static pw.Widget _cornerLabel(String text) => pw.Align(
-    alignment: pw.Alignment.centerRight,
-    child: pw.Text(
-      text,
-      style: pw.TextStyle(fontSize: 5.5, fontWeight: pw.FontWeight.bold),
-    ),
+  static pw.Widget _pkk4DataRow(_Pkk4Row row, int month, int year) {
+    pw.Widget cell(
+      String text, {
+      pw.Alignment alignment = pw.Alignment.center,
+      double? width,
+    }) {
+      final widget = pw.Container(
+        height: 11.7,
+        alignment: alignment,
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.black, width: 0.4),
+        ),
+        padding: const pw.EdgeInsets.symmetric(horizontal: 1),
+        child: pw.Text(text, style: const pw.TextStyle(fontSize: 4.85)),
+      );
+      return width == null ? widget : pw.SizedBox(width: width, child: widget);
+    }
+
+    final complete = row.slots.where((value) => value.isNotEmpty).length;
+    return pw.Row(
+      children: [
+        cell(
+          row.showDate ? _dmy(DateTime(year, month, row.day)) : '',
+          width: 48,
+        ),
+        cell(
+          row.checkpoint,
+          width: 54,
+          alignment: pw.Alignment.centerLeft,
+        ),
+        pw.Expanded(
+          child: pw.Row(
+            children: [
+              for (final value in row.slots)
+                pw.Expanded(child: cell(value.isEmpty ? '-' : value)),
+            ],
+          ),
+        ),
+        cell('$complete / 12', width: 52),
+      ],
+    );
+  }
+
+  static List<List<_Pkk4Row>> _splitPkk4Rows(List<_Pkk4Row> rows) {
+    if (rows.isEmpty) return const <List<_Pkk4Row>>[<_Pkk4Row>[]];
+    if (rows.length <= 34) return <List<_Pkk4Row>>[rows];
+
+    final pages = <List<_Pkk4Row>>[];
+    var offset = 0;
+    final firstCount = math.min(50, rows.length);
+    pages.add(rows.take(firstCount).toList());
+    offset = firstCount;
+    while (offset < rows.length) {
+      final count = math.min(34, rows.length - offset);
+      pages.add(rows.skip(offset).take(count).toList());
+      offset += count;
+    }
+    return pages;
+  }
+
+  static pw.Widget _pkk2Note() => pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.Text(
+        'Nota:',
+        style: pw.TextStyle(fontSize: 4.5, fontWeight: pw.FontWeight.bold),
+      ),
+      pw.Text(
+        'Pengawal Keselamatan dibenarkan bertugas lebih masa tidak melebihi 12 jam sehari dengan syarat mematuhi bilangan Pengawal Keselamatan yang ditetapkan bagi setiap syif. Sila tambah ruangan senarai nama Pengawal dan Pengawal gantian sekiranya ruangan tidak mencukupi. Sekiranya helaian tambahan digunakan, ruangan tandatangan Penyedia, Penyemak dan Pengesah hendaklah disediakan di setiap helaian.',
+        style: const pw.TextStyle(fontSize: 4.05),
+        textAlign: pw.TextAlign.justify,
+      ),
+    ],
   );
 
-  static pw.Widget _mainTitle(String text) => pw.Center(
-    child: pw.Text(
-      text,
-      textAlign: pw.TextAlign.center,
-      style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
-    ),
+  static pw.Widget _pkk3Note() => pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.Text(
+        'Nota:',
+        style: pw.TextStyle(fontSize: 4.6, fontWeight: pw.FontWeight.bold),
+      ),
+      pw.Text(
+        'Sila tampal salinan Buku Rekod Kehadiran Pengawal, Kad Perakam Waktu (Punch Card) atau Laporan Kehadiran Biometrik (Thumb Print) dengan kemas dan teratur. Sila pastikan bahawa Pengawal Keselamatan, cetakan tarikh dan masa kehadiran pada waktu bertugas mengikut syif adalah jelas. Sila pastikan nama Pengawal Keselamatan pada salinan Buku Rekod Kehadiran Pengawal, Kad Perakam Waktu (Punch Card) atau Laporan Kehadiran Biometrik (Thumb Print) adalah SAMA dengan yang dinyatakan dalam Borang PKK 2 dan Borang PKK 5. Sila gunakan lampiran tambahan sekiranya ruangan tidak mencukupi. Sekiranya helaian tambahan digunakan, ruangan tandatangan Penyedia, Penyemak dan Pengesah hendaklah disediakan di setiap helaian.',
+        style: const pw.TextStyle(fontSize: 4.05),
+        textAlign: pw.TextAlign.justify,
+      ),
+    ],
   );
 
-  static pw.Widget _subTitle(String text) => pw.Center(
-    child: pw.Text(
-      text,
-      textAlign: pw.TextAlign.center,
-      style: pw.TextStyle(fontSize: 7.4, fontWeight: pw.FontWeight.bold),
-    ),
-  );
-
-  static pw.Widget _centerLine(String text) => pw.Center(
-    child: pw.Text(
-      text,
-      style: pw.TextStyle(fontSize: 6.8, fontWeight: pw.FontWeight.bold),
-    ),
-  );
-
-  static pw.Widget _greyCell(String text, {int span = 1}) => pw.Container(
-    alignment: pw.Alignment.center,
-    padding: const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 3),
-    color: PdfColors.grey300,
-    child: pw.Text(
-      text,
-      textAlign: pw.TextAlign.center,
-      style: pw.TextStyle(fontSize: 5.5, fontWeight: pw.FontWeight.bold),
-    ),
-  );
-
-  static pw.Widget _tinyCell(
-    String text, {
-    int span = 1,
-    pw.TextAlign align = pw.TextAlign.center,
-  }) => pw.Container(
-    alignment: align == pw.TextAlign.left
-        ? pw.Alignment.centerLeft
-        : pw.Alignment.center,
-    padding: const pw.EdgeInsets.symmetric(horizontal: 1.5, vertical: 2.2),
-    child: pw.Text(
-      text,
-      textAlign: align,
-      style: const pw.TextStyle(fontSize: 5.2),
-    ),
-  );
-
-  static pw.Widget _systemNote() => pw.Text(
-    'Nota: Laporan sistem guard tour ini dijana secara digital. Sila pastikan segala maklumat yang dicetak adalah jelas dan sahih. Ruangan tandatangan penyedia, penyemak, dan Pengesah hendaklah dilengkapkan di setiap helaian.',
-    style: const pw.TextStyle(fontSize: 5.1),
+  static pw.Widget _pkk4Note() => pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.Text(
+        'Nota:',
+        style: pw.TextStyle(fontSize: 4.5, fontWeight: pw.FontWeight.bold),
+      ),
+      pw.Text(
+        'Sila tampal slip/laporan watchman clock dengan kemas dan teratur serta pastikan bahawa cetakan tarikh dan masa clocking adalah jelas. Sila gunakan lampiran tambahan sekiranya ruangan tidak mencukupi. Sekiranya helaian tambahan digunakan, ruangan tandatangan Penyedia, Penyemak dan Pengesah hendaklah disediakan di setiap helaian.',
+        style: const pw.TextStyle(fontSize: 4.0),
+        textAlign: pw.TextAlign.justify,
+      ),
+    ],
   );
 
   static pw.Widget _sprmNotice() => pw.Column(
@@ -644,109 +1042,295 @@ class PkkPdfGenerator {
     children: [
       pw.Text(
         'Peringatan:',
-        style: pw.TextStyle(fontSize: 5.2, fontWeight: pw.FontWeight.bold),
+        style: pw.TextStyle(fontSize: 4.6, fontWeight: pw.FontWeight.bold),
       ),
       pw.Text(
-        'Seksyen 18, Akta SPRM: Seseorang melakukan kesalahan jika dia memberi seseorang ejen, atau sebagai seorang ejen dia menggunakan, dengan niat hendak memperdayakan prinsipalnya, apa-apa resit, akaun atau dokumen lain yang berkenaan dengan prinsipalnya itu yang mengandungi pernyataan palsu, silap atau tidak lengkap tentang apa-apa butir matan.',
-        style: const pw.TextStyle(fontSize: 4.5),
+        'Seksyen 18, Akta SPRM: "Seseorang melakukan kesalahan jika dia memberi seseorang ejen, atau sebagai seorang ejen dia menggunakan, dengan niat hendak memperdayakan prinsipalnya, apa-apa resit, akaun atau dokumen lain yang berkenaan dengan prinsipalnya itu mempunyai kepentingan, dan yang dia mempunyai sebab untuk mempercayai mengandungi apa-apa pernyataan yang palsu atau silap atau tidak lengkap tentang apa-apa butir matan, dan yang dimaksudkan untuk mengelirukan prinsipalnya."',
+        style: const pw.TextStyle(fontSize: 3.95),
         textAlign: pw.TextAlign.justify,
       ),
     ],
   );
 
-  static pw.Widget _signatures() {
-    pw.Widget block(String heading, String role) => pw.Expanded(
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            heading,
-            style: pw.TextStyle(fontSize: 5.3, fontWeight: pw.FontWeight.bold),
-          ),
-          pw.SizedBox(height: 16),
-          pw.Text(
-            '............................................................',
-            style: const pw.TextStyle(fontSize: 5),
-          ),
-          pw.Text(
-            '(Tandatangan & Cap Rasmi)',
-            style: const pw.TextStyle(fontSize: 4.8),
-          ),
-          pw.Text(role, style: const pw.TextStyle(fontSize: 4.6)),
-          pw.Text('Tarikh:', style: const pw.TextStyle(fontSize: 4.8)),
-        ],
-      ),
-    );
+  static pw.Widget _signatureRow() {
+    pw.Widget signatureBlock(String title, List<String> lines) {
+      return pw.Expanded(
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              title,
+              style: pw.TextStyle(
+                fontSize: 4.7,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 14),
+            pw.Text(
+              '------------------------------------------------------------',
+              style: const pw.TextStyle(fontSize: 4.1),
+            ),
+            for (final line in lines)
+              pw.Text(line, style: const pw.TextStyle(fontSize: 3.75)),
+          ],
+        ),
+      );
+    }
+
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        block('Disediakan Oleh:', 'Pengurus/Wakil Syarikat'),
+        signatureBlock('Disediakan Oleh:', const [
+          '(Tandatangan & Cap Rasmi)',
+          'Pengurus/Wakil Syarikat',
+          'Tarikh:',
+        ]),
         pw.SizedBox(width: 18),
-        block(
-          'Disemak Oleh:',
-          'Institusi Pendidikan: Pegawai/Penolong Jurutera/Pegawai Eksekutif Kanan/Ketua Unit Khidmat Pengurusan/Sekolah: Guru Penolong Kanan Pentadbiran/Pegawai Pembangunan JPN atau Institusi Pendidikan atau PPD',
-        ),
+        signatureBlock('Disemak Oleh:', const [
+          '(Tandatangan & Cap Rasmi)',
+          'Tarikh:',
+          'Institusi Pendidikan: Pegawai/Penolong Jurutera/Pegawai Eksekutif Kanan/Ketua Unit Khidmat Pengurusan',
+          'Sekolah: Guru Penolong Kanan Pentadbiran',
+          'Pusat Kokurikulum: Pegawai/Penyelia Pusat Kokurikulum',
+          'KIP/KRG: Pegawai Pentadbir/Pegawai Aset/Pegawai Pembangunan JPN atau Institusi Pendidikan atau PPD',
+        ]),
         pw.SizedBox(width: 18),
-        block(
-          'Disahkan Oleh:',
-          'Institusi Pendidikan: Ketua/Timbalan Ketua Jabatan/Pengarah/Timbalan Pengarah JPN atau Institusi/PPD/Timbalan PPD/Ketua Sektor/Sekolah: Pengetua/Guru Besar',
-        ),
+        signatureBlock('Disahkan Oleh:', const [
+          '(Tandatangan & Cap Rasmi)',
+          'Tarikh:',
+          'Institusi Pendidikan: Ketua/Timbalan Ketua Jabatan/Pengarah/Timbalan Pengarah JPN atau Institusi/Pegawai Pendidikan Daerah (PPD)/Timbalan PPD/Ketua Sektor',
+          'Sekolah: Pengetua/Guru Besar',
+          'Pusat Kokurikulum: Ketua Unit Pusat Kokurikulum',
+          'KIP/KRG: Ketua/Timbalan Ketua Jabatan/Pengarah/Timbalan Pengarah JPN atau Institusi/PPD/Timbalan PPD/Ketua Sektor',
+        ]),
       ],
     );
   }
+
+  static pw.Widget _centerTitle(String text, double fontSize) => pw.Center(
+    child: pw.Text(
+      text,
+      textAlign: pw.TextAlign.center,
+      style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold),
+    ),
+  );
+
+  static pw.Widget _plainMeta(String label, String value) => pw.Row(
+    children: [
+      pw.Text(
+        label,
+        style: pw.TextStyle(fontSize: 5.3, fontWeight: pw.FontWeight.bold),
+      ),
+      pw.SizedBox(width: 3),
+      pw.Expanded(
+        child: pw.Text(value, style: const pw.TextStyle(fontSize: 5.3)),
+      ),
+    ],
+  );
+
+  static pw.Widget _inlineMeta(String label, String value) => pw.Padding(
+    padding: const pw.EdgeInsets.only(bottom: 2),
+    child: pw.Row(
+      children: [
+        if (label.isNotEmpty)
+          pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontSize: 6.1,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+        if (label.isNotEmpty) pw.SizedBox(width: 3),
+        pw.Expanded(
+          child: pw.Text(value, style: const pw.TextStyle(fontSize: 6.0)),
+        ),
+      ],
+    ),
+  );
+
+  static pw.Widget _boxText(
+    String text, {
+    double fontSize = 4.5,
+    double? height,
+    bool bold = false,
+    PdfColor? fill,
+  }) => pw.Container(
+    height: height,
+    alignment: pw.Alignment.center,
+    decoration: pw.BoxDecoration(
+      color: fill,
+      border: pw.Border.all(width: 0.35),
+    ),
+    padding: const pw.EdgeInsets.symmetric(horizontal: 1.5, vertical: 1),
+    child: pw.Text(
+      text,
+      textAlign: pw.TextAlign.center,
+      style: pw.TextStyle(
+        fontSize: fontSize,
+        fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+      ),
+    ),
+  );
 
   static Map<String, dynamic> _department(Map<String, dynamic> data) {
     final raw = data['department'];
     return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
 
+  static String _state(Map<String, dynamic> department) {
+    final value = (department['state'] ?? '').toString().trim();
+    return value.isEmpty ? 'KEDAH' : value.toUpperCase();
+  }
+
+  static List<_GuardMeta> _guards(
+    Map<String, dynamic> data,
+    List<_GuardSession> sessions,
+  ) {
+    final result = <int, _GuardMeta>{};
+    for (final item in data['guards'] as List<dynamic>? ?? const []) {
+      if (item is! Map) continue;
+      final row = Map<String, dynamic>.from(item);
+      final jawatan = (row['jawatan'] ?? '').toString().toLowerCase();
+      if (jawatan != 'patrol' && jawatan != 'supervisor') continue;
+      final id = (row['id'] as num?)?.toInt() ?? 0;
+      if (id <= 0) continue;
+      result[id] = _GuardMeta(
+        id: id,
+        name: (row['nama'] ?? '-').toString(),
+        noPk: (row['no_pk'] ?? '').toString(),
+      );
+    }
+    for (final session in sessions) {
+      result.putIfAbsent(
+        session.userId,
+        () => _GuardMeta(
+          id: session.userId,
+          name: session.name,
+          noPk: session.noPk,
+        ),
+      );
+    }
+    final guards = result.values.toList()
+      ..sort((a, b) {
+        final aNo = int.tryParse(a.noPk);
+        final bNo = int.tryParse(b.noPk);
+        if (aNo != null && bNo != null && aNo != bNo) {
+          return aNo.compareTo(bNo);
+        }
+        return a.name.compareTo(b.name);
+      });
+    return guards;
+  }
+
   static List<_GuardSession> _attendanceSessions(List<dynamic> raw) {
-    final grouped = <String, List<Map<String, dynamic>>>{};
+    final byUser = <int, List<Map<String, dynamic>>>{};
     for (final item in raw) {
-      final row = Map<String, dynamic>.from(item as Map);
+      if (item is! Map) continue;
+      final row = Map<String, dynamic>.from(item);
       final jawatan = (row['jawatan'] ?? '').toString().toLowerCase();
       if (jawatan != 'patrol' && jawatan != 'supervisor') continue;
       final at = _malaysiaDateTime(row['punched_at']?.toString());
       if (at == null) continue;
       final userId = (row['user_id'] as num?)?.toInt() ?? 0;
       if (userId <= 0) continue;
-      final dateKey = '${at.year}-${at.month}-${at.day}';
-      grouped
-          .putIfAbsent('$userId|$dateKey', () => <Map<String, dynamic>>[])
+      byUser
+          .putIfAbsent(userId, () => <Map<String, dynamic>>[])
           .add({...row, '_local': at});
     }
 
     final result = <_GuardSession>[];
-    for (final rows in grouped.values) {
-      rows.sort(
-        (a, b) => (a['_local'] as DateTime).compareTo(b['_local'] as DateTime),
-      );
-      final userId = (rows.first['user_id'] as num?)?.toInt() ?? 0;
-      final name = (rows.first['nama'] ?? '-').toString();
-      final ins = rows.where((r) => r['punch_type'] == 'IN').toList();
-      for (var i = 0; i < ins.length; i++) {
-        final start = ins[i]['_local'] as DateTime;
-        DateTime? end;
-        for (final row in rows) {
-          final at = row['_local'] as DateTime;
-          if (row['punch_type'] == 'OUT' && at.isAfter(start)) {
-            end = at;
-            break;
-          }
-        }
-        final shift = start.hour >= 7 && start.hour < 19 ? 1 : 2;
-        result.add(
-          _GuardSession(
-            userId: userId,
-            name: name,
-            start: start,
-            end: end,
-            shift: shift,
+    for (final entry in byUser.entries) {
+      final rows = entry.value
+        ..sort(
+          (a, b) => (a['_local'] as DateTime).compareTo(
+            b['_local'] as DateTime,
           ),
         );
+      Map<String, dynamic>? pendingIn;
+      for (final row in rows) {
+        final type = (row['punch_type'] ?? '').toString().toUpperCase();
+        if (type == 'IN') {
+          if (pendingIn != null) {
+            result.add(_sessionFromPunch(pendingIn, null));
+          }
+          pendingIn = row;
+          continue;
+        }
+        if (type == 'OUT' && pendingIn != null) {
+          final outAt = row['_local'] as DateTime;
+          final inAt = pendingIn['_local'] as DateTime;
+          if (outAt.isAfter(inAt)) {
+            result.add(_sessionFromPunch(pendingIn, row));
+            pendingIn = null;
+          }
+        }
       }
+      if (pendingIn != null) result.add(_sessionFromPunch(pendingIn, null));
     }
+    result.sort((a, b) => a.start.compareTo(b.start));
     return result;
+  }
+
+  static _GuardSession _sessionFromPunch(
+    Map<String, dynamic> input,
+    Map<String, dynamic>? output,
+  ) {
+    final start = input['_local'] as DateTime;
+    final end = output?['_local'] as DateTime?;
+    final shift = start.hour >= 6 && start.hour < 18 ? 1 : 2;
+    return _GuardSession(
+      userId: (input['user_id'] as num?)?.toInt() ?? 0,
+      name: (input['nama'] ?? '-').toString(),
+      noPk: (input['no_pk'] ?? '').toString(),
+      start: start,
+      end: end,
+      shift: shift,
+    );
+  }
+
+  static Map<int, int> _requiredGuardsByShift(
+    List<_GuardSession> sessions,
+    int month,
+    int year,
+  ) {
+    final counts = <int, int>{1: 0, 2: 0};
+    final byDay = <String, Set<int>>{};
+    for (final session in sessions) {
+      if (session.start.year != year || session.start.month != month) continue;
+      final key = '${session.start.day}|${session.shift}';
+      byDay.putIfAbsent(key, () => <int>{}).add(session.userId);
+    }
+    for (final entry in byDay.entries) {
+      final shift = int.tryParse(entry.key.split('|').last) ?? 1;
+      counts[shift] = math.max(counts[shift] ?? 0, entry.value.length);
+    }
+    return counts;
+  }
+
+  static String _hoursFor(
+    List<_GuardSession> sessions,
+    int userId,
+    int year,
+    int month,
+    int day,
+    int shift,
+  ) {
+    var minutes = 0;
+    for (final session in sessions) {
+      if (session.userId != userId ||
+          session.start.year != year ||
+          session.start.month != month ||
+          session.start.day != day ||
+          session.shift != shift ||
+          session.end == null) {
+        continue;
+      }
+      minutes += session.end!.difference(session.start).inMinutes;
+    }
+    if (minutes <= 0) return '';
+    final hours = minutes / 60;
+    if ((hours - hours.round()).abs() < 0.05) return '${hours.round()}';
+    return hours.toStringAsFixed(1);
   }
 
   static DateTime? _malaysiaDateTime(String? value) {
@@ -756,20 +1340,38 @@ class PkkPdfGenerator {
     return parsed.toUtc().add(const Duration(hours: 8));
   }
 
-  static String _time(DateTime value) =>
+  static String _hhmm(DateTime value) =>
       '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+
+  static String _ymd(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+  static String _ymdhms(DateTime value) =>
+      '${_ymd(value)} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}:${value.second.toString().padLeft(2, '0')}';
+
+  static String _dmy(DateTime value) =>
+      '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}/${value.year.toString().padLeft(4, '0')}';
+}
+
+class _GuardMeta {
+  const _GuardMeta({required this.id, required this.name, required this.noPk});
+  final int id;
+  final String name;
+  final String noPk;
 }
 
 class _GuardSession {
   const _GuardSession({
     required this.userId,
     required this.name,
+    required this.noPk,
     required this.start,
     required this.end,
     required this.shift,
   });
   final int userId;
   final String name;
+  final String noPk;
   final DateTime start;
   final DateTime? end;
   final int shift;
@@ -778,10 +1380,12 @@ class _GuardSession {
 class _Pkk4Row {
   const _Pkk4Row({
     required this.day,
+    required this.showDate,
     required this.checkpoint,
     required this.slots,
   });
   final int day;
+  final bool showDate;
   final String checkpoint;
   final List<String> slots;
 }
