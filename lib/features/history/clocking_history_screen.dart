@@ -11,26 +11,39 @@ class ClockingHistoryScreen extends StatefulWidget {
   const ClockingHistoryScreen({
     required this.api,
     required this.user,
+    this.initialDate,
+    this.initialDepartmentId,
+    this.initialFilter = 'all',
     super.key,
   });
 
   final ApiService api;
   final AppUser user;
+  final DateTime? initialDate;
+  final int? initialDepartmentId;
+  final String initialFilter;
 
   @override
   State<ClockingHistoryScreen> createState() => _ClockingHistoryScreenState();
 }
 
 class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
-  DateTime _selectedDate = DateTime.now();
+  late DateTime _selectedDate;
   int? _selectedDepartmentId;
+  String _filter = 'all';
   List<DepartmentRecord> _departments = const [];
   late Future<HistoryDay> _future;
 
   @override
   void initState() {
     super.initState();
-    _selectedDepartmentId = widget.user.departmentId;
+    final initial = widget.initialDate ?? DateTime.now();
+    _selectedDate = DateTime(initial.year, initial.month, initial.day);
+    _selectedDepartmentId =
+        widget.initialDepartmentId ?? widget.user.departmentId;
+    _filter = const {'all', 'missed', 'complete'}.contains(widget.initialFilter)
+        ? widget.initialFilter
+        : 'all';
     _future = widget.user.isManagement
         ? _loadManagementInitial()
         : widget.api.getHistory(_selectedDate);
@@ -225,6 +238,30 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('Semua sesi'),
+                            selected: _filter == 'all',
+                            onSelected: (_) => setState(() => _filter = 'all'),
+                          ),
+                          ChoiceChip(
+                            label: const Text('Checkpoint Terlepas'),
+                            selected: _filter == 'missed',
+                            onSelected: (_) =>
+                                setState(() => _filter = 'missed'),
+                          ),
+                          ChoiceChip(
+                            label: const Text('Lengkap'),
+                            selected: _filter == 'complete',
+                            onSelected: (_) =>
+                                setState(() => _filter = 'complete'),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -250,6 +287,14 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                   }
 
                   final history = snapshot.data!;
+                  final visibleRuns = history.patrolRuns.where((run) {
+                    if (_filter == 'missed') {
+                      return run.missingCheckpointNames.isNotEmpty ||
+                          (!run.isComplete && !run.isInProgress);
+                    }
+                    if (_filter == 'complete') return run.isComplete;
+                    return true;
+                  }).toList();
                   return ListView(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                     children: [
@@ -269,21 +314,25 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                                   ?.copyWith(fontWeight: FontWeight.w900),
                             ),
                           ),
-                          Text('${history.patrolRuns.length} sesi'),
+                          Text('${visibleRuns.length} sesi'),
                         ],
                       ),
                       const SizedBox(height: 8),
-                      if (history.patrolRuns.isEmpty)
-                        const Card(
+                      if (visibleRuns.isEmpty)
+                        Card(
                           child: Padding(
                             padding: EdgeInsets.all(18),
                             child: Text(
-                              'Tiada sesi yang dimulakan melalui Mula Rondaan untuk tarikh ini.',
+                              _filter == 'missed'
+                                  ? 'Tiada sesi dengan checkpoint terlepas pada tarikh ini.'
+                                  : _filter == 'complete'
+                                  ? 'Tiada sesi lengkap pada tarikh ini.'
+                                  : 'Tiada sesi yang dimulakan melalui Mula Rondaan untuk tarikh ini.',
                             ),
                           ),
                         )
                       else
-                        ...history.patrolRuns.map(
+                        ...visibleRuns.map(
                           (run) => _PatrolRunCard(
                             run: run,
                             formatTime: _formatTime,

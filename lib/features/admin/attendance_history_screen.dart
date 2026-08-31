@@ -5,19 +5,34 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_service.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
-  const AttendanceHistoryScreen({required this.api, super.key});
+  const AttendanceHistoryScreen({
+    required this.api,
+    this.initialDate,
+    super.key,
+  });
 
   final ApiService api;
+  final DateTime? initialDate;
 
   @override
-  State<AttendanceHistoryScreen> createState() => _AttendanceHistoryScreenState();
+  State<AttendanceHistoryScreen> createState() =>
+      _AttendanceHistoryScreenState();
 }
 
 class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
-  DateTime _date = DateTime.now();
-  late Future<AttendanceAdminData> _future = widget.api.getAdminAttendance(_date);
+  late DateTime _date;
+  late Future<AttendanceAdminData> _future;
 
-  void _refresh() => setState(() => _future = widget.api.getAdminAttendance(_date));
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialDate ?? DateTime.now();
+    _date = DateTime(initial.year, initial.month, initial.day);
+    _future = widget.api.getAdminAttendance(_date);
+  }
+
+  void _refresh() =>
+      setState(() => _future = widget.api.getAdminAttendance(_date));
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -44,15 +59,19 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   Color _faceColor(String status) => switch (status) {
-        'matched' => const Color(0xFF00B894),
-        'different' => const Color(0xFFFF7675),
-        _ => const Color(0xFFFDCB6E),
-      };
+    'matched' => const Color(0xFF00B894),
+    'different' => const Color(0xFFFF7675),
+    _ => const Color(0xFFFDCB6E),
+  };
 
   ImageProvider<Object>? _image(String? source) {
     if (source == null || source.isEmpty) return null;
     if (source.startsWith('data:image') && source.contains(',')) {
-      try { return MemoryImage(base64Decode(source.split(',').last)); } catch (_) { return null; }
+      try {
+        return MemoryImage(base64Decode(source.split(',').last));
+      } catch (_) {
+        return null;
+      }
     }
     final uri = Uri.tryParse(source);
     return uri != null && uri.hasScheme ? NetworkImage(source) : null;
@@ -77,20 +96,42 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: Text('Detail Kehadiran', style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                        child: Text(
+                          'Detail Kehadiran',
+                          style: Theme.of(dialogContext).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w900),
+                        ),
                       ),
-                      IconButton(onPressed: () => Navigator.pop(dialogContext), icon: const Icon(Icons.close_rounded)),
+                      IconButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Text('${current.userName ?? 'Pengguna'} • ${current.department ?? '-'}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                  Text('${current.punchType == 'IN' ? 'MASUK' : 'KELUAR'} • ${_time(current.punchedAt)} • ${current.distanceMeters.toStringAsFixed(0)}m dari pusat'),
+                  Text(
+                    '${current.userName ?? 'Pengguna'} • ${current.department ?? '-'}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  Text(
+                    '${current.punchType == 'IN' ? 'MASUK' : 'KELUAR'} • ${_time(current.punchedAt)} • ${current.distanceMeters.toStringAsFixed(0)}m dari pusat',
+                  ),
                   const SizedBox(height: 18),
                   Row(
                     children: [
-                      Expanded(child: _PhotoPanel(title: 'Gambar Profil', image: profile)),
+                      Expanded(
+                        child: _PhotoPanel(
+                          title: 'Gambar Profil',
+                          image: profile,
+                        ),
+                      ),
                       const SizedBox(width: 12),
-                      Expanded(child: _PhotoPanel(title: 'Selfie Punch', image: selfie)),
+                      Expanded(
+                        child: _PhotoPanel(
+                          title: 'Selfie Punch',
+                          image: selfie,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 18),
@@ -98,15 +139,34 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _InfoChip(icon: Icons.face_retouching_natural_rounded, text: 'Status: ${current.faceStatus}'),
-                      _InfoChip(icon: Icons.analytics_rounded, text: 'Skor: ${current.faceScore?.round() ?? '-'}%'),
-                      _InfoChip(icon: Icons.gps_fixed_rounded, text: 'GPS ±${current.accuracyMeters?.toStringAsFixed(0) ?? '-'}m'),
-                      _InfoChip(icon: Icons.location_on_rounded, text: '${current.latitude.toStringAsFixed(6)}, ${current.longitude.toStringAsFixed(6)}'),
+                      _InfoChip(
+                        icon: Icons.face_retouching_natural_rounded,
+                        text: 'Status: ${current.faceStatus}',
+                      ),
+                      _InfoChip(
+                        icon: Icons.analytics_rounded,
+                        text: 'Skor: ${current.faceScore?.round() ?? '-'}%',
+                      ),
+                      _InfoChip(
+                        icon: Icons.gps_fixed_rounded,
+                        text:
+                            'GPS ±${current.accuracyMeters?.toStringAsFixed(0) ?? '-'}m',
+                      ),
+                      _InfoChip(
+                        icon: Icons.location_on_rounded,
+                        text:
+                            '${current.latitude.toStringAsFixed(6)}, ${current.longitude.toStringAsFixed(6)}',
+                      ),
                       if (current.isReviewed)
-                        _InfoChip(icon: Icons.verified_rounded, text: 'Disemak${current.reviewedByName == null ? '' : ' oleh ${current.reviewedByName}'}'),
+                        _InfoChip(
+                          icon: Icons.verified_rounded,
+                          text:
+                              'Disemak${current.reviewedByName == null ? '' : ' oleh ${current.reviewedByName}'}',
+                        ),
                     ],
                   ),
-                  if (current.faceReason != null && current.faceReason!.isNotEmpty) ...[
+                  if (current.faceReason != null &&
+                      current.faceReason!.isNotEmpty) ...[
                     const SizedBox(height: 14),
                     Text('Catatan pengecaman: ${current.faceReason}'),
                   ],
@@ -117,7 +177,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                         : () async {
                             setDialogState(() => savingReview = true);
                             try {
-                              final updated = await widget.api.reviewAttendanceRecord(current.id);
+                              final updated = await widget.api
+                                  .reviewAttendanceRecord(current.id);
                               if (!dialogContext.mounted) return;
                               setDialogState(() {
                                 current = updated;
@@ -132,13 +193,17 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                               );
                             }
                           },
-                    icon: Icon(current.isReviewed ? Icons.verified_rounded : Icons.task_alt_rounded),
+                    icon: Icon(
+                      current.isReviewed
+                          ? Icons.verified_rounded
+                          : Icons.task_alt_rounded,
+                    ),
                     label: Text(
                       current.isReviewed
                           ? 'TELAH DISEMAK'
                           : savingReview
-                              ? 'MENYIMPAN…'
-                              : 'DISEMAK',
+                          ? 'MENYIMPAN…'
+                          : 'DISEMAK',
                     ),
                   ),
                 ],
@@ -156,15 +221,31 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       appBar: AppBar(
         title: const Text('Sejarah Kehadiran'),
         actions: [
-          TextButton.icon(onPressed: _pickDate, icon: const Icon(Icons.calendar_month_rounded), label: Text(_dateLabel(_date))),
-          IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh_rounded)),
+          TextButton.icon(
+            onPressed: _pickDate,
+            icon: const Icon(Icons.calendar_month_rounded),
+            label: Text(_dateLabel(_date)),
+          ),
+          IconButton(
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
         ],
       ),
       body: FutureBuilder<AttendanceAdminData>(
         future: _future,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-          if (snapshot.hasError) return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(snapshot.error.toString())));
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(snapshot.error.toString()),
+              ),
+            );
+          }
           final data = snapshot.data!;
           final summary = data.summary;
           return RefreshIndicator(
@@ -176,28 +257,73 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    _SummaryCard(label: 'Hadir', value: '${summary['presentUsers'] ?? 0}', icon: Icons.how_to_reg_rounded),
-                    _SummaryCard(label: 'Dalam Kawasan', value: '${summary['currentlyIn'] ?? 0}', icon: Icons.location_on_rounded),
-                    _SummaryCard(label: 'Tidak Hadir', value: '${summary['absentUsers'] ?? 0}', icon: Icons.person_off_rounded),
-                    _SummaryCard(label: 'Semak Wajah', value: '${summary['faceReviewRequired'] ?? 0}', icon: Icons.face_retouching_natural_rounded),
+                    _SummaryCard(
+                      label: 'Hadir',
+                      value: '${summary['presentUsers'] ?? 0}',
+                      icon: Icons.how_to_reg_rounded,
+                    ),
+                    _SummaryCard(
+                      label: 'Dalam Kawasan',
+                      value: '${summary['currentlyIn'] ?? 0}',
+                      icon: Icons.location_on_rounded,
+                    ),
+                    _SummaryCard(
+                      label: 'Tidak Hadir',
+                      value: '${summary['absentUsers'] ?? 0}',
+                      icon: Icons.person_off_rounded,
+                    ),
+                    _SummaryCard(
+                      label: 'Semak Wajah',
+                      value: '${summary['faceReviewRequired'] ?? 0}',
+                      icon: Icons.face_retouching_natural_rounded,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 18),
                 if (data.records.isEmpty)
-                  const Card(child: Padding(padding: EdgeInsets.all(18), child: Text('Tiada rekod kehadiran pada tarikh ini.')))
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(18),
+                      child: Text('Tiada rekod kehadiran pada tarikh ini.'),
+                    ),
+                  )
                 else
                   ...data.records.map((record) {
                     final color = _faceColor(record.faceStatus);
                     return Card(
                       child: ListTile(
                         onTap: () => _showDetail(record),
-                        leading: CircleAvatar(backgroundImage: _image(record.profilePicture), child: _image(record.profilePicture) == null ? const Icon(Icons.person_rounded) : null),
-                        title: Text(record.userName ?? 'Pengguna', style: const TextStyle(fontWeight: FontWeight.w900)),
-                        subtitle: Text('${record.department ?? '-'} • ${record.punchType == 'IN' ? 'MASUK' : 'KELUAR'} ${_time(record.punchedAt)} • ${record.distanceMeters.toStringAsFixed(0)}m'),
+                        leading: CircleAvatar(
+                          backgroundImage: _image(record.profilePicture),
+                          child: _image(record.profilePicture) == null
+                              ? const Icon(Icons.person_rounded)
+                              : null,
+                        ),
+                        title: Text(
+                          record.userName ?? 'Pengguna',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        subtitle: Text(
+                          '${record.department ?? '-'} • ${record.punchType == 'IN' ? 'MASUK' : 'KELUAR'} ${_time(record.punchedAt)} • ${record.distanceMeters.toStringAsFixed(0)}m',
+                        ),
                         trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                          decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(99)),
-                          child: Text(record.faceScore == null ? 'SEMAK' : '${record.faceScore!.round()}%', style: TextStyle(color: color, fontWeight: FontWeight.w900)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            record.faceScore == null
+                                ? 'SEMAK'
+                                : '${record.faceScore!.round()}%',
+                            style: TextStyle(
+                              color: color,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                         ),
                       ),
                     );
@@ -217,21 +343,27 @@ class _PhotoPanel extends StatelessWidget {
   final ImageProvider<Object>? image;
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 8),
-          AspectRatio(
-            aspectRatio: 1,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: image == null
-                  ? Container(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: const Icon(Icons.image_not_supported_rounded, size: 42))
-                  : Image(image: image!, fit: BoxFit.cover),
-            ),
-          ),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+      const SizedBox(height: 8),
+      AspectRatio(
+        aspectRatio: 1,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: image == null
+              ? Container(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: const Icon(
+                    Icons.image_not_supported_rounded,
+                    size: 42,
+                  ),
+                )
+              : Image(image: image!, fit: BoxFit.cover),
+        ),
+      ),
+    ],
+  );
 }
 
 class _InfoChip extends StatelessWidget {
@@ -239,22 +371,38 @@ class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String text;
   @override
-  Widget build(BuildContext context) => Chip(avatar: Icon(icon, size: 16), label: Text(text));
+  Widget build(BuildContext context) =>
+      Chip(avatar: Icon(icon, size: 16), label: Text(text));
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.label, required this.value, required this.icon});
+  const _SummaryCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
   final String label;
   final String value;
   final IconData icon;
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 160,
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(icon), const SizedBox(height: 8), Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)), Text(label)]),
-          ),
+    width: 160,
+    child: Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+            ),
+            Text(label),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 }
