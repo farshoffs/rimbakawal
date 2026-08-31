@@ -987,7 +987,7 @@ class PkkPdfGenerator {
 
     final pages = <List<_Pkk4Row>>[];
     var offset = 0;
-    final firstCount = math.min(50, rows.length);
+    final firstCount = math.min(51, rows.length);
     pages.add(rows.take(firstCount).toList());
     offset = firstCount;
     while (offset < rows.length) {
