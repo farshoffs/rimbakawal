@@ -65,9 +65,21 @@ class _ReportScreenState extends State<ReportScreen> {
     try {
       final data = await _reportData();
       final Uint8List bytes = switch (type) {
-        _PkkType.pkk2 => await PkkPdfGenerator.generatePkk2(data: data, month: _month, year: _year),
-        _PkkType.pkk3 => await PkkPdfGenerator.generatePkk3(data: data, month: _month, year: _year),
-        _PkkType.pkk4 => await PkkPdfGenerator.generatePkk4(data: data, month: _month, year: _year),
+        _PkkType.pkk2 => await PkkPdfGenerator.generatePkk2(
+          data: data,
+          month: _month,
+          year: _year,
+        ),
+        _PkkType.pkk3 => await PkkPdfGenerator.generatePkk3(
+          data: data,
+          month: _month,
+          year: _year,
+        ),
+        _PkkType.pkk4 => await PkkPdfGenerator.generatePkk4(
+          data: data,
+          month: _month,
+          year: _year,
+        ),
       };
       if (bytes.isEmpty) throw Exception('Fail PDF tidak berjaya dijana.');
 
@@ -108,10 +120,14 @@ class _ReportScreenState extends State<ReportScreen> {
                 children: [
                   Text(
                     'Jana Laporan PKK',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  const Text('Hanya PKK 2, PKK 3 dan PKK 4 dijana sebagai PDF berdasarkan data sebenar RimbaKawal.'),
+                  const Text(
+                    'Hanya PKK 2, PKK 3 dan PKK 4 dijana sebagai PDF berdasarkan data sebenar RimbaKawal.',
+                  ),
                   const SizedBox(height: 18),
                   DropdownButtonFormField<int?>(
                     initialValue: _departmentId,
@@ -120,9 +136,15 @@ class _ReportScreenState extends State<ReportScreen> {
                       prefixIcon: Icon(Icons.account_tree_outlined),
                     ),
                     items: [
-                      const DropdownMenuItem<int?>(value: null, child: Text('Pilih Jabatan')),
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Pilih Jabatan'),
+                      ),
                       ..._departments.map(
-                        (department) => DropdownMenuItem<int?>(value: department.id, child: Text(department.name)),
+                        (department) => DropdownMenuItem<int?>(
+                          value: department.id,
+                          child: Text(department.name),
+                        ),
                       ),
                     ],
                     onChanged: _loadingDepartments || _generating
@@ -146,7 +168,10 @@ class _ReportScreenState extends State<ReportScreen> {
                                 child: Text(PkkPdfGenerator.months[month - 1]),
                               ),
                           ],
-                          onChanged: _generating ? null : (value) => setState(() => _month = value ?? _month),
+                          onChanged: _generating
+                              ? null
+                              : (value) =>
+                                    setState(() => _month = value ?? _month),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -154,21 +179,37 @@ class _ReportScreenState extends State<ReportScreen> {
                         child: DropdownButtonFormField<int>(
                           initialValue: _year,
                           decoration: const InputDecoration(labelText: 'Tahun'),
-                          items: years.map((year) => DropdownMenuItem(value: year, child: Text('$year'))).toList(),
-                          onChanged: _generating ? null : (value) => setState(() => _year = value ?? _year),
+                          items: years
+                              .map(
+                                (year) => DropdownMenuItem(
+                                  value: year,
+                                  child: Text('$year'),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: _generating
+                              ? null
+                              : (value) =>
+                                    setState(() => _year = value ?? _year),
                         ),
                       ),
                     ],
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
-                    Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 20),
                   _ReportButton(
                     icon: Icons.groups_rounded,
                     title: 'Jana PKK 2 (PDF)',
-                    subtitle: 'Pengesahan bilangan pengawal dan rekod kehadiran',
+                    subtitle:
+                        'Pengesahan bilangan pengawal dan rekod kehadiran',
                     enabled: !_generating && !_loadingDepartments,
                     onPressed: () => _generate(_PkkType.pkk2),
                   ),
@@ -176,7 +217,8 @@ class _ReportScreenState extends State<ReportScreen> {
                   _ReportButton(
                     icon: Icons.badge_rounded,
                     title: 'Jana PKK 3 (PDF)',
-                    subtitle: 'Pengesahan kehadiran pengawal berdasarkan rekod kehadiran',
+                    subtitle:
+                        'Pengesahan kehadiran pengawal berdasarkan rekod kehadiran',
                     enabled: !_generating && !_loadingDepartments,
                     onPressed: () => _generate(_PkkType.pkk3),
                   ),
@@ -192,7 +234,10 @@ class _ReportScreenState extends State<ReportScreen> {
                     const SizedBox(height: 16),
                     const LinearProgressIndicator(),
                     const SizedBox(height: 8),
-                    const Text('Menjana PDF daripada data RimbaKawal…', textAlign: TextAlign.center),
+                    const Text(
+                      'Menjana PDF daripada data RimbaKawal…',
+                      textAlign: TextAlign.center,
+                    ),
                   ],
                   const SizedBox(height: 18),
                   const Divider(),
@@ -248,7 +293,9 @@ class _ReportButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return OutlinedButton(
       onPressed: enabled ? onPressed : null,
-      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
       child: Row(
         children: [
           Icon(icon),
@@ -257,7 +304,10 @@ class _ReportButton extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
                 const SizedBox(height: 2),
                 Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
               ],
