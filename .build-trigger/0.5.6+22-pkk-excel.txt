@@ -1,0 +1,4 @@
+RimbaKawal 0.5.6+22
+Final validated PKK Excel source commit: 355ea2bad50aa46d5ff011b15b4c6cf8a09767d6
+Reports: PKK 2, PKK 3, PKK 4 only.
+Output: XLSX with per-page signature blocks.
