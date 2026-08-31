@@ -1,0 +1,68 @@
+name: Apply Checkpoint NFC Read Only
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply_checkpoint_nfc_read_only.py
+      - .github/workflows/apply-checkpoint-nfc-read-only.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply NFC read-only refinement
+        run: python scripts/apply_checkpoint_nfc_read_only.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Format touched Dart files
+        run: dart format lib/features/admin/department_maintenance_screen.dart lib/core/nfc/nfc_service.dart lib/core/nfc/mock_nfc_service.dart lib/core/nfc/real_nfc_service.dart
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Verify requested behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -R "writeCheckpointTag" -n lib/core/nfc lib/features/admin/department_maintenance_screen.dart
+          ! grep -n "MENULIS TAG" lib/features/admin/department_maintenance_screen.dart
+          grep -n "MEMBACA TAG" lib/features/admin/department_maintenance_screen.dart
+          grep -n "final scan = await widget.nfcService.scan" lib/features/admin/department_maintenance_screen.dart
+          grep -n "NDEF Text/URI" lib/features/admin/department_maintenance_screen.dart
+          grep -n "version: 0.5.5+21" pubspec.yaml
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit validated refinement
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/features/admin/department_maintenance_screen.dart lib/core/nfc/nfc_service.dart lib/core/nfc/mock_nfc_service.dart lib/core/nfc/real_nfc_service.dart pubspec.yaml
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git commit -m "Use read-only NFC tags for checkpoints"
+          git push
