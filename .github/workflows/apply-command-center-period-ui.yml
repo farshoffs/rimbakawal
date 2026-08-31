@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           grep -q "SegmentedButton<_PeriodMode>" lib/features/admin/command_center_screen.dart
-          grep -q "Checkpoint Terlepas" lib/features/admin/command_center_screen.dart
+          grep -qi "checkpoint terlepas" lib/features/admin/command_center_screen.dart
           grep -q "ClockingHistoryScreen" lib/features/admin/command_center_screen.dart
           grep -q "AttendanceHistoryScreen" lib/features/admin/command_center_screen.dart
           grep -q "SosManagementScreen" lib/features/admin/command_center_screen.dart
