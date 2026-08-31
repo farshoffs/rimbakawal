@@ -7,7 +7,7 @@ old = """    final rows = <_Pkk4Row>[];\n    final days = DateTime(year, month +
 new = """    final rows = <_Pkk4Row>[];\n    final activeDays = scans\n        .map((row) => (row['_local'] as DateTime).day)\n        .toSet()\n        .toList()\n      ..sort();\n    for (final day in activeDays) {\n"""
 if old in text:
     text = text.replace(old, new, 1)
-elif 'final activeDays = scans' not in text:
+elif 'activeDays' not in text:
     raise SystemExit('PKK4 day loop anchor not found')
 
 # The supplied PKK4 reference ends page 1 at CP3 on 22/11 and starts the
