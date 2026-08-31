@@ -147,5 +147,28 @@ jobs:
       - name: Apply D1 migrations and seed users
         run: npx wrangler d1 migrations apply rimbakawal-db --remote --config wrangler.deploy.jsonc
 
+      - name: Verify Pentadbiran PKK presentation seed
+        shell: bash
+        run: |
+          npx wrangler d1 execute rimbakawal-db --remote --config wrangler.deploy.jsonc --command "
+            SELECT
+              (SELECT COUNT(*)
+                 FROM users
+                WHERE no_kad_pengenalan IN ('990101020001','990101020002','990101020003','990101020004')) AS demo_guards,
+              (SELECT COUNT(*)
+                 FROM attendance_records a
+                 JOIN users u ON u.id = a.user_id
+                WHERE u.no_kad_pengenalan IN ('990101020001','990101020002','990101020003','990101020004')
+                  AND a.punched_at >= '2026-07-31T16:00:00Z'
+                  AND a.punched_at < '2026-09-02T16:00:00Z') AS demo_attendance_punches,
+              (SELECT COUNT(*)
+                 FROM nfc_scans
+                WHERE client_event_id LIKE 'DEMO-PKK4-202608-%') AS demo_pkk4_scans,
+              (SELECT COUNT(*)
+                 FROM checkpoints c
+                 JOIN departments d ON d.id = c.department_id
+                WHERE d.name = 'Pentadbiran' AND c.active = 1) AS active_checkpoints;
+          "
+
       - name: Deploy Worker and static assets
         run: npx wrangler deploy --config wrangler.deploy.jsonc
