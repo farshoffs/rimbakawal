@@ -1,4 +1,4 @@
-name: Validate PKK Excel Reports
+name: Validate PKK PDF Reports
 
 on:
   push:
@@ -32,11 +32,11 @@ jobs:
       - name: Apply safe analyzer fixes
         run: |
           dart fix --apply
-          dart format lib/features/admin/report_screen.dart lib/features/admin/pkk_excel_generator.dart
+          dart format lib/features/admin/report_screen.dart lib/features/admin/pkk_pdf_generator.dart
           dart fix --apply
 
       - name: Format report sources
-        run: dart format lib/features/admin/report_screen.dart lib/features/admin/pkk_excel_generator.dart
+        run: dart format lib/features/admin/report_screen.dart lib/features/admin/pkk_pdf_generator.dart
 
       - name: Validate Worker JavaScript
         run: node --check worker/reports.js
@@ -44,22 +44,22 @@ jobs:
       - name: Analyze Flutter code
         run: flutter analyze
 
-      - name: Verify PKK-only Excel behavior
+      - name: Verify PKK-only PDF behavior
         shell: bash
         run: |
           set -euo pipefail
-          grep -n "Jana PKK 2" lib/features/admin/report_screen.dart
-          grep -n "Jana PKK 3" lib/features/admin/report_screen.dart
-          grep -n "Jana PKK 4" lib/features/admin/report_screen.dart
-          ! grep -n "Jana Laporan Rondaan" lib/features/admin/report_screen.dart
-          ! grep -n "Printing.sharePdf" lib/features/admin/report_screen.dart
-          grep -n "PKK 3 - Muka" lib/features/admin/pkk_excel_generator.dart
-          grep -n "PKK 4 - Muka" lib/features/admin/pkk_excel_generator.dart
-          grep -n "Disediakan Oleh" lib/features/admin/pkk_excel_generator.dart
-          grep -n "Disemak Oleh" lib/features/admin/pkk_excel_generator.dart
-          grep -n "Disahkan Oleh" lib/features/admin/pkk_excel_generator.dart
-          grep -n "version: 0.5.6+22" pubspec.yaml
-          grep -n "s.checkpoint_id" worker/reports.js
+          grep -n "Jana PKK 2 (PDF)" lib/features/admin/report_screen.dart
+          grep -n "Jana PKK 3 (PDF)" lib/features/admin/report_screen.dart
+          grep -n "Jana PKK 4 (PDF)" lib/features/admin/report_screen.dart
+          grep -n "Printing.sharePdf" lib/features/admin/report_screen.dart
+          ! grep -n "file_saver" lib/features/admin/report_screen.dart
+          ! grep -n "flutterExcel" lib/features/admin/report_screen.dart
+          ! grep -n "excel:" pubspec.yaml
+          ! grep -n "file_saver:" pubspec.yaml
+          grep -n "Disediakan Oleh" lib/features/admin/pkk_pdf_generator.dart
+          grep -n "Disemak Oleh" lib/features/admin/pkk_pdf_generator.dart
+          grep -n "Disahkan Oleh" lib/features/admin/pkk_pdf_generator.dart
+          grep -n "version: 0.5.7+23" pubspec.yaml
           grep -n "payload.checkpoints" worker/reports.js
 
       - name: Check diff
@@ -71,10 +71,10 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/features/admin/report_screen.dart lib/features/admin/pkk_excel_generator.dart pubspec.yaml pubspec.lock worker/reports.js
+          git add lib/features/admin/report_screen.dart lib/features/admin/pkk_pdf_generator.dart pubspec.yaml pubspec.lock worker/reports.js
           if git diff --cached --quiet; then
             echo "No validation fixes to commit."
             exit 0
           fi
-          git commit -m "Validate PKK Excel report generation"
+          git commit -m "Validate PKK PDF report generation"
           git push
