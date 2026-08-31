@@ -77,18 +77,22 @@ class PkkPdfGenerator {
 
     final doc = pw.Document();
     for (final guard in effectiveGuards) {
-      final guardSessions = sessions
-          .where(
-            (item) =>
-                item.userId == guard.id &&
-                item.start.year == year &&
-                item.start.month == month,
-          )
-          .toList()
-        ..sort((a, b) => a.start.compareTo(b.start));
+      final guardSessions =
+          sessions
+              .where(
+                (item) =>
+                    item.userId == guard.id &&
+                    item.start.year == year &&
+                    item.start.month == month,
+              )
+              .toList()
+            ..sort((a, b) => a.start.compareTo(b.start));
 
       const rowsPerPage = 20;
-      final pageCount = math.max(1, (guardSessions.length / rowsPerPage).ceil());
+      final pageCount = math.max(
+        1,
+        (guardSessions.length / rowsPerPage).ceil(),
+      );
       for (var page = 0; page < pageCount; page++) {
         final pageRows = guardSessions
             .skip(page * rowsPerPage)
@@ -157,9 +161,11 @@ class PkkPdfGenerator {
     final rows = <_Pkk4Row>[];
     final days = DateTime(year, month + 1, 0).day;
     for (var day = 1; day <= days; day++) {
-      for (var checkpointIndex = 0;
-          checkpointIndex < checkpoints.length;
-          checkpointIndex++) {
+      for (
+        var checkpointIndex = 0;
+        checkpointIndex < checkpoints.length;
+        checkpointIndex++
+      ) {
         final checkpoint = checkpoints[checkpointIndex];
         final checkpointId = (checkpoint['id'] as num?)?.toInt() ?? 0;
         final slots = List<String>.filled(12, '');
@@ -313,7 +319,10 @@ class PkkPdfGenerator {
     );
   }
 
-  static pw.Widget _pkk2ContractSummary(int requiredShift1, int requiredShift2) {
+  static pw.Widget _pkk2ContractSummary(
+    int requiredShift1,
+    int requiredShift2,
+  ) {
     pw.Widget shiftCount() => pw.Expanded(
       child: pw.Column(
         children: [
@@ -378,11 +387,7 @@ class PkkPdfGenerator {
 
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        shiftCount(),
-        pw.SizedBox(width: 18),
-        shiftHours(),
-      ],
+      children: [shiftCount(), pw.SizedBox(width: 18), shiftHours()],
     );
   }
 
@@ -806,7 +811,10 @@ class PkkPdfGenerator {
             alignment: pw.Alignment.centerRight,
             child: pw.Text(
               'PKK 4 (BAGI KONTRAK YANG BERMULA PADA 1 OKTOBER 2024 DAN SETERUSNYA)',
-              style: pw.TextStyle(fontSize: 5.2, fontWeight: pw.FontWeight.bold),
+              style: pw.TextStyle(
+                fontSize: 5.2,
+                fontWeight: pw.FontWeight.bold,
+              ),
             ),
           ),
           pw.SizedBox(height: 7),
@@ -957,11 +965,7 @@ class PkkPdfGenerator {
           row.showDate ? _dmy(DateTime(year, month, row.day)) : '',
           width: 48,
         ),
-        cell(
-          row.checkpoint,
-          width: 54,
-          alignment: pw.Alignment.centerLeft,
-        ),
+        cell(row.checkpoint, width: 54, alignment: pw.Alignment.centerLeft),
         pw.Expanded(
           child: pw.Row(
             children: [
@@ -1135,10 +1139,7 @@ class PkkPdfGenerator {
         if (label.isNotEmpty)
           pw.Text(
             label,
-            style: pw.TextStyle(
-              fontSize: 6.1,
-              fontWeight: pw.FontWeight.bold,
-            ),
+            style: pw.TextStyle(fontSize: 6.1, fontWeight: pw.FontWeight.bold),
           ),
         if (label.isNotEmpty) pw.SizedBox(width: 3),
         pw.Expanded(
@@ -1233,18 +1234,18 @@ class PkkPdfGenerator {
       if (at == null) continue;
       final userId = (row['user_id'] as num?)?.toInt() ?? 0;
       if (userId <= 0) continue;
-      byUser
-          .putIfAbsent(userId, () => <Map<String, dynamic>>[])
-          .add({...row, '_local': at});
+      byUser.putIfAbsent(userId, () => <Map<String, dynamic>>[]).add({
+        ...row,
+        '_local': at,
+      });
     }
 
     final result = <_GuardSession>[];
     for (final entry in byUser.entries) {
       final rows = entry.value
         ..sort(
-          (a, b) => (a['_local'] as DateTime).compareTo(
-            b['_local'] as DateTime,
-          ),
+          (a, b) =>
+              (a['_local'] as DateTime).compareTo(b['_local'] as DateTime),
         );
       Map<String, dynamic>? pendingIn;
       for (final row in rows) {

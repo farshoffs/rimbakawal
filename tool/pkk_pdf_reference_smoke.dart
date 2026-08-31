@@ -12,9 +12,24 @@ Future<void> main() async {
       'state': 'KEDAH',
     },
     'guards': <Map<String, dynamic>>[
-      {'id': 1, 'nama': 'AHMAD NOZAL BIN MOHD ZAN', 'no_pk': '1', 'jawatan': 'patrol'},
-      {'id': 2, 'nama': 'MUHAMAD ABDUL BASHER SHAM BIN ABDUL MUKTI', 'no_pk': '2', 'jawatan': 'patrol'},
-      {'id': 3, 'nama': 'MOHD AMIRUL ASHRAF BIN ABDUL WAHAB', 'no_pk': '3', 'jawatan': 'patrol'},
+      {
+        'id': 1,
+        'nama': 'AHMAD NOZAL BIN MOHD ZAN',
+        'no_pk': '1',
+        'jawatan': 'patrol',
+      },
+      {
+        'id': 2,
+        'nama': 'MUHAMAD ABDUL BASHER SHAM BIN ABDUL MUKTI',
+        'no_pk': '2',
+        'jawatan': 'patrol',
+      },
+      {
+        'id': 3,
+        'nama': 'MOHD AMIRUL ASHRAF BIN ABDUL WAHAB',
+        'no_pk': '3',
+        'jawatan': 'patrol',
+      },
       {'id': 4, 'nama': 'OMAR BIN ISMAIL', 'no_pk': '4', 'jawatan': 'patrol'},
     ],
     'checkpoints': <Map<String, dynamic>>[
@@ -26,7 +41,16 @@ Future<void> main() async {
   };
 
   final attendance = <Map<String, dynamic>>[];
-  void punch(int userId, String name, int day, int inHour, int inMinute, int outDay, int outHour, int outMinute) {
+  void punch(
+    int userId,
+    String name,
+    int day,
+    int inHour,
+    int inMinute,
+    int outDay,
+    int outHour,
+    int outMinute,
+  ) {
     attendance
       ..add({
         'user_id': userId,
@@ -42,7 +66,13 @@ Future<void> main() async {
         'no_pk': '$userId',
         'jawatan': 'patrol',
         'punch_type': 'OUT',
-        'punched_at': _utcIso(outDay == 1 ? 2025 : 2025, outDay == 1 ? 12 : 11, outDay, outHour, outMinute),
+        'punched_at': _utcIso(
+          outDay == 1 ? 2025 : 2025,
+          outDay == 1 ? 12 : 11,
+          outDay,
+          outHour,
+          outMinute,
+        ),
       });
   }
 
@@ -52,7 +82,16 @@ Future<void> main() async {
       punch(3, 'MOHD AMIRUL ASHRAF BIN ABDUL WAHAB', day, 6, 52, day, 19, 2);
     } else {
       final outDay = day == 30 ? 1 : day + 1;
-      punch(2, 'MUHAMAD ABDUL BASHER SHAM BIN ABDUL MUKTI', day, 18, 48, outDay, 7, 2);
+      punch(
+        2,
+        'MUHAMAD ABDUL BASHER SHAM BIN ABDUL MUKTI',
+        day,
+        18,
+        48,
+        outDay,
+        7,
+        2,
+      );
       punch(4, 'OMAR BIN ISMAIL', day, 18, 51, outDay, 7, 4);
     }
   }
@@ -87,8 +126,12 @@ Future<void> main() async {
 }
 
 String _utcIso(int year, int month, int day, int hour, int minute) {
-  final local = DateTime.utc(year, month, day, hour, minute).subtract(
-    const Duration(hours: 8),
-  );
+  final local = DateTime.utc(
+    year,
+    month,
+    day,
+    hour,
+    minute,
+  ).subtract(const Duration(hours: 8));
   return local.toIso8601String();
 }
