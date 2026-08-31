@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - scripts/apply_command_center_period_ui.py
+      - scripts/fix_command_center_period_ui.py
       - .github/workflows/apply-command-center-period-ui.yml
   workflow_dispatch:
 
@@ -26,7 +27,15 @@ jobs:
           cache: true
 
       - name: Apply period UI patch
-        run: python scripts/apply_command_center_period_ui.py
+        run: |
+          python scripts/apply_command_center_period_ui.py
+          python scripts/fix_command_center_period_ui.py
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Apply safe Dart fixes
+        run: dart fix --apply
 
       - name: Format Dart files
         run: >-
@@ -40,9 +49,6 @@ jobs:
         run: |
           node --check worker/command_center_period.js
           node --check worker/reports.js
-
-      - name: Install dependencies
-        run: flutter pub get
 
       - name: Analyze Flutter
         run: flutter analyze
