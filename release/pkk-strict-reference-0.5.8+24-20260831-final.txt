@@ -1,0 +1,11 @@
+RimbaKawal 0.5.8+24 strict PKK PDF reference release trigger.
+
+Validated source commit:
+4520df81008d2592c9f11d1079a2781b0ad4ef33
+
+Reference basis:
+- PKK 2: supplied SK RAMBONG PULAI example
+- PKK 3: supplied KV Kulim monthly attendance PDF
+- PKK 4: supplied SK ANAK-ANAK ANGKATAN TENTERA PDF
+
+Output remains PDF-only and uses RimbaKawal report data.
