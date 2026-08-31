@@ -164,6 +164,12 @@ jobs:
               (SELECT COUNT(*)
                  FROM nfc_scans
                 WHERE client_event_id LIKE 'DEMO-PKK4-202608-%') AS demo_pkk4_scans,
+              (SELECT COUNT(DISTINCT client_session_id)
+                 FROM nfc_scans
+                WHERE client_event_id LIKE 'DEMO-PKK4-202608-%') AS demo_scan_sessions,
+              (SELECT COUNT(*)
+                 FROM patrol_session_history
+                WHERE client_session_id LIKE 'DEMO-PKK4-202608-%') AS demo_patrol_sessions,
               (SELECT COUNT(*)
                  FROM checkpoints c
                  JOIN departments d ON d.id = c.department_id
