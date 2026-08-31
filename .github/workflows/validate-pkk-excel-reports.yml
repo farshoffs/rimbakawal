@@ -9,6 +9,7 @@ on:
       - lib/features/admin/report_screen.dart
       - worker/reports.js
       - tool/pkk_pdf_reference_smoke.dart
+      - scripts/fix_pkk_strict_visual_layout.py
       - pubspec.yaml
       - pubspec.lock
       - .github/workflows/validate-pkk-excel-reports.yml
@@ -25,6 +26,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply strict visual reference fixes
+        run: python scripts/fix_pkk_strict_visual_layout.py
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -66,6 +70,7 @@ jobs:
           grep -n "1 OKTOBER 2024" lib/features/admin/pkk_pdf_generator.dart
           grep -n "NAMA PEKERJA" lib/features/admin/pkk_pdf_generator.dart
           grep -n "Summarize" lib/features/admin/pkk_pdf_generator.dart
+          grep -n "activeDays" lib/features/admin/pkk_pdf_generator.dart
           grep -n "Disediakan Oleh" lib/features/admin/pkk_pdf_generator.dart
           grep -n "Disemak Oleh" lib/features/admin/pkk_pdf_generator.dart
           grep -n "Disahkan Oleh" lib/features/admin/pkk_pdf_generator.dart
@@ -107,5 +112,5 @@ jobs:
             echo "No validation fixes to commit."
             exit 0
           fi
-          git commit -m "Validate strict PKK PDF reference formats"
+          git commit -m "Validate strict PKK PDF visual layout"
           git push
