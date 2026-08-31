@@ -45,7 +45,7 @@ class PkkPdfGenerator {
       doc.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.fromLTRB(11, 10, 11, 9),
+          margin: const pw.EdgeInsets.fromLTRB(9, 7, 9, 7),
           build: (_) => _pkk2Page(
             department: department,
             month: month,
@@ -159,8 +159,10 @@ class PkkPdfGenerator {
     });
 
     final rows = <_Pkk4Row>[];
-    final days = DateTime(year, month + 1, 0).day;
-    for (var day = 1; day <= days; day++) {
+    final activeDays =
+        scans.map((row) => (row['_local'] as DateTime).day).toSet().toList()
+          ..sort();
+    for (final day in activeDays) {
       for (
         var checkpointIndex = 0;
         checkpointIndex < checkpoints.length;
@@ -253,18 +255,18 @@ class PkkPdfGenerator {
           7.1,
         ),
         _centerTitle('DI BAWAH KEMENTERIAN PENDIDIKAN MALAYSIA', 7.1),
-        pw.SizedBox(height: 5),
+        pw.SizedBox(height: 2),
         pw.Center(
           child: pw.Text(
             'BULAN: ${months[month - 1]}       TAHUN: $year',
             style: pw.TextStyle(fontSize: 6.4, fontWeight: pw.FontWeight.bold),
           ),
         ),
-        pw.SizedBox(height: 4),
+        pw.SizedBox(height: 2),
         _pkk2Meta(department),
-        pw.SizedBox(height: 5),
+        pw.SizedBox(height: 2),
         _pkk2ContractSummary(requiredShift1, requiredShift2),
-        pw.SizedBox(height: 5),
+        pw.SizedBox(height: 2),
         pw.Text(
           '3   SENARAI NAMA PENGAWAL KESELAMATAN YANG BERTUGAS MENGIKUT SYIF',
           style: pw.TextStyle(fontSize: 5.6, fontWeight: pw.FontWeight.bold),
@@ -278,13 +280,13 @@ class PkkPdfGenerator {
             month: month,
             year: year,
           ),
-          if (i != blocks.length - 1) pw.SizedBox(height: 2.4),
+          if (i != blocks.length - 1) pw.SizedBox(height: 1.0),
         ],
-        pw.SizedBox(height: 3),
+        pw.SizedBox(height: 1.5),
         _pkk2Note(),
-        pw.SizedBox(height: 2),
+        pw.SizedBox(height: 1),
         _sprmNotice(),
-        pw.SizedBox(height: 3),
+        pw.SizedBox(height: 1.5),
         _signatureRow(),
       ],
     );
@@ -330,21 +332,21 @@ class PkkPdfGenerator {
             '1   BILANGAN PENGAWAL KESELAMATAN YANG DITETAPKAN MENGIKUT SYIF DALAM DOKUMEN PERJANJIAN KONTRAK\n(Sila nyatakan)',
             fontSize: 5.1,
             bold: true,
-            height: 25,
+            height: 18,
             fill: PdfColors.grey300,
           ),
           pw.Row(
             children: [
-              pw.Expanded(child: _boxText('SYIF 1', height: 13)),
-              pw.Expanded(child: _boxText('SYIF 2', height: 13)),
-              pw.Expanded(child: _boxText('SYIF 3', height: 13)),
+              pw.Expanded(child: _boxText('SYIF 1', height: 9)),
+              pw.Expanded(child: _boxText('SYIF 2', height: 9)),
+              pw.Expanded(child: _boxText('SYIF 3', height: 9)),
             ],
           ),
           pw.Row(
             children: [
-              pw.Expanded(child: _boxText('$requiredShift1', height: 13)),
-              pw.Expanded(child: _boxText('$requiredShift2', height: 13)),
-              pw.Expanded(child: _boxText('', height: 13)),
+              pw.Expanded(child: _boxText('$requiredShift1', height: 9)),
+              pw.Expanded(child: _boxText('$requiredShift2', height: 9)),
+              pw.Expanded(child: _boxText('', height: 9)),
             ],
           ),
         ],
@@ -358,26 +360,26 @@ class PkkPdfGenerator {
             '2   WAKTU BERTUGAS SETIAP SYIF\n(Sila nyatakan)',
             fontSize: 5.1,
             bold: true,
-            height: 25,
+            height: 18,
             fill: PdfColors.grey300,
           ),
           pw.Row(
             children: [
-              pw.Expanded(child: _boxText('SYIF 1', height: 13)),
-              pw.Expanded(child: _boxText('SYIF 2', height: 13)),
-              pw.Expanded(child: _boxText('SYIF 3', height: 13)),
+              pw.Expanded(child: _boxText('SYIF 1', height: 9)),
+              pw.Expanded(child: _boxText('SYIF 2', height: 9)),
+              pw.Expanded(child: _boxText('SYIF 3', height: 9)),
             ],
           ),
           pw.Row(
             children: [
               pw.Expanded(
-                child: _boxText('Jam 08.00 hingga\njam 20.00', height: 19),
+                child: _boxText('Jam 08.00 hingga\njam 20.00', height: 13),
               ),
               pw.Expanded(
-                child: _boxText('Jam 20.00 hingga\njam 08.00', height: 19),
+                child: _boxText('Jam 20.00 hingga\njam 08.00', height: 13),
               ),
               pw.Expanded(
-                child: _boxText('Jam ______ hingga\njam ______', height: 19),
+                child: _boxText('Jam ______ hingga\njam ______', height: 13),
               ),
             ],
           ),
@@ -422,7 +424,7 @@ class PkkPdfGenerator {
           text,
           textAlign: pw.TextAlign.center,
           style: pw.TextStyle(
-            fontSize: 4.2,
+            fontSize: 3.9,
             fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
           ),
         ),
@@ -438,7 +440,7 @@ class PkkPdfGenerator {
                 child: _boxText(
                   day == null ? '' : '$day',
                   height: 11,
-                  fontSize: 4.1,
+                  fontSize: 3.6,
                   fill: PdfColors.grey200,
                 ),
               ),
@@ -454,7 +456,7 @@ class PkkPdfGenerator {
                       child: _boxText(
                         day == null ? '' : 'SYIF 1',
                         height: 11,
-                        fontSize: 3.8,
+                        fontSize: 3.6,
                         fill: PdfColors.grey200,
                       ),
                     ),
@@ -462,7 +464,7 @@ class PkkPdfGenerator {
                       child: _boxText(
                         day == null ? '' : 'SYIF 2',
                         height: 11,
-                        fontSize: 3.8,
+                        fontSize: 3.6,
                         fill: PdfColors.grey200,
                       ),
                     ),
@@ -470,7 +472,7 @@ class PkkPdfGenerator {
                       child: _boxText(
                         day == null ? '' : 'SYIF 3',
                         height: 11,
-                        fontSize: 3.8,
+                        fontSize: 3.6,
                         fill: PdfColors.grey200,
                       ),
                     ),
@@ -502,8 +504,8 @@ class PkkPdfGenerator {
                                 day,
                                 shift,
                               ),
-                        height: 12,
-                        fontSize: 4.0,
+                        height: 9,
+                        fontSize: 3.7,
                       ),
                     ),
                 ],
@@ -522,7 +524,7 @@ class PkkPdfGenerator {
               width: 22,
               child: sideCell(
                 'BIL.',
-                height: 25,
+                height: 18,
                 bold: true,
                 fill: PdfColors.grey200,
               ),
@@ -531,7 +533,7 @@ class PkkPdfGenerator {
               width: 155,
               child: sideCell(
                 'NAMA PENGAWAL KESELAMATAN\n(TERMASUK PENGAWAL KESELAMATAN GANTIAN)\n(Sila pastikan nama adalah SAMA dengan Borang PKK 3 dan Borang PKK 5)',
-                height: 25,
+                height: 18,
                 bold: true,
                 fill: PdfColors.grey200,
               ),
@@ -540,7 +542,7 @@ class PkkPdfGenerator {
               width: 54,
               child: sideCell(
                 'STATUS PENGAWAL KESELAMATAN\n(Tandakan pada ruangan berkaitan)',
-                height: 25,
+                height: 18,
                 bold: true,
                 fill: PdfColors.grey200,
               ),
@@ -548,7 +550,7 @@ class PkkPdfGenerator {
             pw.Expanded(
               child: sideCell(
                 headerText,
-                height: 25,
+                height: 18,
                 bold: true,
                 fill: PdfColors.grey200,
               ),
@@ -560,11 +562,11 @@ class PkkPdfGenerator {
           children: [
             pw.SizedBox(
               width: 22,
-              child: sideCell('', height: 22, fill: PdfColors.grey200),
+              child: sideCell('', height: 16, fill: PdfColors.grey200),
             ),
             pw.SizedBox(
               width: 155,
-              child: sideCell('', height: 22, fill: PdfColors.grey200),
+              child: sideCell('', height: 16, fill: PdfColors.grey200),
             ),
             pw.SizedBox(
               width: 54,
@@ -573,7 +575,7 @@ class PkkPdfGenerator {
                   pw.Expanded(
                     child: sideCell(
                       'TETAP',
-                      height: 22,
+                      height: 16,
                       bold: true,
                       fill: PdfColors.grey200,
                     ),
@@ -581,7 +583,7 @@ class PkkPdfGenerator {
                   pw.Expanded(
                     child: sideCell(
                       'GANTIAN',
-                      height: 22,
+                      height: 16,
                       bold: true,
                       fill: PdfColors.grey200,
                     ),
@@ -599,14 +601,14 @@ class PkkPdfGenerator {
                 width: 22,
                 child: sideCell(
                   index < guards.length ? '${index + 1}' : '',
-                  height: 12,
+                  height: 9,
                 ),
               ),
               pw.SizedBox(
                 width: 155,
                 child: sideCell(
                   index < guards.length ? guards[index].name : '',
-                  height: 12,
+                  height: 9,
                   alignment: pw.Alignment.centerLeft,
                 ),
               ),
@@ -617,10 +619,10 @@ class PkkPdfGenerator {
                     pw.Expanded(
                       child: sideCell(
                         index < guards.length ? 'X' : '',
-                        height: 12,
+                        height: 9,
                       ),
                     ),
-                    pw.Expanded(child: sideCell('', height: 12)),
+                    pw.Expanded(child: sideCell('', height: 9)),
                   ],
                 ),
               ),
@@ -631,7 +633,7 @@ class PkkPdfGenerator {
                         children: [
                           for (var i = 0; i < 30; i++)
                             pw.Expanded(
-                              child: _boxText('', height: 12, fontSize: 4),
+                              child: _boxText('', height: 9, fontSize: 3.7),
                             ),
                         ],
                       ),
