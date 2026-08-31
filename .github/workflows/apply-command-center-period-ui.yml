@@ -1,0 +1,82 @@
+name: Apply Command Center Period UI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply_command_center_period_ui.py
+      - .github/workflows/apply-command-center-period-ui.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply period UI patch
+        run: python scripts/apply_command_center_period_ui.py
+
+      - name: Format Dart files
+        run: >-
+          dart format
+          lib/core/api/api_service.dart
+          lib/features/admin/command_center_screen.dart
+          lib/features/admin/attendance_history_screen.dart
+          lib/features/history/clocking_history_screen.dart
+
+      - name: Verify Worker JavaScript
+        run: |
+          node --check worker/command_center_period.js
+          node --check worker/reports.js
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter
+        run: flutter analyze
+
+      - name: Verify period and drill-down behavior
+        shell: bash
+        run: |
+          grep -q "SegmentedButton<_PeriodMode>" lib/features/admin/command_center_screen.dart
+          grep -q "Checkpoint Terlepas" lib/features/admin/command_center_screen.dart
+          grep -q "ClockingHistoryScreen" lib/features/admin/command_center_screen.dart
+          grep -q "AttendanceHistoryScreen" lib/features/admin/command_center_screen.dart
+          grep -q "SosManagementScreen" lib/features/admin/command_center_screen.dart
+          grep -q "initialFilter" lib/features/history/clocking_history_screen.dart
+          grep -q "version: 0.5.9+25" pubspec.yaml
+          grep -q "command_center_period.js" worker/reports.js
+
+      - name: Diff check
+        run: git diff --check
+
+      - name: Commit validated changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            lib/core/api/api_service.dart \
+            lib/features/admin/command_center_screen.dart \
+            lib/features/admin/attendance_history_screen.dart \
+            lib/features/history/clocking_history_screen.dart \
+            pubspec.yaml \
+            pubspec.lock
+          git commit -m "Add period filters and drilldowns to command center"
+          git push
