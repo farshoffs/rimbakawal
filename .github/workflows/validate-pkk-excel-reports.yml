@@ -30,7 +30,10 @@ jobs:
         run: flutter pub get
 
       - name: Apply safe analyzer fixes
-        run: dart fix --apply
+        run: |
+          dart fix --apply
+          dart format lib/features/admin/report_screen.dart lib/features/admin/pkk_excel_generator.dart
+          dart fix --apply
 
       - name: Format report sources
         run: dart format lib/features/admin/report_screen.dart lib/features/admin/pkk_excel_generator.dart
