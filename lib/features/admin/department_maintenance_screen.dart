@@ -566,44 +566,44 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                 ),
               ),
               const SizedBox(height: 14),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final timeButton = FilledButton.tonalIcon(
-                    onPressed: _pickStartTime,
-                    icon: const Icon(Icons.schedule_rounded),
-                    label: Text('Pilih masa • ${_startTime.format(context)}'),
-                  );
-                  final details = Column(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Masa mula rondaan',
-                        style: TextStyle(fontWeight: FontWeight.w800),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(Icons.schedule_rounded),
                       ),
-                      const SizedBox(height: 3),
-                      Text('Sesi 1 bermula pada ${_startTime.format(context)}'),
-                    ],
-                  );
-                  if (constraints.maxWidth < 430) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        details,
-                        const SizedBox(height: 10),
-                        timeButton,
-                      ],
-                    );
-                  }
-                  return Row(
-                    children: [
-                      const Icon(Icons.schedule_rounded),
                       const SizedBox(width: 12),
-                      Expanded(child: details),
-                      const SizedBox(width: 12),
-                      timeButton,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Masa mula rondaan',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Sesi 1 bermula pada ${_startTime.format(context)}',
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
-                  );
-                },
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      onPressed: _pickStartTime,
+                      icon: const Icon(Icons.schedule_rounded),
+                      label: Text('Pilih masa • ${_startTime.format(context)}'),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               Text(
