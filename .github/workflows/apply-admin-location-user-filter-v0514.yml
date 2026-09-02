@@ -1,0 +1,79 @@
+name: Apply Admin Location User Filter v0.5.14
+
+on:
+  push:
+    branches:
+      - admin-location-user-filter-v0514
+    paths:
+      - scripts/apply_admin_location_user_filter_v0514.py
+      - .github/workflows/apply-admin-location-user-filter-v0514.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: admin-location-user-filter-v0514
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply requested changes
+        run: python3 scripts/apply_admin_location_user_filter_v0514.py
+
+      - name: Format Dart
+        run: dart format lib/features/admin/department_maintenance_screen.dart lib/features/admin/user_maintenance_screen.dart lib/features/patrol/patrol_screen.dart
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Validate Flutter
+        run: flutter analyze
+
+      - name: Validate requested behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "version: 0.5.14+30" pubspec.yaml
+          grep -q "Masa mula rondaan" lib/features/admin/department_maintenance_screen.dart
+          grep -q "Pilih masa •" lib/features/admin/department_maintenance_screen.dart
+          grep -q "GUNA LOKASI SEMASA" lib/features/admin/department_maintenance_screen.dart
+          grep -q "CARI LOKASI" lib/features/admin/department_maintenance_screen.dart
+          grep -q "nominatim.openstreetmap.org" lib/features/admin/department_maintenance_screen.dart
+          grep -q "onTap: (_, point)" lib/features/admin/department_maintenance_screen.dart
+          grep -q "Teruskan Rondaan" lib/features/patrol/patrol_screen.dart
+          grep -q "OutlinedButton.icon" lib/features/patrol/patrol_screen.dart
+          grep -q "Filter Jabatan" lib/features/admin/user_maintenance_screen.dart
+          grep -q "Semua Jabatan" lib/features/admin/user_maintenance_screen.dart
+          if grep -n -A4 "TextButton(" lib/features/patrol/patrol_screen.dart | grep -q "Teruskan ronda"; then
+            echo "Teruskan Rondaan is still a TextButton"
+            exit 1
+          fi
+          checkpoint_tail=$(sed -n '/class _CheckpointDialog extends StatefulWidget/,$p' lib/features/admin/department_maintenance_screen.dart)
+          if printf '%s' "$checkpoint_tail" | grep -q "Jam mula rondaan"; then
+            echo "Schedule wording leaked into checkpoint dialog"
+            exit 1
+          fi
+
+      - name: Commit validated changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml lib/features/admin/department_maintenance_screen.dart lib/features/admin/user_maintenance_screen.dart lib/features/patrol/patrol_screen.dart
+          git commit -m "Improve admin location setup and user filtering"
+          git push origin HEAD:admin-location-user-filter-v0514
