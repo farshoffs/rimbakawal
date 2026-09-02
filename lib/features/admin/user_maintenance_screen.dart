@@ -17,6 +17,7 @@ class UserMaintenanceScreen extends StatefulWidget {
 
 class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
   late Future<_UserAdminData> _future;
+  int _departmentFilterId = -1;
 
   @override
   void initState() {
@@ -105,33 +106,90 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
             );
           }
           final data = snapshot.data!;
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            itemCount: data.users.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final user = data.users[index];
-              return Card(
-                child: ListTile(
-                  onTap: () => _editUser(user, data.departments),
-                  leading: CircleAvatar(
-                    backgroundImage: _imageProvider(user.profilePicture),
-                    child: _imageProvider(user.profilePicture) == null
-                        ? Text(user.nama.isEmpty ? '?' : user.nama[0])
-                        : null,
+          final filteredUsers = _departmentFilterId == -1
+              ? data.users
+              : data.users
+                    .where((user) => user.departmentId == _departmentFilterId)
+                    .toList();
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: DropdownButtonFormField<int>(
+                  initialValue: _departmentFilterId,
+                  decoration: const InputDecoration(
+                    labelText: 'Filter Jabatan',
+                    prefixIcon: Icon(Icons.filter_alt_rounded),
                   ),
-                  title: Text(
-                    user.nama,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  subtitle: Text(
-                    '${user.noKadPengenalan}${user.noPk.isEmpty ? '' : ' • No. PK ${user.noPk}'}\n${user.jawatanPaparan} • ${user.jabatan}',
-                  ),
-                  isThreeLine: true,
-                  trailing: const Icon(Icons.edit_rounded),
+                  items: [
+                    const DropdownMenuItem<int>(
+                      value: -1,
+                      child: Text('Semua Jabatan'),
+                    ),
+                    ...data.departments.map(
+                      (department) => DropdownMenuItem<int>(
+                        value: department.id,
+                        child: Text(department.name),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => _departmentFilterId = value ?? -1),
                 ),
-              );
-            },
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${filteredUsers.length} pengguna',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Expanded(
+                child: filteredUsers.isEmpty
+                    ? const Center(
+                        child: Text('Tiada pengguna untuk Jabatan ini.'),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                        itemCount: filteredUsers.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final user = filteredUsers[index];
+                          return Card(
+                            child: ListTile(
+                              onTap: () => _editUser(user, data.departments),
+                              leading: CircleAvatar(
+                                backgroundImage: _imageProvider(
+                                  user.profilePicture,
+                                ),
+                                child:
+                                    _imageProvider(user.profilePicture) == null
+                                    ? Text(
+                                        user.nama.isEmpty ? '?' : user.nama[0],
+                                      )
+                                    : null,
+                              ),
+                              title: Text(
+                                user.nama,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${user.noKadPengenalan}${user.noPk.isEmpty ? '' : ' • No. PK ${user.noPk}'}\n${user.jawatanPaparan} • ${user.jabatan}',
+                              ),
+                              isThreeLine: true,
+                              trailing: const Icon(Icons.edit_rounded),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
           );
         },
       ),

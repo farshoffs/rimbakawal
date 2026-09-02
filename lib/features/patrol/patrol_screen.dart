@@ -889,13 +889,25 @@ class _PatrolScreenState extends State<PatrolScreen> {
           'Semua data telah disimpan pada peranti. ${_store.pendingCount(widget.user.id)} rekod masih menunggu penyegerakan.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Teruskan ronda'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Tamat Rondaan'),
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(context, true),
+                  icon: const Icon(Icons.stop_circle_outlined),
+                  label: const Text('Tamat Rondaan'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(context, false),
+                  icon: const Icon(Icons.directions_walk_rounded),
+                  label: const Text('Teruskan Rondaan'),
+                ),
+              ],
+            ),
           ),
         ],
       ),

@@ -1,5 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import '../../core/api/api_service.dart';
@@ -235,12 +241,19 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
   late final TextEditingController _locationLabelController;
   late final TextEditingController _companyController;
   late final TextEditingController _zoneController;
+  late final TextEditingController _locationSearchController;
+  final MapController _mapController = MapController();
   late TimeOfDay _startTime;
   late bool _active;
   double? _latitude;
   double? _longitude;
   double _radius = 150;
+  double? _deviceLatitude;
+  double? _deviceLongitude;
   bool _saving = false;
+  bool _locating = false;
+  bool _searchingLocation = false;
+  List<_LocationSearchResult> _locationResults = const [];
   String? _error;
 
   @override
@@ -261,12 +274,24 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     _zoneController = TextEditingController(
       text: widget.department?.zone ?? '',
     );
+    _locationSearchController = TextEditingController();
     final startMinutes = widget.department?.sessionStartMinutes ?? 420;
     _startTime = TimeOfDay(hour: startMinutes ~/ 60, minute: startMinutes % 60);
     _active = widget.department?.active ?? true;
     _latitude = widget.department?.attendanceLatitude;
     _longitude = widget.department?.attendanceLongitude;
     _radius = (widget.department?.attendanceRadiusMeters ?? 150).toDouble();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        _detectCurrentLocation(
+          auto: true,
+          applyToDepartment:
+              widget.department == null &&
+              (_latitude == null || _longitude == null),
+        ),
+      );
+    });
   }
 
   @override
@@ -276,6 +301,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     _locationLabelController.dispose();
     _companyController.dispose();
     _zoneController.dispose();
+    _locationSearchController.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -283,9 +310,147 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     final selected = await showTimePicker(
       context: context,
       initialTime: _startTime,
-      helpText: 'Jam mula sesi rondaan',
+      helpText: 'Pilih masa mula sesi rondaan',
     );
     if (selected != null && mounted) setState(() => _startTime = selected);
+  }
+
+  void _moveMap(double latitude, double longitude, {double zoom = 17}) {
+    try {
+      _mapController.move(LatLng(latitude, longitude), zoom);
+    } catch (_) {
+      // Map may still be attaching during the dialog's first frame.
+    }
+  }
+
+  Future<void> _detectCurrentLocation({
+    required bool auto,
+    required bool applyToDepartment,
+  }) async {
+    if (_locating) return;
+    if (mounted) {
+      setState(() {
+        _locating = true;
+        if (!auto) _error = null;
+      });
+    }
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        if (!auto && mounted) {
+          setState(
+            () =>
+                _error = 'Aktifkan Location/GPS untuk mengesan lokasi semasa.',
+          );
+        }
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (!auto && mounted) {
+          setState(
+            () => _error =
+                'Kebenaran lokasi diperlukan untuk menggunakan lokasi semasa.',
+          );
+        }
+        return;
+      }
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _deviceLatitude = position.latitude;
+        _deviceLongitude = position.longitude;
+        if (applyToDepartment) {
+          _latitude = position.latitude;
+          _longitude = position.longitude;
+        }
+        _error = null;
+      });
+      _moveMap(position.latitude, position.longitude);
+    } catch (error) {
+      if (!auto && mounted) {
+        setState(() => _error = 'Lokasi semasa tidak dapat dikesan: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  Future<void> _searchLocation() async {
+    final query = _locationSearchController.text.trim();
+    if (query.length < 3 || _searchingLocation) {
+      if (query.length < 3) {
+        setState(
+          () => _error =
+              'Masukkan sekurang-kurangnya 3 aksara untuk Cari Lokasi.',
+        );
+      }
+      return;
+    }
+    setState(() {
+      _searchingLocation = true;
+      _locationResults = const [];
+      _error = null;
+    });
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': '$query, Malaysia',
+        'format': 'jsonv2',
+        'limit': '5',
+        'addressdetails': '1',
+      });
+      final response = await http.get(
+        uri,
+        headers: kIsWeb
+            ? const {'Accept-Language': 'ms,en;q=0.8'}
+            : const {
+                'User-Agent': 'RimbaKawal/0.5.14 (location search)',
+                'Accept-Language': 'ms,en;q=0.8',
+              },
+      );
+      if (response.statusCode != 200) {
+        throw StateError('Carian lokasi gagal (${response.statusCode}).');
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! List) throw StateError('Format carian lokasi tidak sah.');
+      final results = decoded
+          .whereType<Map<String, dynamic>>()
+          .map(_LocationSearchResult.fromJson)
+          .where((item) => item != null)
+          .cast<_LocationSearchResult>()
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _locationResults = results;
+        if (results.isEmpty) {
+          _error = 'Tiada lokasi ditemui. Cuba nama sekolah, jalan, bandar atau poskod.';
+        }
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = 'Cari Lokasi tidak berjaya: $error');
+    } finally {
+      if (mounted) setState(() => _searchingLocation = false);
+    }
+  }
+
+  void _selectLocationResult(_LocationSearchResult result) {
+    setState(() {
+      _latitude = result.latitude;
+      _longitude = result.longitude;
+      _locationResults = const [];
+      _locationLabelController.text = result.displayName;
+      _error = null;
+    });
+    _moveMap(result.latitude, result.longitude);
   }
 
   Future<void> _save() async {
@@ -406,13 +571,13 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                   final timeButton = FilledButton.tonalIcon(
                     onPressed: _pickStartTime,
                     icon: const Icon(Icons.schedule_rounded),
-                    label: Text(_startTime.format(context)),
+                    label: Text('Pilih masa • ${_startTime.format(context)}'),
                   );
                   final details = Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Jam mula rondaan',
+                        'Masa mula rondaan',
                         style: TextStyle(fontWeight: FontWeight.w800),
                       ),
                       const SizedBox(height: 3),
@@ -448,20 +613,112 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Tekan pada peta untuk menetapkan pusat sekolah. Bulatan menunjukkan radius yang dibenarkan untuk punch masuk/keluar.',
+                'Lokasi semasa akan cuba dikesan secara automatik. Anda juga boleh guna lokasi semasa secara manual, cari lokasi lain, atau tekan terus pada peta. Bulatan menunjukkan radius yang dibenarkan untuk punch masuk/keluar.',
               ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _locationSearchController,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) => _searchLocation(),
+                decoration: const InputDecoration(
+                  labelText: 'Cari Lokasi',
+                  hintText: 'Nama sekolah, tempat, jalan, bandar atau poskod',
+                  prefixIcon: Icon(Icons.search_rounded),
+                ),
+              ),
+              const SizedBox(height: 8),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final currentButton = FilledButton.tonalIcon(
+                    onPressed: _locating
+                        ? null
+                        : () => _detectCurrentLocation(
+                            auto: false,
+                            applyToDepartment: true,
+                          ),
+                    icon: _locating
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.my_location_rounded),
+                    label: Text(_locating ? 'MENGESAN…' : 'GUNA LOKASI SEMASA'),
+                  );
+                  final searchButton = OutlinedButton.icon(
+                    onPressed: _searchingLocation ? null : _searchLocation,
+                    icon: _searchingLocation
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.travel_explore_rounded),
+                    label: Text(
+                      _searchingLocation ? 'MENCARI…' : 'CARI LOKASI',
+                    ),
+                  );
+                  if (constraints.maxWidth < 470) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        currentButton,
+                        const SizedBox(height: 8),
+                        searchButton,
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: currentButton),
+                      const SizedBox(width: 8),
+                      Expanded(child: searchButton),
+                    ],
+                  );
+                },
+              ),
+              if (_deviceLatitude != null && _deviceLongitude != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Lokasi semasa dikesan: ${_deviceLatitude!.toStringAsFixed(5)}, ${_deviceLongitude!.toStringAsFixed(5)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+              if (_locationResults.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Card(
+                  child: Column(
+                    children: _locationResults
+                        .map(
+                          (result) => ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.location_on_outlined),
+                            title: Text(
+                              result.displayName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap: () => _selectLocationResult(result),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               ClipRRect(
                 borderRadius: BorderRadius.circular(18),
                 child: SizedBox(
                   height: 290,
                   child: FlutterMap(
+                    mapController: _mapController,
                     options: MapOptions(
                       initialCenter: center,
                       initialZoom: _latitude == null ? 15 : 17,
                       onTap: (_, point) => setState(() {
                         _latitude = point.latitude;
                         _longitude = point.longitude;
+                        _locationResults = const [];
                       }),
                     ),
                     children: [
@@ -495,6 +752,21 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                               height: 48,
                               child: const Icon(Icons.school_rounded, size: 38),
                             ),
+                            if (_deviceLatitude != null &&
+                                _deviceLongitude != null)
+                              Marker(
+                                point: LatLng(
+                                  _deviceLatitude!,
+                                  _deviceLongitude!,
+                                ),
+                                width: 42,
+                                height: 42,
+                                child: const Icon(
+                                  Icons.my_location_rounded,
+                                  size: 30,
+                                  color: Color(0xFF54A0FF),
+                                ),
+                              ),
                           ],
                         ),
                     ],
@@ -588,6 +860,32 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _LocationSearchResult {
+  const _LocationSearchResult({
+    required this.displayName,
+    required this.latitude,
+    required this.longitude,
+  });
+
+  final String displayName;
+  final double latitude;
+  final double longitude;
+
+  static _LocationSearchResult? fromJson(Map<String, dynamic> json) {
+    final displayName = json['display_name']?.toString().trim() ?? '';
+    final latitude = double.tryParse(json['lat']?.toString() ?? '');
+    final longitude = double.tryParse(json['lon']?.toString() ?? '');
+    if (displayName.isEmpty || latitude == null || longitude == null) {
+      return null;
+    }
+    return _LocationSearchResult(
+      displayName: displayName,
+      latitude: latitude,
+      longitude: longitude,
     );
   }
 }
