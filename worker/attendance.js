@@ -1,4 +1,5 @@
 import sosWorker from './sos.js';
+import { sendPushToDepartment, sendPushToUser } from './push.js';
 
 const SESSION_COOKIE = 'rk_session';
 const MALAYSIA_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -180,9 +181,31 @@ async function punchAttendance(request, env) {
     face.reason,
   ).run();
 
+  const attendanceId = Number(insert.meta?.last_row_id || 0);
+  try {
+    await sendPushToUser(env, auth.user.id, {
+      title: punchType === 'IN' ? 'Kehadiran Masuk Direkod' : 'Kehadiran Keluar Direkod',
+      body: `${department.name} • ${punchType} berjaya direkod.`,
+      kind: 'attendance_punch',
+      data: { attendanceId, workDate, punchType },
+    });
+    if (face.status !== 'matched') {
+      await sendPushToDepartment(env, auth.user.department_id, {
+        title: 'Kehadiran Perlu Semakan Wajah',
+        body: `${auth.user.nama} • ${punchType} memerlukan semakan wajah (${face.status}).`,
+        kind: 'attendance_review',
+        data: { attendanceId, workDate, punchType, faceStatus: face.status },
+        roles: ['management', 'supervisor'],
+        excludeUserId: auth.user.id,
+      });
+    }
+  } catch (error) {
+    console.error('Attendance push failed', error);
+  }
+
   return json({
     record: {
-      id: Number(insert.meta?.last_row_id || 0),
+      id: attendanceId,
       punchType,
       punchedAt,
       latitude,

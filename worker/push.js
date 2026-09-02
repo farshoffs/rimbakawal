@@ -142,8 +142,6 @@ async function sendToRows(env, rows, payload) {
 
 export async function dispatchSessionStartNotifications(env, scheduledAt = new Date()) {
   if (!pushConfigured(env)) return;
-  const local = new Date(scheduledAt.getTime() + MALAYSIA_OFFSET_MS);
-  const minuteOfDay = local.getUTCHours() * 60 + local.getUTCMinutes();
   const departments = await env.DB.prepare(
     `SELECT id, name, session_interval_minutes, session_start_minutes
      FROM departments WHERE active = 1`,
@@ -152,32 +150,233 @@ export async function dispatchSessionStartNotifications(env, scheduledAt = new D
   for (const department of departments.results ?? []) {
     const interval = Math.max(15, Math.min(1440, Number(department.session_interval_minutes || 120)));
     const startMinutes = Math.max(0, Math.min(1439, Number(department.session_start_minutes ?? 420)));
-    const relative = (minuteOfDay - startMinutes + 1440) % 1440;
-    if (relative % interval !== 0) continue;
-    const index = Math.floor(relative / interval);
-    const scheduleDate = new Date(local.getTime());
-    if (minuteOfDay < startMinutes) scheduleDate.setUTCDate(scheduleDate.getUTCDate() - 1);
-    const dayKey = `${scheduleDate.getUTCFullYear()}-${two(scheduleDate.getUTCMonth() + 1)}-${two(scheduleDate.getUTCDate())}`;
-    const dispatchKey = `session:${department.id}:${dayKey}:${index}`;
-    const inserted = await env.DB.prepare(
-      `INSERT OR IGNORE INTO push_dispatch_log (dispatch_key, kind, created_at)
-       VALUES (?, 'session_start', ?)`,
-    ).bind(dispatchKey, new Date().toISOString()).run();
-    if (Number(inserted.meta?.changes || 0) === 0) continue;
+    const window = sessionWindowAt(scheduledAt, interval, startMinutes);
+    const durationMinutes = Math.max(1, Math.round((window.end.getTime() - window.start.getTime()) / 60000));
+    const minuteIntoSession = Math.max(0, Math.floor((scheduledAt.getTime() - window.start.getTime()) / 60000));
+    const commonData = {
+      sessionIndex: window.index + 1,
+      sessionDate: malaysiaDateKey(window.start),
+      departmentId: department.id,
+    };
 
-    const start = (startMinutes + index * interval) % 1440;
-    const end = (start + interval) % 1440;
-    await sendPushToDepartment(env, department.id, {
-      title: `Sesi Rondaan ${index + 1} Bermula`,
-      body: `${department.name} • ${hm(start)}–${hm(end)}. Sila mulakan rondaan dan lengkapkan checkpoint.`,
-      kind: 'session_start',
-      data: { sessionIndex: index + 1, departmentId: department.id },
-      roles: ['patrol', 'supervisor'],
-    });
+    if (minuteIntoSession === 0) {
+      await autoCloseExpiredLivePatrols(env, department.id, window.start);
+      if (await claimDispatch(env, `session:${department.id}:${window.dayKey}:${window.index}`, 'session_start')) {
+        await sendPushToDepartment(env, department.id, {
+          title: `Sesi Rondaan ${window.index + 1} Bermula`,
+          body: `${department.name} • ${hmFromDate(window.start)}–${hmFromDate(window.end)}. Sila mulakan rondaan dan lengkapkan checkpoint.`,
+          kind: 'session_start',
+          data: commonData,
+          roles: ['patrol', 'supervisor'],
+        });
+      }
+      const previous = sessionWindowAt(new Date(window.start.getTime() - 60000), interval, startMinutes);
+      await dispatchPreviousOutcome(env, department, previous);
+    }
+
+    const notStartedMinute = Math.min(15, Math.max(5, Math.floor(durationMinutes / 4)));
+    if (minuteIntoSession === notStartedMinute) {
+      await dispatchNotStarted(env, department, window);
+    }
+
+    const warningLead = Math.max(2, Math.min(15, Math.floor(durationMinutes / 4)));
+    const warningMinute = durationMinutes - warningLead;
+    if (warningMinute > 0 && minuteIntoSession === warningMinute) {
+      await dispatchEndingSoon(env, department, window, warningLead);
+    }
   }
 
   const cutoff = new Date(Date.now() - 14 * 86400000).toISOString();
   await env.DB.prepare('DELETE FROM push_dispatch_log WHERE created_at < ?').bind(cutoff).run();
+}
+
+async function dispatchNotStarted(env, department, window) {
+  const total = await checkpointTotal(env, department.id);
+  if (total <= 0) return;
+  const users = await patrolUsersWithProgress(env, department.id, window.start, window.end);
+  for (const user of users) {
+    if (user.started || user.scanCount > 0) continue;
+    const key = `not-started:${department.id}:${window.dayKey}:${window.index}:${user.id}`;
+    if (!await claimDispatch(env, key, 'patrol_not_started')) continue;
+    await sendPushToUser(env, user.id, {
+      title: 'Rondaan Belum Dimulakan',
+      body: `Sesi Rondaan ${window.index + 1} sedang berjalan. Anda belum merekod sebarang checkpoint.`,
+      kind: 'patrol_not_started',
+      data: {
+        sessionIndex: window.index + 1,
+        sessionDate: malaysiaDateKey(window.start),
+        departmentId: department.id,
+      },
+    });
+  }
+}
+
+async function dispatchEndingSoon(env, department, window, warningLead) {
+  const total = await checkpointTotal(env, department.id);
+  if (total <= 0) return;
+  const users = await patrolUsersWithProgress(env, department.id, window.start, window.end);
+  for (const user of users) {
+    if (user.scanCount >= total) continue;
+    const key = `ending:${department.id}:${window.dayKey}:${window.index}:${user.id}`;
+    if (!await claimDispatch(env, key, 'session_ending')) continue;
+    await sendPushToUser(env, user.id, {
+      title: `Sesi Hampir Tamat • ${warningLead} minit`,
+      body: `${user.scanCount}/${total} checkpoint direkod. Lengkapkan baki checkpoint sebelum sesi tamat.`,
+      kind: 'session_ending',
+      data: {
+        sessionIndex: window.index + 1,
+        sessionDate: malaysiaDateKey(window.start),
+        departmentId: department.id,
+        scanned: user.scanCount,
+        total,
+      },
+    });
+  }
+}
+
+async function dispatchPreviousOutcome(env, department, window) {
+  const total = await checkpointTotal(env, department.id);
+  if (total <= 0) return;
+  const users = await patrolUsersWithProgress(env, department.id, window.start, window.end);
+  let missed = 0;
+  let incomplete = 0;
+  for (const user of users) {
+    if (user.scanCount >= total) continue;
+    const kind = user.scanCount === 0 ? 'session_missed' : 'session_incomplete';
+    if (kind === 'session_missed') missed += 1;
+    else incomplete += 1;
+    const key = `outcome:${department.id}:${window.dayKey}:${window.index}:${user.id}`;
+    if (!await claimDispatch(env, key, kind)) continue;
+    await sendPushToUser(env, user.id, {
+      title: kind === 'session_missed' ? 'Sesi Rondaan Terlepas' : 'Sesi Rondaan Tidak Lengkap',
+      body: `${user.scanCount}/${total} checkpoint direkod sebelum sesi tamat.`,
+      kind,
+      data: {
+        sessionIndex: window.index + 1,
+        sessionDate: malaysiaDateKey(window.start),
+        departmentId: department.id,
+        scanned: user.scanCount,
+        total,
+      },
+    });
+  }
+
+  if (missed + incomplete > 0) {
+    const key = `outcome-admin:${department.id}:${window.dayKey}:${window.index}`;
+    if (await claimDispatch(env, key, 'session_outcome_summary')) {
+      await sendPushToDepartment(env, department.id, {
+        title: 'Ringkasan Sesi Rondaan',
+        body: `${missed} terlepas • ${incomplete} tidak lengkap bagi sesi yang baru tamat.`,
+        kind: 'session_incomplete',
+        data: {
+          sessionIndex: window.index + 1,
+          sessionDate: malaysiaDateKey(window.start),
+          departmentId: department.id,
+          missed,
+          incomplete,
+        },
+        roles: ['management', 'supervisor'],
+      });
+    }
+  }
+}
+
+async function autoCloseExpiredLivePatrols(env, departmentId, currentStart) {
+  const stale = await env.DB.prepare(
+    `SELECT user_id, client_session_id
+     FROM live_patrol_presence
+     WHERE department_id = ? AND active = 1 AND started_at < ?`,
+  ).bind(departmentId, currentStart.toISOString()).all();
+  const endedAt = currentStart.toISOString();
+  for (const row of stale.results ?? []) {
+    await env.DB.prepare(
+      `UPDATE live_patrol_presence
+       SET active = 0, ended_at = ?, updated_at = ?
+       WHERE user_id = ? AND client_session_id = ? AND active = 1`,
+    ).bind(endedAt, endedAt, row.user_id, row.client_session_id).run();
+    await env.DB.prepare(
+      `UPDATE patrol_session_history
+       SET ended_at = COALESCE(ended_at, ?), updated_at = ?
+       WHERE user_id = ? AND client_session_id = ?`,
+    ).bind(endedAt, endedAt, row.user_id, row.client_session_id).run();
+  }
+}
+
+async function patrolUsersWithProgress(env, departmentId, start, end) {
+  const result = await env.DB.prepare(
+    `SELECT u.id, u.nama,
+            COUNT(DISTINCT n.checkpoint_id) AS scan_count,
+            CASE WHEN EXISTS (
+              SELECT 1 FROM patrol_session_history p
+              WHERE p.user_id = u.id
+                AND p.started_at >= ? AND p.started_at < ?
+            ) THEN 1 ELSE 0 END AS started
+     FROM users u
+     LEFT JOIN nfc_scans n
+       ON n.user_id = u.id
+      AND n.scanned_at >= ? AND n.scanned_at < ?
+      AND n.checkpoint_id IS NOT NULL
+     WHERE u.department_id = ? AND u.active = 1
+       AND LOWER(u.jawatan) IN ('patrol', 'supervisor')
+     GROUP BY u.id, u.nama
+     ORDER BY u.id`,
+  ).bind(
+    start.toISOString(),
+    end.toISOString(),
+    start.toISOString(),
+    end.toISOString(),
+    departmentId,
+  ).all();
+  return (result.results ?? []).map((row) => ({
+    id: Number(row.id),
+    nama: row.nama,
+    scanCount: Number(row.scan_count || 0),
+    started: Number(row.started || 0) === 1,
+  }));
+}
+
+async function checkpointTotal(env, departmentId) {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS total FROM checkpoints
+     WHERE department_id = ? AND active = 1`,
+  ).bind(departmentId).first();
+  return Number(row?.total || 0);
+}
+
+async function claimDispatch(env, key, kind) {
+  const inserted = await env.DB.prepare(
+    `INSERT OR IGNORE INTO push_dispatch_log (dispatch_key, kind, created_at)
+     VALUES (?, ?, ?)`,
+  ).bind(key, kind, new Date().toISOString()).run();
+  return Number(inserted.meta?.changes || 0) > 0;
+}
+
+function sessionWindowAt(value, interval, startMinutes) {
+  const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);
+  const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+  const localMidnightUtc = Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate(),
+  );
+  let dayStartMs = localMidnightUtc - MALAYSIA_OFFSET_MS + startMinutes * 60000;
+  if (minuteOfDay < startMinutes) dayStartMs -= 86400000;
+  const index = Math.max(0, Math.floor((value.getTime() - dayStartMs) / (interval * 60000)));
+  const startMs = dayStartMs + index * interval * 60000;
+  const endMs = Math.min(dayStartMs + 86400000, startMs + interval * 60000);
+  const dayLocal = new Date(dayStartMs + MALAYSIA_OFFSET_MS);
+  const dayKey = `${dayLocal.getUTCFullYear()}-${two(dayLocal.getUTCMonth() + 1)}-${two(dayLocal.getUTCDate())}`;
+  return { index, dayKey, start: new Date(startMs), end: new Date(endMs) };
+}
+
+function malaysiaDateKey(value) {
+  const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);
+  return `${shifted.getUTCFullYear()}-${two(shifted.getUTCMonth() + 1)}-${two(shifted.getUTCDate())}`;
+}
+
+function hmFromDate(value) {
+  const shifted = new Date(value.getTime() + MALAYSIA_OFFSET_MS);
+  return `${two(shifted.getUTCHours())}:${two(shifted.getUTCMinutes())}`;
 }
 
 async function firebaseAccessToken(env) {
@@ -252,9 +451,4 @@ function stringifyData(data) {
 
 function two(value) {
   return String(value).padStart(2, '0');
-}
-
-function hm(minutes) {
-  const normalized = ((minutes % 1440) + 1440) % 1440;
-  return `${two(Math.floor(normalized / 60))}:${two(normalized % 60)}`;
 }

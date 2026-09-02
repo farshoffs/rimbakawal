@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/nfc/nfc_service.dart';
+import '../../core/notifications/notification_alert_gate.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../sos/sos_alert_gate.dart';
 
@@ -63,13 +64,15 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => SosAlertGate(
-            user: user,
-            child: DashboardScreen(
+          builder: (_) => NotificationAlertGate(
+            child: SosAlertGate(
               user: user,
-              api: _api,
-              nfcService: widget.nfcService,
-              mockMode: widget.mockMode,
+              child: DashboardScreen(
+                user: user,
+                api: _api,
+                nfcService: widget.nfcService,
+                mockMode: widget.mockMode,
+              ),
             ),
           ),
         ),
@@ -91,7 +94,10 @@ class _LoginScreenState extends State<LoginScreen> {
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 32,
+                ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 440),
                   child: Form(
@@ -104,7 +110,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         Text(
                           'RimbaKawal',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                          style: Theme.of(context).textTheme.displaySmall
+                              ?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: -1,
@@ -114,9 +121,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         Text(
                           'Sistem Rondaan Pintar',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                color: const Color(0xFFAAA8B8),
-                              ),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(color: const Color(0xFFAAA8B8)),
                         ),
                         const SizedBox(height: 40),
                         Container(
@@ -133,7 +139,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               Text(
                                 'Log masuk',
-                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                style: Theme.of(context).textTheme.headlineSmall
+                                    ?.copyWith(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -141,17 +148,23 @@ class _LoginScreenState extends State<LoginScreen> {
                               const SizedBox(height: 8),
                               const Text(
                                 'Masukkan No. Kad Pengenalan yang berdaftar.',
-                                style: TextStyle(color: Color(0xFFAAA8B8), height: 1.45),
+                                style: TextStyle(
+                                  color: Color(0xFFAAA8B8),
+                                  height: 1.45,
+                                ),
                               ),
-                              if (widget.notice != null && widget.notice!.isNotEmpty) ...[
+                              if (widget.notice != null &&
+                                  widget.notice!.isNotEmpty) ...[
                                 Container(
                                   width: double.infinity,
                                   padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF4834D4).withValues(alpha: 0.16),
+                                    color: const Color(0xFF4834D4)
+                                        .withValues(alpha: 0.16),
                                     borderRadius: BorderRadius.circular(14),
                                     border: Border.all(
-                                      color: const Color(0xFF6C5CE7).withValues(alpha: 0.35),
+                                      color: const Color(0xFF6C5CE7)
+                                          .withValues(alpha: 0.35),
                                     ),
                                   ),
                                   child: Text(
@@ -186,13 +199,17 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const SizedBox(height: 12),
                                 Text(
                                   _error!,
-                                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
                                 ),
                               ],
                               const SizedBox(height: 20),
                               _GradientButton(
                                 onPressed: _submitting ? null : _login,
-                                label: _submitting ? 'Mengesahkan…' : 'Teruskan',
+                                label: _submitting
+                                    ? 'Mengesahkan…'
+                                    : 'Teruskan',
                               ),
                             ],
                           ),
@@ -201,13 +218,20 @@ class _LoginScreenState extends State<LoginScreen> {
                         const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.lock_outline, color: Color(0xFF777687), size: 16),
+                            Icon(
+                              Icons.lock_outline,
+                              color: Color(0xFF777687),
+                              size: 16,
+                            ),
                             SizedBox(width: 8),
                             Flexible(
                               child: Text(
                                 'Akses terhad kepada pengguna yang berdaftar',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: Color(0xFF777687), fontSize: 12),
+                                style: TextStyle(
+                                  color: Color(0xFF777687),
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
                           ],

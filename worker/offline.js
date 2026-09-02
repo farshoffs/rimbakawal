@@ -1,5 +1,5 @@
 import appWorker from './app.js';
-import { sendPushToDepartment } from './push.js';
+import { sendPushToDepartment, sendPushToUser } from './push.js';
 
 const SESSION_COOKIE = 'rk_session';
 const MALAYSIA_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -267,6 +267,39 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
     clientSessionId || null,
   ).run();
 
+  try {
+    const totalRow = await env.DB.prepare(
+      `SELECT COUNT(*) AS total FROM checkpoints
+       WHERE department_id = ? AND active = 1`,
+    ).bind(user.department_id).first();
+    const countRow = clientSessionId
+      ? await env.DB.prepare(
+        `SELECT COUNT(DISTINCT checkpoint_id) AS total FROM nfc_scans
+         WHERE user_id = ? AND client_session_id = ? AND checkpoint_id IS NOT NULL`,
+      ).bind(user.id, clientSessionId).first()
+      : await env.DB.prepare(
+        `SELECT COUNT(DISTINCT checkpoint_id) AS total FROM nfc_scans
+         WHERE user_id = ? AND scanned_at >= ? AND scanned_at < ? AND checkpoint_id IS NOT NULL`,
+      ).bind(user.id, startIso, endIso).first();
+    const total = Number(totalRow?.total || 0);
+    const scanned = Number(countRow?.total || 0);
+    await sendPushToUser(env, user.id, {
+      title: 'Checkpoint Direkod',
+      body: `${checkpoint.name} • ${scanned}/${total} checkpoint sesi ini.`,
+      kind: 'checkpoint_scanned',
+      data: {
+        checkpointId: Number(checkpoint.id),
+        clientSessionId: clientSessionId || '',
+        sessionIndex: sessionIndex + 1,
+        sessionDate: malaysiaDateKey(occurredAt),
+        scanned,
+        total,
+      },
+    });
+  } catch (error) {
+    console.error('Checkpoint confirmation push failed', error);
+  }
+
   return {
     serverId: Number(insert.meta?.last_row_id || 0),
     clientEventId,
@@ -403,6 +436,37 @@ async function syncPatrolActivity(env, user, clientEventId, occurredAt, type, pa
       new Date().toISOString(),
     ).run();
   }
+  if (type === 'patrol_end') {
+    try {
+      const totalRow = await env.DB.prepare(
+        `SELECT COUNT(*) AS total FROM checkpoints
+         WHERE department_id = ? AND active = 1`,
+      ).bind(user.department_id).first();
+      const scanRow = await env.DB.prepare(
+        `SELECT COUNT(DISTINCT checkpoint_id) AS total FROM nfc_scans
+         WHERE user_id = ? AND client_session_id = ? AND checkpoint_id IS NOT NULL`,
+      ).bind(user.id, clientSessionId).first();
+      const total = Number(totalRow?.total || 0);
+      const scanned = Number(scanRow?.total || 0);
+      const complete = total > 0 && scanned >= total;
+      await sendPushToUser(env, user.id, {
+        title: complete ? 'Rondaan Selesai' : 'Rondaan Ditamatkan',
+        body: complete
+          ? `Semua ${total} checkpoint telah lengkap.`
+          : `${scanned}/${total} checkpoint direkod sebelum rondaan ditamatkan.`,
+        kind: complete ? 'patrol_completed' : 'patrol_ended',
+        data: {
+          clientSessionId,
+          sessionDate: malaysiaDateKey(occurredAt),
+          scanned,
+          total,
+        },
+      });
+    } catch (error) {
+      console.error('Patrol completion push failed', error);
+    }
+  }
+
   return { serverId: Number(insert.meta?.last_row_id || 0), clientEventId };
 }
 

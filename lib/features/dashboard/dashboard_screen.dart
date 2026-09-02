@@ -10,7 +10,9 @@ import '../../core/offline/offline_store.dart';
 import '../../core/offline/offline_sync_service.dart';
 import '../../core/notifications/notification_service.dart';
 import '../admin/admin_screen.dart';
+import '../admin/attendance_history_screen.dart';
 import '../admin/command_center_screen.dart';
+import '../admin/sos_management_screen.dart';
 import '../attendance/attendance_screen.dart';
 import '../auth/login_screen.dart';
 import '../history/clocking_history_screen.dart';
@@ -45,6 +47,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   late int _sessionStartMinutes;
   Timer? _sessionTimer;
   Timer? _configTimer;
+  StreamSubscription<PushAlert>? _openedPushSubscription;
   String? _lastSessionKey;
   bool _forcingRelogin = false;
 
@@ -66,8 +69,11 @@ class _DashboardScreenState extends State<DashboardScreen>
       const Duration(minutes: 5),
       (_) => unawaited(_refreshPatrolConfig()),
     );
+    _openedPushSubscription = NotificationService.instance.openedAlerts.listen(
+      _openPushTarget,
+    );
     unawaited(_refreshPatrolConfig());
-    unawaited(NotificationService.instance.bindUser(_user));
+    unawaited(_bindNotifications(_user));
     unawaited(_sync.syncNow());
   }
 
@@ -87,6 +93,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _sync.removeListener(_changed);
     _sessionTimer?.cancel();
     _configTimer?.cancel();
+    _openedPushSubscription?.cancel();
     super.dispose();
   }
 
@@ -159,14 +166,90 @@ class _DashboardScreenState extends State<DashboardScreen>
           builder: (_) => LoginScreen(
             nfcService: widget.nfcService,
             mockMode: widget.mockMode,
-            notice:
-                'Sesi Rondaan baharu telah bermula. Sila log masuk semula untuk meneruskan.',
+            notice: 'Sesi Rondaan baharu telah bermula. Sila log masuk semula untuk meneruskan.',
           ),
         ),
         (_) => false,
       );
     } finally {
       _forcingRelogin = false;
+    }
+  }
+
+  Future<void> _bindNotifications(AppUser user) async {
+    await NotificationService.instance.bindUser(user);
+  }
+
+  DateTime? _pushDate(PushAlert alert) {
+    for (final key in const ['workDate', 'sessionDate', 'date']) {
+      final value = alert.data[key];
+      if (value == null || value.isEmpty) continue;
+      final parsed = DateTime.tryParse(value);
+      if (parsed != null) return parsed;
+    }
+    return null;
+  }
+
+  void _returnToDashboard() {
+    if (!mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  void _openPushTarget(PushAlert alert) {
+    if (!mounted) return;
+    final date = _pushDate(alert);
+    switch (alert.kind) {
+      case 'session_start':
+      case 'patrol_not_started':
+      case 'session_ending':
+      case 'checkpoint_scanned':
+        _openPatrol();
+      case 'session_missed':
+      case 'session_incomplete':
+        _open(
+          ClockingHistoryScreen(
+            api: widget.api,
+            user: _user,
+            initialDate: date,
+            initialDepartmentId: _user.departmentId,
+            initialFilter: 'missed',
+          ),
+        );
+      case 'patrol_completed':
+      case 'patrol_ended':
+        _open(
+          ClockingHistoryScreen(
+            api: widget.api,
+            user: _user,
+            initialDate: date,
+            initialDepartmentId: _user.departmentId,
+          ),
+        );
+      case 'attendance_punch':
+        _open(AttendanceScreen(api: widget.api, user: _user));
+      case 'attendance_review':
+        if (_user.canMonitor) {
+          _open(AttendanceHistoryScreen(api: widget.api, initialDate: date));
+        } else {
+          _returnToDashboard();
+        }
+      case 'incident':
+      case 'incident_urgent':
+      case 'welfare_attention':
+        if (_user.canMonitor) {
+          _open(CommandCenterScreen(api: widget.api));
+        } else {
+          _returnToDashboard();
+        }
+      case 'sos':
+        if (_user.canMonitor) {
+          _open(const SosManagementScreen());
+        } else {
+          _returnToDashboard();
+        }
+      case 'sos_resolved':
+      default:
+        _returnToDashboard();
     }
   }
 
@@ -188,9 +271,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          enabled
-              ? 'Pemberitahuan RimbaKawal telah diaktifkan.'
-              : 'Kebenaran pemberitahuan belum diberikan pada peranti atau pelayar ini.',
+          enabled ? 'Pemberitahuan RimbaKawal telah diaktifkan.' : 'Kebenaran pemberitahuan belum diberikan pada peranti atau pelayar ini.',
         ),
       ),
     );
@@ -256,7 +337,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         _user = refreshed;
         _sessionIntervalMinutes = refreshed.sessionIntervalMinutes;
       });
-      unawaited(NotificationService.instance.bindUser(refreshed));
+      unawaited(_bindNotifications(refreshed));
       _lastSessionKey = _sessionKey(DateTime.now());
     } catch (_) {
       // Offline mode keeps the locally cached identity and configuration.
@@ -448,9 +529,8 @@ class _DashboardScreenState extends State<DashboardScreen>
               const SizedBox(height: 22),
               Text(
                 'Operasi',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(context).textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 12),
               LayoutBuilder(
@@ -606,9 +686,8 @@ class _MenuCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.secondary.withValues(alpha: 0.11),
+                      color: Theme.of(context).colorScheme.secondary
+                          .withValues(alpha: 0.11),
                       borderRadius: BorderRadius.circular(15),
                     ),
                     child: Icon(
