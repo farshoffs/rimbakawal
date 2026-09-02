@@ -1,0 +1,64 @@
+name: Apply Department Time Layout Fix v0.5.15
+
+on:
+  push:
+    branches:
+      - fix-department-time-layout-v0515
+    paths:
+      - 'scripts/fix_department_time_layout_v0515.py'
+      - '.github/workflows/apply-fix-department-time-layout-v0515.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix-department-time-layout-v0515
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply responsive time layout fix
+        run: python3 scripts/fix_department_time_layout_v0515.py
+
+      - name: Format Dart
+        run: dart format lib/features/admin/department_maintenance_screen.dart
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Validate Flutter
+        run: flutter analyze
+
+      - name: Validate layout markers
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          t = Path('lib/features/admin/department_maintenance_screen.dart').read_text()
+          assert "'Masa mula rondaan'" in t
+          assert "'Pilih masa • ${_startTime.format(context)}'" in t
+          assert 'width: double.infinity' in t
+          assert 'constraints.maxWidth < 430' not in t
+          assert 'final timeButton = FilledButton.tonalIcon' not in t
+          pub = Path('pubspec.yaml').read_text()
+          assert 'version: 0.5.15+31' in pub
+          print('Responsive department time layout validated')
+          PY
+
+      - name: Commit validated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/features/admin/department_maintenance_screen.dart pubspec.yaml
+          git diff --cached --quiet && exit 0
+          git commit -m "Fix department patrol time layout on narrow screens"
+          git push origin HEAD:fix-department-time-layout-v0515
