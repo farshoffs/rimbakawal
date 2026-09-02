@@ -443,9 +443,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
               const SizedBox(height: 16),
               Text(
                 'Kawasan Kehadiran',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 6),
               const Text(
@@ -478,12 +477,11 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                               point: LatLng(_latitude!, _longitude!),
                               radius: _radius,
                               useRadiusInMeter: true,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.16),
-                              borderColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
+                              color: Theme.of(context).colorScheme.primary
+                                  .withValues(alpha: 0.16),
+                              borderColor: Theme.of(context)
+                                  .colorScheme
+                                  .primary,
                               borderStrokeWidth: 2,
                             ),
                           ],
@@ -645,40 +643,6 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
     super.dispose();
   }
 
-  Future<void> _rewriteTag() async {
-    if (_scanning) return;
-    setState(() {
-      _scanning = true;
-      _error = null;
-    });
-    try {
-      final available = await widget.nfcService.isAvailable();
-      if (!available) {
-        throw StateError('NFC tidak tersedia pada peranti ini.');
-      }
-      final current = _uidController.text.trim().toUpperCase();
-      final checkpointId = await widget.nfcService.writeCheckpointTag(
-        checkpointId: current.startsWith('RK-') ? current : null,
-      );
-      if (!mounted) return;
-      setState(() => _uidController.text = checkpointId);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Tag berjaya ditulis semula, dibaca semula dan disahkan untuk checkpoint ini.',
-          ),
-        ),
-      );
-    } on NfcScanCancelledException {
-      // User closed the native NFC prompt.
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
-    } finally {
-      if (mounted) setState(() => _scanning = false);
-    }
-  }
-
   Future<void> _readTagOnly() async {
     if (_scanning) return;
     setState(() {
@@ -694,9 +658,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
       if (!mounted) return;
       setState(() => _uidController.text = scan.tagId.toUpperCase());
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('ID / UID dibaca: ${scan.tagId}'),
-        ),
+        SnackBar(content: Text('Tag berjaya didaftarkan: ${scan.tagId}')),
       );
     } on NfcScanCancelledException {
       // User closed the native NFC prompt.
@@ -714,7 +676,8 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
     final position = int.tryParse(_positionController.text.trim());
     if (name.isEmpty || uid.isEmpty || position == null) {
       setState(
-        () => _error = 'Lengkapkan nama, daftar tag NFC dan susunan checkpoint.',
+        () =>
+            _error = 'Lengkapkan nama, daftar tag NFC dan susunan checkpoint.',
       );
       return;
     }
@@ -777,8 +740,8 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
                 controller: _uidController,
                 readOnly: true,
                 decoration: const InputDecoration(
-                  labelText: 'ID checkpoint RimbaKawal / UID',
-                  hintText: 'Tulis semula tag untuk menjana ID checkpoint',
+                  labelText: 'ID / UID Tag NFC',
+                  hintText: 'Tekan Daftar Tag dan imbas tag NFC',
                   prefixIcon: Icon(Icons.nfc_rounded),
                 ),
               ),
@@ -786,27 +749,16 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: _scanning ? null : _rewriteTag,
-                  icon: const Icon(Icons.edit_rounded),
-                  label: Text(
-                    _scanning ? 'PROSES NFC…' : 'TULIS SEMULA & DAFTAR TAG',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
                   onPressed: _scanning ? null : _readTagOnly,
                   icon: const Icon(Icons.nfc_rounded),
-                  label: const Text('BACA ID / UID SAHAJA'),
+                  label: Text(_scanning ? 'MENGIMBAS…' : 'DAFTAR TAG'),
                 ),
               ),
               const SizedBox(height: 8),
               const Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'RimbaKawal akan overwrite kandungan NDEF tag dengan ID checkpoint sendiri dan membaca semula ID itu untuk pengesahan. UID cip fizikal NTAG213/215/216 ditetapkan kilang dan tidak boleh ditulis semula. Gunakan Baca ID / UID Sahaja untuk tag lama atau diagnosis tanpa mengubah tag.',
+                  'Daftar Tag hanya membaca ID/UID tag NFC dan mengaitkannya dengan checkpoint ini. Kandungan tag tidak ditulis atau diubah.',
                   style: TextStyle(fontSize: 12),
                 ),
               ),

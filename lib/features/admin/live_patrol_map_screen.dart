@@ -145,18 +145,18 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
   }
 
   Color _stateColor(String state) => switch (state) {
-        'live' => const Color(0xFF00B894),
-        'delayed' => const Color(0xFFFDCB6E),
-        'stale' => const Color(0xFFE17055),
-        _ => const Color(0xFF74B9FF),
-      };
+    'live' => const Color(0xFF00B894),
+    'delayed' => const Color(0xFFFDCB6E),
+    'stale' => const Color(0xFFE17055),
+    _ => const Color(0xFF74B9FF),
+  };
 
   String _stateLabel(String state) => switch (state) {
-        'live' => 'LANGSUNG',
-        'delayed' => 'TERTUNDA',
-        'stale' => 'TIDAK TERKINI',
-        _ => 'MENUNGGU LOKASI',
-      };
+    'live' => 'LANGSUNG',
+    'delayed' => 'TERTUNDA',
+    'stale' => 'TIDAK TERKINI',
+    _ => 'MENUNGGU LOKASI',
+  };
 
   List<LatLng> _trail(Map<String, dynamic> patrol) {
     final rows = patrol['trail'] as List<dynamic>? ?? const [];
@@ -177,7 +177,8 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
       'api': '1',
       'query': '$latitude,$longitude',
     });
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && mounted) {
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+        mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Peta luar tidak dapat dibuka.')),
       );
@@ -207,7 +208,9 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                       child: image == null
                           ? Text(
                               _initial(patrol['nama']),
-                              style: const TextStyle(fontWeight: FontWeight.w900),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
                             )
                           : null,
                     ),
@@ -218,9 +221,8 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                         children: [
                           Text(
                             patrol['nama'] as String? ?? '-',
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w900,
-                                ),
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w900),
                           ),
                           Text(patrol['jabatan'] as String? ?? '-'),
                         ],
@@ -314,14 +316,16 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                     ),
                     children: [
                       TileLayer(
-                        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                         userAgentPackageName: 'dev.rimbakawal.app',
                       ),
                       PolylineLayer(
                         polylines: patrols.expand((patrol) {
                           final points = _trail(patrol);
                           if (points.length < 2) return <Polyline>[];
-                          final state = patrol['liveState'] as String? ?? 'waiting_gps';
+                          final state =
+                              patrol['liveState'] as String? ?? 'waiting_gps';
                           return [
                             Polyline(
                               points: points,
@@ -338,7 +342,8 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                             (patrol['longitude'] as num).toDouble(),
                           );
                           final image = _profileImage(patrol['profilePicture']);
-                          final state = patrol['liveState'] as String? ?? 'waiting_gps';
+                          final state =
+                              patrol['liveState'] as String? ?? 'waiting_gps';
                           final color = _stateColor(state);
                           final selected = _selectedUserId == patrol['userId'];
                           return Marker(
@@ -368,13 +373,17 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                                       radius: selected ? 27 : 24,
                                       backgroundImage: image,
                                       child: image == null
-                                          ? const Icon(Icons.directions_walk_rounded)
+                                          ? const Icon(
+                                              Icons.directions_walk_rounded,
+                                            )
                                           : null,
                                     ),
                                   ),
                                   const SizedBox(height: 3),
                                   Container(
-                                    constraints: const BoxConstraints(maxWidth: 92),
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 92,
+                                    ),
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 7,
                                       vertical: 3,
@@ -405,7 +414,9 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                           TextSourceAttribution(
                             'Penyumbang OpenStreetMap',
                             onTap: () => launchUrl(
-                              Uri.parse('https://www.openstreetmap.org/copyright'),
+                              Uri.parse(
+                                'https://www.openstreetmap.org/copyright',
+                              ),
                             ),
                           ),
                         ],
@@ -434,7 +445,8 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                         : ListView.separated(
                             scrollDirection: Axis.horizontal,
                             itemCount: patrols.length,
-                            separatorBuilder: (_, _) => const SizedBox(width: 8),
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(width: 8),
                             itemBuilder: (context, index) {
                               final patrol = patrols[index];
                               return _PatrolMiniCard(
@@ -442,10 +454,12 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                                 selected: _selectedUserId == patrol['userId'],
                                 image: _profileImage(patrol['profilePicture']),
                                 stateColor: _stateColor(
-                                  patrol['liveState'] as String? ?? 'waiting_gps',
+                                  patrol['liveState'] as String? ??
+                                      'waiting_gps',
                                 ),
                                 stateLabel: _stateLabel(
-                                  patrol['liveState'] as String? ?? 'waiting_gps',
+                                  patrol['liveState'] as String? ??
+                                      'waiting_gps',
                                 ),
                                 onTap: () => _focus(patrol),
                               );
@@ -484,42 +498,39 @@ class _MapHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        color: const Color(0xF0141620),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF00B894).withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.radar_rounded,
-                  color: Color(0xFF55E6C1),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$total rondaan aktif • $located mempunyai lokasi',
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    Text(
-                      'Kemas kini setiap 5 saat${generatedAt == null ? '' : ' • ${_headerTime(generatedAt!)}'}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-            ],
+    color: const Color(0xF0141620),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00B894).withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.radar_rounded, color: Color(0xFF55E6C1)),
           ),
-        ),
-      );
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$total rondaan aktif • $located mempunyai lokasi',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                Text(
+                  'Kemas kini setiap 5 saat${generatedAt == null ? '' : ' • ${_headerTime(generatedAt!)}'}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   static String _headerTime(DateTime value) {
     final local = value.toLocal();
@@ -546,54 +557,54 @@ class _PatrolMiniCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 230,
-        child: Card(
-          color: selected ? const Color(0xFF252A3B) : const Color(0xF0141620),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    width: 230,
+    child: Card(
+      color: selected ? const Color(0xFF252A3B) : const Color(0xF0141620),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 21,
-                        backgroundImage: image,
-                        child: image == null
-                            ? const Icon(Icons.person_rounded, size: 20)
-                            : null,
-                      ),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          patrol['nama'] as String? ?? '-',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                    ],
+                  CircleAvatar(
+                    radius: 21,
+                    backgroundImage: image,
+                    child: image == null
+                        ? const Icon(Icons.person_rounded, size: 20)
+                        : null,
                   ),
-                  const Spacer(),
-                  _LiveBadge(label: stateLabel, color: stateColor),
-                  const SizedBox(height: 5),
-                  Text(
-                    patrol['latitude'] is num
-                        ? 'Lokasi ${patrol['locationAgeSeconds'] ?? 0} saat lalu'
-                        : 'Sesi aktif • menunggu lokasi',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      patrol['nama'] as String? ?? '-',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ),
                 ],
               ),
-            ),
+              const Spacer(),
+              _LiveBadge(label: stateLabel, color: stateColor),
+              const SizedBox(height: 5),
+              Text(
+                patrol['latitude'] is num
+                    ? 'Lokasi ${patrol['locationAgeSeconds'] ?? 0} saat lalu'
+                    : 'Sesi aktif • menunggu lokasi',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ),
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class _LiveBadge extends StatelessWidget {
@@ -603,20 +614,16 @@ class _LiveBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 10,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w900),
+    ),
+  );
 }
 
 class _InfoChip extends StatelessWidget {
@@ -626,20 +633,16 @@ class _InfoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 15),
-            const SizedBox(width: 5),
-            Text(text),
-          ],
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [Icon(icon, size: 15), const SizedBox(width: 5), Text(text)],
+    ),
+  );
 }
 
 class _NoPatrolCard extends StatelessWidget {
@@ -647,12 +650,12 @@ class _NoPatrolCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Card(
-        color: Color(0xF0141620),
-        child: Center(
-          child: Text(
-            'Tiada rondaan aktif sekarang.',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-        ),
-      );
+    color: Color(0xF0141620),
+    child: Center(
+      child: Text(
+        'Tiada rondaan aktif sekarang.',
+        style: TextStyle(fontWeight: FontWeight.w800),
+      ),
+    ),
+  );
 }

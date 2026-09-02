@@ -84,7 +84,6 @@ class RealNfcService implements NfcService {
     }
   }
 
-
   @override
   Future<String> writeCheckpointTag({String? checkpointId}) async {
     final completer = Completer<String>();
@@ -93,7 +92,8 @@ class RealNfcService implements NfcService {
     Timer? timeoutTimer;
 
     final requested = checkpointId?.trim().toUpperCase();
-    final id = requested != null &&
+    final id =
+        requested != null &&
             requested.startsWith('RK-') &&
             requested.length >= 12
         ? requested
@@ -110,8 +110,7 @@ class RealNfcService implements NfcService {
           NfcPollingOption.iso14443,
           NfcPollingOption.iso15693,
         },
-        alertMessageIos:
-            'Dekatkan bahagian atas iPhone pada tag. Kandungan tag akan ditulis semula untuk RimbaKawal.',
+        alertMessageIos: 'Dekatkan bahagian atas iPhone pada tag. Kandungan tag akan ditulis semula untuk RimbaKawal.',
         invalidateAfterFirstReadIos: true,
         onDiscovered: (tag) async {
           if (completer.isCompleted || discoveryHandled) return;
@@ -365,7 +364,6 @@ class RealNfcService implements NfcService {
     return '${hex32(a)}${hex32(b)}';
   }
 
-
   NdefMessage _checkpointMessage(String checkpointId) {
     return NdefMessage(
       records: [
@@ -417,9 +415,7 @@ class RealNfcService implements NfcService {
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       final ndef = NdefIos.from(tag);
       if (ndef == null) {
-        throw StateError(
-          'Tag ini tidak menyokong penulisan NDEF pada iPhone.',
-        );
+        throw StateError('Tag ini tidak menyokong penulisan NDEF pada iPhone.');
       }
       if (message.byteLength > ndef.capacity) {
         throw StateError('Kapasiti tag NFC tidak mencukupi.');
@@ -435,10 +431,7 @@ class RealNfcService implements NfcService {
     );
   }
 
-  void _verifyCheckpointReadBack(
-    NdefMessage? message,
-    String checkpointId,
-  ) {
+  void _verifyCheckpointReadBack(NdefMessage? message, String checkpointId) {
     final readBack = _readOnlyIdFromMessage(message)?.toUpperCase();
     if (readBack != checkpointId.toUpperCase()) {
       throw StateError(

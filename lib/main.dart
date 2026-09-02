@@ -14,10 +14,7 @@ import 'features/auth/login_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'features/sos/sos_alert_gate.dart';
 
-const useMockNfc = bool.fromEnvironment(
-  'USE_MOCK_NFC',
-  defaultValue: false,
-);
+const useMockNfc = bool.fromEnvironment('USE_MOCK_NFC', defaultValue: false);
 
 const rimbaRed = Color(0xFFC0392B);
 const rimbaBlue = Color(0xFF4834D4);
@@ -38,18 +35,19 @@ class RimbaKawalApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: rimbaBlue,
-      brightness: Brightness.dark,
-    ).copyWith(
-      primary: rimbaRed,
-      onPrimary: Colors.white,
-      secondary: const Color(0xFF6C5CE7),
-      onSecondary: Colors.white,
-      surface: rimbaSurface,
-      surfaceContainerHighest: const Color(0xFF1C2030),
-      error: const Color(0xFFFF5D66),
-    );
+    final colorScheme =
+        ColorScheme.fromSeed(
+          seedColor: rimbaBlue,
+          brightness: Brightness.dark,
+        ).copyWith(
+          primary: rimbaRed,
+          onPrimary: Colors.white,
+          secondary: const Color(0xFF6C5CE7),
+          onSecondary: Colors.white,
+          surface: rimbaSurface,
+          surfaceContainerHighest: const Color(0xFF1C2030),
+          error: const Color(0xFFFF5D66),
+        );
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -109,17 +107,24 @@ class RimbaKawalApp extends StatelessWidget {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
             ),
-            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
         chipTheme: ChipThemeData(
           side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+          ),
         ),
         snackBarTheme: SnackBarThemeData(
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF222636),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
         dividerTheme: DividerThemeData(
           color: Colors.white.withValues(alpha: 0.07),
@@ -168,6 +173,7 @@ class _AuthGateState extends State<_AuthGate> {
         }
 
         return NotificationAlertGate(
+          user: user,
           child: SosAlertGate(
             user: user,
             child: DashboardScreen(

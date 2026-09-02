@@ -69,10 +69,7 @@ class OfflineStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> clearActivePatrol(
-    int userId, {
-    String? clientSessionId,
-  }) async {
+  Future<void> clearActivePatrol(int userId, {String? clientSessionId}) async {
     if (!_ready) return;
     final key = '$_activePatrolKeyPrefix$userId';
     if (clientSessionId != null) {

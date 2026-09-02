@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -64,10 +65,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
       widget.user.sessionIntervalMinutes,
       widget.user.sessionStartMinutes,
     );
-    final currentDayKey = _scheduleDayKey(
-      now,
-      widget.user.sessionStartMinutes,
-    );
+    final currentDayKey = _scheduleDayKey(now, widget.user.sessionStartMinutes);
     final stored = _store.activePatrol(widget.user.id);
     final storedId = stored?['clientSessionId'] as String?;
     final storedStartedAt = DateTime.tryParse(
@@ -75,7 +73,8 @@ class _PatrolScreenState extends State<PatrolScreen> {
     )?.toLocal();
     final storedSessionIndex = (stored?['sessionIndex'] as num?)?.toInt();
     final storedDayKey = stored?['dayKey'] as String?;
-    final canResume = storedId != null &&
+    final canResume =
+        storedId != null &&
         storedStartedAt != null &&
         storedSessionIndex == currentWindow.index &&
         storedDayKey == currentDayKey;
@@ -181,8 +180,8 @@ class _PatrolScreenState extends State<PatrolScreen> {
     final previousStartedAt = DateTime.tryParse(
       previous['startedAt'] as String? ?? '',
     )?.toLocal();
-    final endedAt = previousStartedAt != null &&
-            sessionBoundary.isAfter(previousStartedAt)
+    final endedAt =
+        previousStartedAt != null && sessionBoundary.isAfter(previousStartedAt)
         ? sessionBoundary
         : DateTime.now();
     await _store.queueEvent(
@@ -198,10 +197,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
     try {
       await widget.api.endLivePatrol(previousId);
     } catch (_) {}
-    await _store.clearActivePatrol(
-      widget.user.id,
-      clientSessionId: previousId,
-    );
+    await _store.clearActivePatrol(widget.user.id, clientSessionId: previousId);
   }
 
   void _scheduleSessionBoundary() {
@@ -229,10 +225,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
       widget.user.sessionIntervalMinutes,
       widget.user.sessionStartMinutes,
     );
-    final currentDayKey = _scheduleDayKey(
-      now,
-      widget.user.sessionStartMinutes,
-    );
+    final currentDayKey = _scheduleDayKey(now, widget.user.sessionStartMinutes);
     final oldWindow = _sessionWindow(
       _startedAt,
       widget.user.sessionIntervalMinutes,
@@ -242,8 +235,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
       _startedAt,
       widget.user.sessionStartMinutes,
     );
-    if (oldWindow.index == currentWindow.index &&
-        oldDayKey == currentDayKey) {
+    if (oldWindow.index == currentWindow.index && oldDayKey == currentDayKey) {
       _scheduleSessionBoundary();
       return;
     }
@@ -263,10 +255,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
     try {
       await widget.api.endLivePatrol(oldId);
     } catch (_) {}
-    await _store.clearActivePatrol(
-      widget.user.id,
-      clientSessionId: oldId,
-    );
+    await _store.clearActivePatrol(widget.user.id, clientSessionId: oldId);
 
     _clientSessionId = _store.newId('patrol-session');
     _startedAt = now;
@@ -442,8 +431,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
     final bootstrap = _bootstrap ?? _store.cachedBootstrap();
     if (bootstrap == null) {
       setState(() {
-        _error =
-            'Konfigurasi rondaan belum pernah dimuat turun. Sambungkan peranti ke Internet sekali untuk menyediakan penggunaan luar talian.';
+        _error = 'Konfigurasi rondaan belum pernah dimuat turun. Sambungkan peranti ke Internet sekali untuk menyediakan penggunaan luar talian.';
       });
       return;
     }
@@ -531,15 +519,6 @@ class _PatrolScreenState extends State<PatrolScreen> {
       );
       unawaited(_sync.syncNow());
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            _store.isNfcTestMode
-                ? 'DUMMY • ${checkpoint.name} telah direkod dan akan disegerakkan secara automatik.'
-                : '${checkpoint.name} telah disimpan pada peranti dan akan disegerakkan secara automatik.',
-          ),
-        ),
-      );
       setState(() {});
     } catch (error) {
       if (!mounted) return;
@@ -883,9 +862,8 @@ class _PatrolScreenState extends State<PatrolScreen> {
       if (mounted) setState(() => _torchOn = !_torchOn);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_cleanError(error))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_cleanError(error))));
     } finally {
       if (mounted) setState(() => _torchChanging = false);
     }
@@ -1347,9 +1325,8 @@ class _PatrolScreenState extends State<PatrolScreen> {
                   Expanded(
                     child: Text(
                       'Rekod sesi',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                   ),
                   TextButton.icon(
@@ -1477,9 +1454,8 @@ class _LiveHero extends StatelessWidget {
                       user.nama,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 4),
                     Text(user.jabatan),
@@ -1627,9 +1603,8 @@ class _RouteCard extends StatelessWidget {
                   children: [
                     Text(
                       department,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                     Text(
                       sessionLabel,
@@ -1645,9 +1620,8 @@ class _RouteCard extends StatelessWidget {
               ),
               Text(
                 '$completed/$total',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                ),
+                style: Theme.of(context).textTheme.headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w900),
               ),
             ],
           ),

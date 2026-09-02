@@ -65,6 +65,7 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
           builder: (_) => NotificationAlertGate(
+            user: user,
             child: SosAlertGate(
               user: user,
               child: DashboardScreen(

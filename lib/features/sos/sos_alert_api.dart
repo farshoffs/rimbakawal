@@ -15,7 +15,10 @@ class SosAlertApi {
   Future<Map<String, String>> _headers({bool jsonBody = false}) async {
     final token = await _vault.readToken();
     if (token == null || token.isEmpty) {
-      throw const ApiException('Sesi tidak sah. Sila log masuk semula.', statusCode: 401);
+      throw const ApiException(
+        'Sesi tidak sah. Sila log masuk semula.',
+        statusCode: 401,
+      );
     }
     return {
       if (jsonBody) 'Content-Type': 'application/json',

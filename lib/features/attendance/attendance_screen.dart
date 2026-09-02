@@ -5,7 +5,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
-import 'web_selfie_capture_stub.dart' if (dart.library.html) 'web_selfie_capture_web.dart';
+import 'web_selfie_capture_stub.dart'
+    if (dart.library.html) 'web_selfie_capture_web.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
@@ -98,7 +99,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         dataUrl = 'data:image/$mime;base64,${base64Encode(bytes)}';
       }
       if (dataUrl == null || dataUrl.isEmpty) return;
-      final record = await widget.api.punchAttendance(
+      await widget.api.punchAttendance(
         latitude: position.latitude,
         longitude: position.longitude,
         accuracy: position.accuracy,
@@ -106,14 +107,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       );
       await _refresh();
       if (!mounted) return;
-      final label = record.punchType == 'IN' ? 'MASUK' : 'KELUAR';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Punch $label berjaya • ${record.distanceMeters.toStringAsFixed(0)}m dari pusat kawasan.',
-          ),
-        ),
-      );
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
@@ -129,16 +122,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   String _faceLabel(String value) => switch (value) {
-        'matched' => 'WAJAH SEPADAN',
-        'different' => 'WAJAH TIDAK SEPADAN',
-        _ => 'SEMAKAN WAJAH DIPERLUKAN',
-      };
+    'matched' => 'WAJAH SEPADAN',
+    'different' => 'WAJAH TIDAK SEPADAN',
+    _ => 'SEMAKAN WAJAH DIPERLUKAN',
+  };
 
   Color _faceColor(String value) => switch (value) {
-        'matched' => const Color(0xFF00B894),
-        'different' => const Color(0xFFFF7675),
-        _ => const Color(0xFFFDCB6E),
-      };
+    'matched' => const Color(0xFF00B894),
+    'different' => const Color(0xFFFF7675),
+    _ => const Color(0xFFFDCB6E),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -161,7 +154,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       gradient: const LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [Color(0xFF251A4F), Color(0xFF171827), Color(0xFF351315)],
+                        colors: [
+                          Color(0xFF251A4F),
+                          Color(0xFF171827),
+                          Color(0xFF351315),
+                        ],
                       ),
                     ),
                     child: Column(
@@ -171,9 +168,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         const SizedBox(height: 14),
                         Text(
                           nextLabel,
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w900,
-                              ),
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 6),
                         Text(status?.department.name ?? widget.user.jabatan),
@@ -201,7 +197,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     height: 60,
                     child: FilledButton.icon(
                       onPressed: _punching ? null : _punch,
-                      icon: Icon(nextType == 'IN' ? Icons.login_rounded : Icons.logout_rounded),
+                      icon: Icon(
+                        nextType == 'IN'
+                            ? Icons.login_rounded
+                            : Icons.logout_rounded,
+                      ),
                       label: Text(_punching ? 'MENYIMPAN…' : nextLabel),
                     ),
                   ),
@@ -213,7 +213,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   const SizedBox(height: 24),
                   Text(
                     'Punch Hari Ini',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 10),
                   if (status == null || status.records.isEmpty)
@@ -229,7 +230,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       return Card(
                         child: ListTile(
                           leading: CircleAvatar(
-                            child: Icon(record.punchType == 'IN' ? Icons.login_rounded : Icons.logout_rounded),
+                            child: Icon(
+                              record.punchType == 'IN'
+                                  ? Icons.login_rounded
+                                  : Icons.logout_rounded,
+                            ),
                           ),
                           title: Text(
                             '${record.punchType == 'IN' ? 'MASUK' : 'KELUAR'} • ${_time(record.punchedAt)}',
@@ -239,7 +244,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             '${record.distanceMeters.toStringAsFixed(0)}m dari pusat • GPS ±${record.accuracyMeters?.toStringAsFixed(0) ?? '-'}m',
                           ),
                           trailing: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
                             decoration: BoxDecoration(
                               color: color.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(99),
@@ -248,7 +256,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               record.faceScore == null
                                   ? _faceLabel(record.faceStatus)
                                   : '${record.faceScore!.round()}%',
-                              style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 10),
+                              style: TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 10,
+                              ),
                             ),
                           ),
                         ),

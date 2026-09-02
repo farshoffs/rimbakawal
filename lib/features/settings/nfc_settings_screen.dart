@@ -82,9 +82,8 @@ class _NfcSettingsScreenState extends State<NfcSettingsScreen> {
                 const SizedBox(height: 12),
                 Text(
                   'Mod Operasi NFC',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
+                  style: Theme.of(context).textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -100,8 +99,7 @@ class _NfcSettingsScreenState extends State<NfcSettingsScreen> {
             selected: mode == 'test',
             icon: Icons.science_rounded,
             title: 'Mod Test NFC',
-            description:
-                'Untuk ujian aliran rondaan. Setiap tekan imbas akan memilih checkpoint aktif seterusnya sebagai dummy scan tanpa memerlukan tag fizikal.',
+            description: 'Untuk ujian aliran rondaan. Setiap tekan imbas akan memilih checkpoint aktif seterusnya sebagai dummy scan tanpa memerlukan tag fizikal.',
             badge: 'DUMMY SCAN',
             onTap: _saving ? null : () => _setMode('test'),
           ),
@@ -110,8 +108,7 @@ class _NfcSettingsScreenState extends State<NfcSettingsScreen> {
             selected: mode == 'real',
             icon: Icons.nfc_rounded,
             title: 'Mod Scan NFC Sebenar',
-            description:
-                'Untuk operasi sebenar. Aplikasi akan membuka pembaca NFC telefon dan hanya menerima tag checkpoint yang berdaftar.',
+            description: 'Untuk operasi sebenar. Aplikasi akan membuka pembaca NFC telefon dan hanya menerima tag checkpoint yang berdaftar.',
             badge: 'REAL NFC',
             onTap: _saving ? null : () => _setMode('real'),
           ),

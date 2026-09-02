@@ -2,10 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../api/app_user.dart';
 import 'notification_service.dart';
 
 class NotificationAlertGate extends StatefulWidget {
-  const NotificationAlertGate({required this.child, super.key});
+  const NotificationAlertGate({
+    required this.user,
+    required this.child,
+    super.key,
+  });
+
+  final AppUser user;
   final Widget child;
 
   @override
@@ -34,6 +41,19 @@ class _NotificationAlertGateState extends State<NotificationAlertGate> {
     if (!mounted || _showing) return;
     // SOS has a dedicated full-screen alarm/polling experience.
     if (alert.kind == 'sos') return;
+
+    // These actions already provide immediate on-screen feedback in their
+    // own workflow. Keep FCM/system notifications, but do not interrupt the
+    // user with an extra foreground popup.
+    if (alert.kind == 'checkpoint_scanned' ||
+        alert.kind == 'attendance_punch') {
+      return;
+    }
+    if (alert.kind == 'patrol_completed' &&
+        widget.user.jawatan.toLowerCase() == 'patrol') {
+      return;
+    }
+
     _showing = true;
     try {
       await showDialog<void>(
@@ -56,9 +76,10 @@ class _NotificationAlertGateState extends State<NotificationAlertGate> {
           ),
           actionsAlignment: MainAxisAlignment.center,
           actions: [
-            TextButton(
+            OutlinedButton.icon(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('TUTUP'),
+              icon: const Icon(Icons.close_rounded),
+              label: const Text('TUTUP'),
             ),
             FilledButton.icon(
               onPressed: () {

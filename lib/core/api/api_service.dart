@@ -569,39 +569,39 @@ class AttendanceStatus {
   final List<AttendanceRecord> records;
   final bool profilePictureConfigured;
 
-  factory AttendanceStatus.fromJson(
-    Map<String, dynamic> json,
-  ) => AttendanceStatus(
-    department: DepartmentRecord.fromJson(
-      Map<String, dynamic>.from(json['department'] as Map),
-    ),
-    nextPunchType: json['nextPunchType'] as String? ?? 'IN',
-    records: (json['records'] as List<dynamic>? ?? const [])
-        .map(
-          (item) =>
-              AttendanceRecord.fromJson(Map<String, dynamic>.from(item as Map)),
-        )
-        .toList(),
-    profilePictureConfigured:
-        json['profilePictureConfigured'] as bool? ?? false,
-  );
+  factory AttendanceStatus.fromJson(Map<String, dynamic> json) =>
+      AttendanceStatus(
+        department: DepartmentRecord.fromJson(
+          Map<String, dynamic>.from(json['department'] as Map),
+        ),
+        nextPunchType: json['nextPunchType'] as String? ?? 'IN',
+        records: (json['records'] as List<dynamic>? ?? const [])
+            .map(
+              (item) => AttendanceRecord.fromJson(
+                Map<String, dynamic>.from(item as Map),
+              ),
+            )
+            .toList(),
+        profilePictureConfigured:
+            json['profilePictureConfigured'] as bool? ?? false,
+      );
 }
 
 class AttendanceAdminData {
   const AttendanceAdminData({required this.summary, required this.records});
   final Map<String, dynamic> summary;
   final List<AttendanceRecord> records;
-  factory AttendanceAdminData.fromJson(
-    Map<String, dynamic> json,
-  ) => AttendanceAdminData(
-    summary: Map<String, dynamic>.from(json['summary'] as Map? ?? const {}),
-    records: (json['records'] as List<dynamic>? ?? const [])
-        .map(
-          (item) =>
-              AttendanceRecord.fromJson(Map<String, dynamic>.from(item as Map)),
-        )
-        .toList(),
-  );
+  factory AttendanceAdminData.fromJson(Map<String, dynamic> json) =>
+      AttendanceAdminData(
+        summary: Map<String, dynamic>.from(json['summary'] as Map? ?? const {}),
+        records: (json['records'] as List<dynamic>? ?? const [])
+            .map(
+              (item) => AttendanceRecord.fromJson(
+                Map<String, dynamic>.from(item as Map),
+              ),
+            )
+            .toList(),
+      );
 }
 
 class ApiService {

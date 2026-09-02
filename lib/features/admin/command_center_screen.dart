@@ -249,9 +249,8 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
           itemBuilder: (context, index) {
             final row = rows[index];
             final date =
-                DateTime.tryParse(
-                  row['lastScanAt'] as String? ?? '',
-                )?.toLocal() ??
+                DateTime.tryParse(row['lastScanAt'] as String? ?? '')
+                    ?.toLocal() ??
                 _to;
             return ListTile(
               leading: CircleAvatar(
@@ -842,9 +841,8 @@ class _OperationsHero extends StatelessWidget {
                   children: [
                     Text(
                       'Pusat Pemantauan Operasi',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                     Text(
                       '$periodLabel${generatedAt == null ? '' : ' • dikemas kini ${_clock(generatedAt!)}'}',
@@ -1043,9 +1041,8 @@ class _PatrolCoverageOverview extends StatelessWidget {
                 Expanded(
                   child: Text(
                     'Liputan Rondaan • $periodLabel',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
+                    style: Theme.of(context).textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w900),
                   ),
                 ),
                 Chip(
@@ -1209,9 +1206,8 @@ class _AttendanceOverview extends StatelessWidget {
                   children: [
                     Text(
                       'Kehadiran • $periodLabel',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                     const Text(
                       '“Hadir” = pengawal unik yang mempunyai sekurang-kurangnya satu punch MASUK dalam tempoh.',
@@ -1491,9 +1487,8 @@ class _SectionHeader extends StatelessWidget {
           children: [
             Text(
               title,
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900),
             ),
             Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
           ],
@@ -1528,9 +1523,8 @@ class _DetailSheet extends StatelessWidget {
                 Expanded(
                   child: Text(
                     title,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900),
                   ),
                 ),
                 IconButton(

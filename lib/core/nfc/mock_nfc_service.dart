@@ -25,7 +25,8 @@ class MockNfcService implements NfcService {
       throw const NfcScanCancelledException();
     }
 
-    final tagId = _lastWrittenCheckpointId ?? _mockTags[_index % _mockTags.length];
+    final tagId =
+        _lastWrittenCheckpointId ?? _mockTags[_index % _mockTags.length];
     _index++;
 
     return NfcScanResult(
@@ -45,7 +46,8 @@ class MockNfcService implements NfcService {
     }
 
     final existing = checkpointId?.trim().toUpperCase();
-    final id = existing != null && existing.startsWith('RK-') && existing.length >= 12
+    final id =
+        existing != null && existing.startsWith('RK-') && existing.length >= 12
         ? existing
         : _newCheckpointId();
     _lastWrittenCheckpointId = id;
