@@ -645,7 +645,41 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
     super.dispose();
   }
 
-  Future<void> _scanTag() async {
+  Future<void> _rewriteTag() async {
+    if (_scanning) return;
+    setState(() {
+      _scanning = true;
+      _error = null;
+    });
+    try {
+      final available = await widget.nfcService.isAvailable();
+      if (!available) {
+        throw StateError('NFC tidak tersedia pada peranti ini.');
+      }
+      final current = _uidController.text.trim().toUpperCase();
+      final checkpointId = await widget.nfcService.writeCheckpointTag(
+        checkpointId: current.startsWith('RK-') ? current : null,
+      );
+      if (!mounted) return;
+      setState(() => _uidController.text = checkpointId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Tag berjaya ditulis semula, dibaca semula dan disahkan untuk checkpoint ini.',
+          ),
+        ),
+      );
+    } on NfcScanCancelledException {
+      // User closed the native NFC prompt.
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+  }
+
+  Future<void> _readTagOnly() async {
     if (_scanning) return;
     setState(() {
       _scanning = true;
@@ -658,12 +692,10 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
       }
       final scan = await widget.nfcService.scan();
       if (!mounted) return;
-      setState(() => _uidController.text = scan.tagId);
+      setState(() => _uidController.text = scan.tagId.toUpperCase());
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Tag NFC berjaya dibaca dan disimpan untuk checkpoint ini.',
-          ),
+        SnackBar(
+          content: Text('ID / UID dibaca: ${scan.tagId}'),
         ),
       );
     } on NfcScanCancelledException {
@@ -682,7 +714,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
     final position = int.tryParse(_positionController.text.trim());
     if (name.isEmpty || uid.isEmpty || position == null) {
       setState(
-        () => _error = 'Lengkapkan nama, Scan Tag dan susunan checkpoint.',
+        () => _error = 'Lengkapkan nama, daftar tag NFC dan susunan checkpoint.',
       );
       return;
     }
@@ -743,27 +775,38 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
               const SizedBox(height: 12),
               TextField(
                 controller: _uidController,
-                textCapitalization: TextCapitalization.characters,
+                readOnly: true,
                 decoration: const InputDecoration(
-                  labelText: 'Data / ID tag NFC',
-                  hintText: 'Tekan Scan Tag untuk membaca tag sedia ada',
+                  labelText: 'ID checkpoint RimbaKawal / UID',
+                  hintText: 'Tulis semula tag untuk menjana ID checkpoint',
                   prefixIcon: Icon(Icons.nfc_rounded),
                 ),
               ),
               const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
-                child: FilledButton.tonalIcon(
-                  onPressed: _scanning ? null : _scanTag,
-                  icon: const Icon(Icons.nfc_rounded),
-                  label: Text(_scanning ? 'MEMBACA TAG…' : 'SCAN TAG'),
+                child: FilledButton.icon(
+                  onPressed: _scanning ? null : _rewriteTag,
+                  icon: const Icon(Icons.edit_rounded),
+                  label: Text(
+                    _scanning ? 'PROSES NFC…' : 'TULIS SEMULA & DAFTAR TAG',
+                  ),
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _scanning ? null : _readTagOnly,
+                  icon: const Icon(Icons.nfc_rounded),
+                  label: const Text('BACA ID / UID SAHAJA'),
+                ),
+              ),
+              const SizedBox(height: 8),
               const Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Scan Tag hanya membaca tag yang telah disediakan. RimbaKawal tidak akan menulis atau mengubah kandungan NFC. NDEF Text/URI akan digunakan jika ada; jika tiada, UID fizikal tag digunakan.',
+                  'RimbaKawal akan overwrite kandungan NDEF tag dengan ID checkpoint sendiri dan membaca semula ID itu untuk pengesahan. UID cip fizikal NTAG213/215/216 ditetapkan kilang dan tidak boleh ditulis semula. Gunakan Baca ID / UID Sahaja untuk tag lama atau diagnosis tanpa mengubah tag.',
                   style: TextStyle(fontSize: 12),
                 ),
               ),

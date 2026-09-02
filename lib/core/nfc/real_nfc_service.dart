@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:nfc_manager/ndef_record.dart';
@@ -62,6 +63,69 @@ class RealNfcService implements NfcService {
             if (!completer.isCompleted) completer.complete(result);
           } catch (error, stackTrace) {
             await _stopQuietly(errorMessage: 'Tag NFC ini tidak dapat dibaca.');
+            if (!completer.isCompleted) {
+              completer.completeError(error, stackTrace);
+            }
+          }
+        },
+        onSessionErrorIos: (error) => _completeIosError(completer, error),
+      );
+
+      if (!completer.isCompleted) {
+        timeoutTimer = _timeout(
+          completer,
+          'Tiada tag NFC dikesan dalam masa 30 saat.',
+        );
+      }
+      return await completer.future;
+    } finally {
+      timeoutTimer?.cancel();
+      _endOperation(completer);
+    }
+  }
+
+
+  @override
+  Future<String> writeCheckpointTag({String? checkpointId}) async {
+    final completer = Completer<String>();
+    _beginOperation(completer);
+    var discoveryHandled = false;
+    Timer? timeoutTimer;
+
+    final requested = checkpointId?.trim().toUpperCase();
+    final id = requested != null &&
+            requested.startsWith('RK-') &&
+            requested.length >= 12
+        ? requested
+        : _newCheckpointId();
+    final message = _checkpointMessage(id);
+
+    unawaited(
+      completer.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+    );
+
+    try {
+      await _manager.startSession(
+        pollingOptions: const {
+          NfcPollingOption.iso14443,
+          NfcPollingOption.iso15693,
+        },
+        alertMessageIos:
+            'Dekatkan bahagian atas iPhone pada tag. Kandungan tag akan ditulis semula untuk RimbaKawal.',
+        invalidateAfterFirstReadIos: true,
+        onDiscovered: (tag) async {
+          if (completer.isCompleted || discoveryHandled) return;
+          discoveryHandled = true;
+          try {
+            await _writeAndVerifyCheckpointMessage(tag, message, id);
+            await _stopQuietly(
+              alertMessage: 'Tag RimbaKawal berjaya ditulis dan disahkan.',
+            );
+            if (!completer.isCompleted) completer.complete(id);
+          } catch (error, stackTrace) {
+            await _stopQuietly(
+              errorMessage: 'Tag NFC tidak dapat ditulis atau disahkan.',
+            );
             if (!completer.isCompleted) {
               completer.completeError(error, stackTrace);
             }
@@ -299,6 +363,94 @@ class RealNfcService implements NfcService {
     String hex32(int value) =>
         value.toRadixString(16).padLeft(8, '0').toUpperCase();
     return '${hex32(a)}${hex32(b)}';
+  }
+
+
+  NdefMessage _checkpointMessage(String checkpointId) {
+    return NdefMessage(
+      records: [
+        NdefRecord(
+          typeNameFormat: TypeNameFormat.external,
+          type: Uint8List.fromList(utf8.encode(_checkpointRecordType)),
+          identifier: Uint8List(0),
+          payload: Uint8List.fromList(utf8.encode(checkpointId)),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _writeAndVerifyCheckpointMessage(
+    NfcTag tag,
+    NdefMessage message,
+    String checkpointId,
+  ) async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final ndef = NdefAndroid.from(tag);
+      if (ndef != null) {
+        if (!ndef.isWritable) {
+          throw StateError('Tag NFC ini dikunci atau read-only.');
+        }
+        if (message.byteLength > ndef.maxSize) {
+          throw StateError('Kapasiti tag NFC tidak mencukupi.');
+        }
+        await ndef.writeNdefMessage(message);
+        final readBack = await ndef.getNdefMessage();
+        _verifyCheckpointReadBack(readBack, checkpointId);
+        return;
+      }
+
+      final formatable = NdefFormatableAndroid.from(tag);
+      if (formatable != null) {
+        await formatable.format(message);
+        // Some Android stacks do not expose Ndef on the same Tag object until
+        // the next discovery after formatting. Formatting success is accepted.
+        final ndefAfterFormat = NdefAndroid.from(tag);
+        if (ndefAfterFormat != null) {
+          final readBack = await ndefAfterFormat.getNdefMessage();
+          _verifyCheckpointReadBack(readBack, checkpointId);
+        }
+        return;
+      }
+      throw StateError('Tag ini tidak menyokong penulisan NDEF.');
+    }
+
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      final ndef = NdefIos.from(tag);
+      if (ndef == null) {
+        throw StateError(
+          'Tag ini tidak menyokong penulisan NDEF pada iPhone.',
+        );
+      }
+      if (message.byteLength > ndef.capacity) {
+        throw StateError('Kapasiti tag NFC tidak mencukupi.');
+      }
+      await ndef.writeNdef(message);
+      final readBack = await ndef.readNdef();
+      _verifyCheckpointReadBack(readBack, checkpointId);
+      return;
+    }
+
+    throw UnsupportedError(
+      'Penulisan NFC hanya tersedia pada Android dan iOS.',
+    );
+  }
+
+  void _verifyCheckpointReadBack(
+    NdefMessage? message,
+    String checkpointId,
+  ) {
+    final readBack = _readOnlyIdFromMessage(message)?.toUpperCase();
+    if (readBack != checkpointId.toUpperCase()) {
+      throw StateError(
+        'Tag telah disentuh tetapi ID RimbaKawal gagal dibaca semula. Cuba tag sekali lagi.',
+      );
+    }
+  }
+
+  String _newCheckpointId() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    return 'RK-${bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join().toUpperCase()}';
   }
 
   void _completeIosError<T>(
