@@ -1,0 +1,19 @@
+from pathlib import Path
+
+screen = Path('lib/features/admin/department_maintenance_screen.dart')
+text = screen.read_text()
+
+old = """              LayoutBuilder(\n                builder: (context, constraints) {\n                  final timeButton = FilledButton.tonalIcon(\n                    onPressed: _pickStartTime,\n                    icon: const Icon(Icons.schedule_rounded),\n                    label: Text('Pilih masa • ${_startTime.format(context)}'),\n                  );\n                  final details = Column(\n                    crossAxisAlignment: CrossAxisAlignment.start,\n                    children: [\n                      const Text(\n                        'Masa mula rondaan',\n                        style: TextStyle(fontWeight: FontWeight.w800),\n                      ),\n                      const SizedBox(height: 3),\n                      Text('Sesi 1 bermula pada ${_startTime.format(context)}'),\n                    ],\n                  );\n                  if (constraints.maxWidth < 430) {\n                    return Column(\n                      crossAxisAlignment: CrossAxisAlignment.stretch,\n                      children: [\n                        details,\n                        const SizedBox(height: 10),\n                        timeButton,\n                      ],\n                    );\n                  }\n                  return Row(\n                    children: [\n                      const Icon(Icons.schedule_rounded),\n                      const SizedBox(width: 12),\n                      Expanded(child: details),\n                      const SizedBox(width: 12),\n                      timeButton,\n                    ],\n                  );\n                },\n              ),\n"""
+
+new = """              Column(\n                crossAxisAlignment: CrossAxisAlignment.stretch,\n                children: [\n                  Row(\n                    crossAxisAlignment: CrossAxisAlignment.start,\n                    children: [\n                      const Padding(\n                        padding: EdgeInsets.only(top: 2),\n                        child: Icon(Icons.schedule_rounded),\n                      ),\n                      const SizedBox(width: 12),\n                      Expanded(\n                        child: Column(\n                          crossAxisAlignment: CrossAxisAlignment.start,\n                          children: [\n                            const Text(\n                              'Masa mula rondaan',\n                              style: TextStyle(fontWeight: FontWeight.w800),\n                            ),\n                            const SizedBox(height: 3),\n                            Text(\n                              'Sesi 1 bermula pada ${_startTime.format(context)}',\n                            ),\n                          ],\n                        ),\n                      ),\n                    ],\n                  ),\n                  const SizedBox(height: 10),\n                  SizedBox(\n                    width: double.infinity,\n                    child: FilledButton.tonalIcon(\n                      onPressed: _pickStartTime,\n                      icon: const Icon(Icons.schedule_rounded),\n                      label: Text(\n                        'Pilih masa • ${_startTime.format(context)}',\n                      ),\n                    ),\n                  ),\n                ],\n              ),\n"""
+
+if old not in text:
+    raise SystemExit('Expected time layout block not found; refusing unsafe patch')
+text = text.replace(old, new, 1)
+screen.write_text(text)
+
+pubspec = Path('pubspec.yaml')
+pub = pubspec.read_text()
+if 'version: 0.5.14+30' not in pub:
+    raise SystemExit('Expected version 0.5.14+30 not found')
+pubspec.write_text(pub.replace('version: 0.5.14+30', 'version: 0.5.15+31', 1))
