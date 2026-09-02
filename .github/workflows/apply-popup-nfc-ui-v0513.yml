@@ -1,0 +1,91 @@
+name: Apply Popup NFC UI v0.5.13
+
+on:
+  push:
+    branches:
+      - popup-nfc-ui-v0513
+    paths:
+      - scripts/apply_popup_nfc_ui_v0513.py
+      - .github/workflows/apply-popup-nfc-ui-v0513.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: popup-nfc-ui-v0513
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply requested UI changes
+        run: python3 scripts/apply_popup_nfc_ui_v0513.py
+
+      - name: Format Dart
+        run: dart format lib
+
+      - name: Validate Flutter
+        run: |
+          flutter pub get
+          flutter analyze
+
+      - name: Validate requested behavior
+        run: |
+          grep -q "version: 0.5.13+29" pubspec.yaml
+          grep -q "alert.kind == 'checkpoint_scanned'" lib/core/notifications/notification_alert_gate.dart
+          grep -q "alert.kind == 'attendance_punch'" lib/core/notifications/notification_alert_gate.dart
+          grep -q "widget.user.jawatan.toLowerCase() == 'patrol'" lib/core/notifications/notification_alert_gate.dart
+          grep -q "OutlinedButton.icon" lib/core/notifications/notification_alert_gate.dart
+          grep -q "DAFTAR TAG" lib/features/admin/department_maintenance_screen.dart
+          grep -q "Daftar Tag hanya membaca ID/UID" lib/features/admin/department_maintenance_screen.dart
+          ! grep -q "TULIS SEMULA & DAFTAR TAG" lib/features/admin/department_maintenance_screen.dart
+          ! grep -q "BACA ID / UID SAHAJA" lib/features/admin/department_maintenance_screen.dart
+          ! grep -q "_rewriteTag" lib/features/admin/department_maintenance_screen.dart
+          ! grep -q "Punch \$label berjaya" lib/features/attendance/attendance_screen.dart
+          ! grep -q "telah disimpan pada peranti dan akan disegerakkan secara automatik" lib/features/patrol/patrol_screen.dart
+          python3 - <<'PY'
+          from pathlib import Path
+          labels = ("Text('Batal')", "Text('BATAL')", "Text('Tutup')", "Text('TUTUP')", "Text('Kembali')", "Text('KEMBALI')")
+          bad = []
+          for path in Path('lib').rglob('*.dart'):
+              text = path.read_text(encoding='utf-8')
+              for token in ('TextButton(', 'TextButton.icon('):
+                  pos = 0
+                  while True:
+                      idx = text.find(token, pos)
+                      if idx < 0:
+                          break
+                      window = text[idx:idx+900]
+                      label_pos = min([p for p in (window.find(x) for x in labels) if p >= 0], default=-1)
+                      next_pos = min([p for p in (
+                          window.find('TextButton(', len(token)),
+                          window.find('TextButton.icon(', len(token)),
+                          window.find('FilledButton(', len(token)),
+                          window.find('OutlinedButton(', len(token)),
+                      ) if p >= 0], default=-1)
+                      if label_pos >= 0 and (next_pos < 0 or label_pos < next_pos):
+                          bad.append(f'{path}: {token} still used for secondary dialog action')
+                      pos = idx + len(token)
+          if bad:
+              raise SystemExit('\n'.join(bad))
+          PY
+
+      - name: Commit validated changes
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib pubspec.yaml
+          git commit -m "Refine popup UX and checkpoint tag registration"
+          git push origin HEAD:popup-nfc-ui-v0513
