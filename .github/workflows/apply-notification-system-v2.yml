@@ -33,11 +33,22 @@ jobs:
           from pathlib import Path
           p = Path('lib/core/notifications/notification_service.dart')
           text = p.read_text(encoding='utf-8')
-          old = "    if (!hasCommon) return false;"
-          new = "    if (!hasCommon) {\n      return false;\n    }"
-          if old not in text:
-              raise SystemExit('notification service lint marker missing')
-          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          replacements = {
+              "    if (!hasCommon) return false;": "    if (!hasCommon) {\n      return false;\n    }",
+              "    if (kIsWeb) return _firebaseWebAppId.isNotEmpty && _firebaseWebVapidKey.isNotEmpty;": "    if (kIsWeb) {\n      return _firebaseWebAppId.isNotEmpty && _firebaseWebVapidKey.isNotEmpty;\n    }",
+              "    if (_ready || _initializing || !PushConfig.isConfigured) return;": "    if (_ready || _initializing || !PushConfig.isConfigured) {\n      return;\n    }",
+              "        if (user != null) unawaited(_registerToken(user, token));": "        if (user != null) {\n          unawaited(_registerToken(user, token));\n        }",
+              "    if (!_ready) return false;": "    if (!_ready) {\n      return false;\n    }",
+              "      if (!_isGranted(settings.authorizationStatus)) return false;": "      if (!_isGranted(settings.authorizationStatus)) {\n        return false;\n      }",
+              "      if (token == null || token.isEmpty) return false;": "      if (token == null || token.isEmpty) {\n        return false;\n      }",
+              "    if (pending == null || _user == null) return;": "    if (pending == null || _user == null) {\n      return;\n    }",
+              "      if (_ready) await FirebaseMessaging.instance.deleteToken();": "      if (_ready) {\n        await FirebaseMessaging.instance.deleteToken();\n      }",
+              "    if (kIsWeb) return 'web';": "    if (kIsWeb) {\n      return 'web';\n    }",
+              "    if (defaultTargetPlatform == TargetPlatform.iOS) return 'ios';": "    if (defaultTargetPlatform == TargetPlatform.iOS) {\n      return 'ios';\n    }",
+          }
+          for old, new in replacements.items():
+              text = text.replace(old, new)
+          p.write_text(text, encoding='utf-8')
           PY
 
       - name: Format Dart
