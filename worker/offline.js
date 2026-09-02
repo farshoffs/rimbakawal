@@ -446,11 +446,66 @@ async function liveStart(request, env) {
   const auth = await requireUser(request, env);
   if (auth.response) return auth.response;
   const body = await readJson(request);
-  const clientSessionId = cleanId(body.clientSessionId);
-  const startedAt = parseOccurredAt(body.startedAt) ?? new Date();
-  if (!clientSessionId) return json({ error: 'ID sesi rondaan tidak sah.' }, 400);
+  const requestedSessionId = cleanId(body.clientSessionId);
+  const requestedStartedAt = parseOccurredAt(body.startedAt) ?? new Date();
+  if (!requestedSessionId) return json({ error: 'ID sesi rondaan tidak sah.' }, 400);
 
-  const nowIso = new Date().toISOString();
+  const now = new Date();
+  const interval = Number(auth.user.session_interval_minutes || 120);
+  const window = sessionWindow(now, interval, auth.user.session_start_minutes);
+  const sessionStart = new Date(window.startMs);
+  const sessionEnd = new Date(window.endMs);
+  const nowIso = now.toISOString();
+
+  const existing = await env.DB.prepare(
+    `SELECT client_session_id, started_at
+     FROM live_patrol_presence
+     WHERE user_id = ? AND active = 1
+     LIMIT 1`,
+  ).bind(auth.user.id).first();
+
+  if (existing?.client_session_id && existing?.started_at) {
+    const existingStartedAt = new Date(existing.started_at);
+    if (!Number.isNaN(existingStartedAt.getTime()) &&
+        existingStartedAt >= sessionStart && existingStartedAt < sessionEnd) {
+      await env.DB.prepare(
+        `UPDATE live_patrol_presence SET updated_at = ? WHERE user_id = ?`,
+      ).bind(nowIso, auth.user.id).run();
+      return json({
+        ok: true,
+        resumed: true,
+        clientSessionId: existing.client_session_id,
+        startedAt: existing.started_at,
+        sessionIndex: window.index,
+        sessionStartAt: sessionStart.toISOString(),
+        sessionEndAt: sessionEnd.toISOString(),
+      });
+    }
+
+    const rolloverEndedAt = sessionStart.toISOString();
+    await env.DB.prepare(
+      `UPDATE live_patrol_presence
+       SET active = 0, ended_at = ?, updated_at = ?
+       WHERE user_id = ? AND active = 1`,
+    ).bind(rolloverEndedAt, nowIso, auth.user.id).run();
+    await env.DB.prepare(
+      `UPDATE patrol_session_history
+       SET ended_at = COALESCE(ended_at, ?), updated_at = ?
+       WHERE user_id = ? AND client_session_id = ?`,
+    ).bind(
+      rolloverEndedAt,
+      nowIso,
+      auth.user.id,
+      existing.client_session_id,
+    ).run();
+  }
+
+  const effectiveStartedAt = requestedStartedAt >= sessionStart &&
+          requestedStartedAt < sessionEnd
+      ? requestedStartedAt
+      : now;
+  const startedAtIso = effectiveStartedAt.toISOString();
+
   await env.DB.prepare(
     `INSERT INTO live_patrol_presence
       (user_id, department_id, client_session_id, started_at, active, updated_at)
@@ -469,8 +524,8 @@ async function liveStart(request, env) {
   ).bind(
     auth.user.id,
     auth.user.department_id ?? null,
-    clientSessionId,
-    startedAt.toISOString(),
+    requestedSessionId,
+    startedAtIso,
     nowIso,
   ).run();
 
@@ -484,16 +539,25 @@ async function liveStart(request, env) {
          WHEN excluded.started_at < patrol_session_history.started_at THEN excluded.started_at
          ELSE patrol_session_history.started_at
        END,
+       ended_at = NULL,
        updated_at = excluded.updated_at`,
   ).bind(
     auth.user.id,
     auth.user.department_id ?? null,
-    clientSessionId,
-    startedAt.toISOString(),
+    requestedSessionId,
+    startedAtIso,
     nowIso,
   ).run();
 
-  return json({ ok: true, clientSessionId, startedAt: startedAt.toISOString() });
+  return json({
+    ok: true,
+    resumed: false,
+    clientSessionId: requestedSessionId,
+    startedAt: startedAtIso,
+    sessionIndex: window.index,
+    sessionStartAt: sessionStart.toISOString(),
+    sessionEndAt: sessionEnd.toISOString(),
+  });
 }
 
 async function liveLocation(request, env) {

@@ -16,6 +16,7 @@ class OfflineStore extends ChangeNotifier {
   static const _cachedUserKey = 'cached_user';
   static const _bootstrapKey = 'patrol_bootstrap';
   static const _nfcModeKey = 'nfc_operation_mode';
+  static const _activePatrolKeyPrefix = 'active_patrol_';
 
   late Box<dynamic> _eventsBox;
   late Box<dynamic> _cacheBox;
@@ -38,6 +39,50 @@ class OfflineStore extends ChangeNotifier {
     final now = DateTime.now().microsecondsSinceEpoch;
     final random = _random.nextInt(0x7fffffff).toRadixString(16);
     return '$prefix-$now-$random';
+  }
+
+  Map<String, dynamic>? activePatrol(int userId) {
+    if (!_ready) return null;
+    final value = _cacheBox.get('$_activePatrolKeyPrefix$userId');
+    if (value is! Map) return null;
+    try {
+      return Map<String, dynamic>.from(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveActivePatrol({
+    required int userId,
+    required String clientSessionId,
+    required DateTime startedAt,
+    required int sessionIndex,
+    required String dayKey,
+  }) async {
+    _ensureReady();
+    await _cacheBox.put('$_activePatrolKeyPrefix$userId', {
+      'clientSessionId': clientSessionId,
+      'startedAt': startedAt.toUtc().toIso8601String(),
+      'sessionIndex': sessionIndex,
+      'dayKey': dayKey,
+    });
+    notifyListeners();
+  }
+
+  Future<void> clearActivePatrol(
+    int userId, {
+    String? clientSessionId,
+  }) async {
+    if (!_ready) return;
+    final key = '$_activePatrolKeyPrefix$userId';
+    if (clientSessionId != null) {
+      final current = activePatrol(userId);
+      if (current != null && current['clientSessionId'] != clientSessionId) {
+        return;
+      }
+    }
+    await _cacheBox.delete(key);
+    notifyListeners();
   }
 
   Future<OfflineEvent> queueEvent({
@@ -258,6 +303,7 @@ class OfflineStore extends ChangeNotifier {
     'profilePicture': user.profilePicture,
     'departmentId': user.departmentId,
     'sessionIntervalMinutes': user.sessionIntervalMinutes,
+    'sessionStartMinutes': user.sessionStartMinutes,
     'active': user.active,
   };
 }

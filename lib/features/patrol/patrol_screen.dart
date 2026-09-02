@@ -39,10 +39,11 @@ class _PatrolScreenState extends State<PatrolScreen> {
   final OfflineSyncService _sync = OfflineSyncService.instance;
   final ImagePicker _imagePicker = ImagePicker();
 
-  late final String _clientSessionId;
-  late final DateTime _startedAt;
+  late String _clientSessionId;
+  late DateTime _startedAt;
   StreamSubscription<Position>? _positionSub;
   Timer? _locationHeartbeat;
+  Timer? _sessionBoundaryTimer;
   OfflineBootstrap? _bootstrap;
   Position? _latestPosition;
   DateTime? _lastLocationSentAt;
@@ -57,12 +58,47 @@ class _PatrolScreenState extends State<PatrolScreen> {
   @override
   void initState() {
     super.initState();
-    _startedAt = DateTime.now();
-    _clientSessionId = _store.newId('patrol-session');
+    final now = DateTime.now();
+    final currentWindow = _sessionWindow(
+      now,
+      widget.user.sessionIntervalMinutes,
+      widget.user.sessionStartMinutes,
+    );
+    final currentDayKey = _scheduleDayKey(
+      now,
+      widget.user.sessionStartMinutes,
+    );
+    final stored = _store.activePatrol(widget.user.id);
+    final storedId = stored?['clientSessionId'] as String?;
+    final storedStartedAt = DateTime.tryParse(
+      stored?['startedAt'] as String? ?? '',
+    )?.toLocal();
+    final storedSessionIndex = (stored?['sessionIndex'] as num?)?.toInt();
+    final storedDayKey = stored?['dayKey'] as String?;
+    final canResume = storedId != null &&
+        storedStartedAt != null &&
+        storedSessionIndex == currentWindow.index &&
+        storedDayKey == currentDayKey;
+
+    if (canResume) {
+      _clientSessionId = storedId;
+      _startedAt = storedStartedAt;
+    } else {
+      _startedAt = now;
+      _clientSessionId = _store.newId('patrol-session');
+    }
+
     unawaited(WakelockPlus.enable());
     _store.addListener(_onLocalChanged);
     _sync.addListener(_onLocalChanged);
-    unawaited(_startOfflinePatrol());
+    unawaited(
+      _startOfflinePatrol(
+        previousActive: canResume ? null : stored,
+        resumed: canResume,
+        currentWindow: currentWindow,
+        dayKey: currentDayKey,
+      ),
+    );
   }
 
   @override
@@ -71,9 +107,11 @@ class _PatrolScreenState extends State<PatrolScreen> {
     _sync.removeListener(_onLocalChanged);
     _positionSub?.cancel();
     _locationHeartbeat?.cancel();
+    _sessionBoundaryTimer?.cancel();
     unawaited(WakelockPlus.disable());
     if (_torchOn && !kIsWeb) unawaited(TorchLight.disableTorch());
-    if (!_ending) unawaited(widget.api.endLivePatrol(_clientSessionId));
+    // Leaving the screen must not end an active patrol. The same logical
+    // patrol is restored when the guard opens Rondaan Aktif again.
     super.dispose();
   }
 
@@ -81,16 +119,206 @@ class _PatrolScreenState extends State<PatrolScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _startOfflinePatrol() async {
-    await _store.queueEvent(
+  Future<void> _startOfflinePatrol({
+    required Map<String, dynamic>? previousActive,
+    required bool resumed,
+    required _SessionWindow currentWindow,
+    required String dayKey,
+  }) async {
+    if (previousActive != null) {
+      await _autoEndStoredPatrol(previousActive, currentWindow.start);
+    }
+
+    var shouldQueueStart = !resumed;
+    try {
+      final live = await widget.api.startLivePatrol(
+        _clientSessionId,
+        _startedAt,
+      );
+      final resolvedId = live['clientSessionId'] as String?;
+      final resolvedStartedAt = DateTime.tryParse(
+        live['startedAt'] as String? ?? '',
+      )?.toLocal();
+      if (resolvedId != null && resolvedId.isNotEmpty) {
+        if (resolvedId != _clientSessionId || live['resumed'] == true) {
+          shouldQueueStart = false;
+        }
+        _clientSessionId = resolvedId;
+      }
+      if (resolvedStartedAt != null) _startedAt = resolvedStartedAt;
+    } catch (_) {
+      // Offline-first: the local session remains authoritative until sync.
+    }
+
+    await _store.saveActivePatrol(
       userId: widget.user.id,
-      type: 'patrol_start',
-      occurredAt: _startedAt,
-      payload: {'clientSessionId': _clientSessionId},
+      clientSessionId: _clientSessionId,
+      startedAt: _startedAt,
+      sessionIndex: currentWindow.index,
+      dayKey: dayKey,
     );
+
+    if (shouldQueueStart) {
+      await _store.queueEvent(
+        userId: widget.user.id,
+        type: 'patrol_start',
+        occurredAt: _startedAt,
+        payload: {'clientSessionId': _clientSessionId},
+      );
+    }
     unawaited(_sync.syncNow());
     await _loadBootstrap();
+    _scheduleSessionBoundary();
     unawaited(_startLiveTracking());
+  }
+
+  Future<void> _autoEndStoredPatrol(
+    Map<String, dynamic> previous,
+    DateTime sessionBoundary,
+  ) async {
+    final previousId = previous['clientSessionId'] as String?;
+    if (previousId == null || previousId.isEmpty) return;
+    final previousStartedAt = DateTime.tryParse(
+      previous['startedAt'] as String? ?? '',
+    )?.toLocal();
+    final endedAt = previousStartedAt != null &&
+            sessionBoundary.isAfter(previousStartedAt)
+        ? sessionBoundary
+        : DateTime.now();
+    await _store.queueEvent(
+      userId: widget.user.id,
+      type: 'patrol_end',
+      occurredAt: endedAt,
+      payload: {
+        'clientSessionId': previousId,
+        'autoEnded': true,
+        'reason': 'session_rollover',
+      },
+    );
+    try {
+      await widget.api.endLivePatrol(previousId);
+    } catch (_) {}
+    await _store.clearActivePatrol(
+      widget.user.id,
+      clientSessionId: previousId,
+    );
+  }
+
+  void _scheduleSessionBoundary() {
+    _sessionBoundaryTimer?.cancel();
+    if (_ending) return;
+    final now = DateTime.now();
+    final window = _sessionWindow(
+      now,
+      widget.user.sessionIntervalMinutes,
+      widget.user.sessionStartMinutes,
+    );
+    var delay = window.end.difference(now) + const Duration(seconds: 1);
+    if (delay <= Duration.zero) delay = const Duration(seconds: 1);
+    _sessionBoundaryTimer = Timer(
+      delay,
+      () => unawaited(_rolloverToCurrentSession()),
+    );
+  }
+
+  Future<void> _rolloverToCurrentSession() async {
+    if (_ending) return;
+    final now = DateTime.now();
+    final currentWindow = _sessionWindow(
+      now,
+      widget.user.sessionIntervalMinutes,
+      widget.user.sessionStartMinutes,
+    );
+    final currentDayKey = _scheduleDayKey(
+      now,
+      widget.user.sessionStartMinutes,
+    );
+    final oldWindow = _sessionWindow(
+      _startedAt,
+      widget.user.sessionIntervalMinutes,
+      widget.user.sessionStartMinutes,
+    );
+    final oldDayKey = _scheduleDayKey(
+      _startedAt,
+      widget.user.sessionStartMinutes,
+    );
+    if (oldWindow.index == currentWindow.index &&
+        oldDayKey == currentDayKey) {
+      _scheduleSessionBoundary();
+      return;
+    }
+
+    final oldId = _clientSessionId;
+    await _store.queueEvent(
+      userId: widget.user.id,
+      type: 'patrol_end',
+      occurredAt: currentWindow.start,
+      location: await _captureEventLocation(),
+      payload: {
+        'clientSessionId': oldId,
+        'autoEnded': true,
+        'reason': 'session_rollover',
+      },
+    );
+    try {
+      await widget.api.endLivePatrol(oldId);
+    } catch (_) {}
+    await _store.clearActivePatrol(
+      widget.user.id,
+      clientSessionId: oldId,
+    );
+
+    _clientSessionId = _store.newId('patrol-session');
+    _startedAt = now;
+    var shouldQueueStart = true;
+    try {
+      final live = await widget.api.startLivePatrol(
+        _clientSessionId,
+        _startedAt,
+      );
+      final resolvedId = live['clientSessionId'] as String?;
+      final resolvedStartedAt = DateTime.tryParse(
+        live['startedAt'] as String? ?? '',
+      )?.toLocal();
+      if (resolvedId != null && resolvedId.isNotEmpty) {
+        if (resolvedId != _clientSessionId || live['resumed'] == true) {
+          shouldQueueStart = false;
+        }
+        _clientSessionId = resolvedId;
+      }
+      if (resolvedStartedAt != null) _startedAt = resolvedStartedAt;
+    } catch (_) {}
+
+    await _store.saveActivePatrol(
+      userId: widget.user.id,
+      clientSessionId: _clientSessionId,
+      startedAt: _startedAt,
+      sessionIndex: currentWindow.index,
+      dayKey: currentDayKey,
+    );
+    if (shouldQueueStart) {
+      await _store.queueEvent(
+        userId: widget.user.id,
+        type: 'patrol_start',
+        occurredAt: _startedAt,
+        payload: {'clientSessionId': _clientSessionId},
+      );
+    }
+    unawaited(_sync.syncNow());
+    _lastLocationSentAt = null;
+    final position = _latestPosition;
+    if (position != null) await _handlePosition(position, force: true);
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Sesi rondaan sebelumnya ditamatkan automatik. Sesi baharu telah bermula.',
+          ),
+        ),
+      );
+    }
+    _scheduleSessionBoundary();
   }
 
   Future<void> _loadBootstrap() async {
@@ -106,12 +334,6 @@ class _PatrolScreenState extends State<PatrolScreen> {
   }
 
   Future<void> _startLiveTracking() async {
-    try {
-      await widget.api.startLivePatrol(_clientSessionId, _startedAt);
-    } catch (_) {
-      // Live map is best effort. Field work remains available offline.
-    }
-
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
         throw const ApiException('Perkhidmatan lokasi dimatikan.');
@@ -712,6 +934,11 @@ class _PatrolScreenState extends State<PatrolScreen> {
     try {
       await widget.api.endLivePatrol(_clientSessionId);
     } catch (_) {}
+    await _store.clearActivePatrol(
+      widget.user.id,
+      clientSessionId: _clientSessionId,
+    );
+    _sessionBoundaryTimer?.cancel();
     await _turnOffTorch();
     await _positionSub?.cancel();
     _locationHeartbeat?.cancel();

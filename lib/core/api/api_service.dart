@@ -759,11 +759,11 @@ class ApiService {
         .toList();
   }
 
-  Future<void> startLivePatrol(
+  Future<Map<String, dynamic>> startLivePatrol(
     String clientSessionId,
     DateTime startedAt,
   ) async {
-    _decode(
+    return _decode(
       await http.post(
         _uri('/api/live/start'),
         headers: _headers(jsonBody: true),
