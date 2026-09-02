@@ -1,0 +1,65 @@
+name: Apply Patrol Resume and Session Rollover
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply_patrol_resume_rollover.py
+      - .github/workflows/apply-patrol-resume-rollover.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patrol lifecycle patch
+        run: python3 scripts/apply_patrol_resume_rollover.py
+
+      - name: Validate Worker JavaScript
+        run: node --check worker/offline.js
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit validated patrol lifecycle fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- \
+            lib/core/offline/offline_store.dart \
+            lib/core/api/api_service.dart \
+            lib/features/patrol/patrol_screen.dart \
+            worker/offline.js; then
+            echo 'No patrol lifecycle changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            lib/core/offline/offline_store.dart \
+            lib/core/api/api_service.dart \
+            lib/features/patrol/patrol_screen.dart \
+            worker/offline.js
+          git commit -m 'Resume active patrols and roll over sessions automatically'
+          git push origin HEAD:main
