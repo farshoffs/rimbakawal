@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Fix the patrol start-time control so it never collapses into a one-character-wide column.
 screen = Path('lib/features/admin/department_maintenance_screen.dart')
 text = screen.read_text()
 
