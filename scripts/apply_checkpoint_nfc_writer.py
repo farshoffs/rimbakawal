@@ -1,15 +1,23 @@
 from pathlib import Path
+import re
 
 
-def replace_once(path: str, old: str, new: str) -> None:
+def write(path: str, content: str) -> None:
+    Path(path).write_text(content, encoding='utf-8')
+
+
+def patch_regex(path: str, pattern: str, replacement: str, *, flags: int = 0) -> None:
     file = Path(path)
     text = file.read_text(encoding='utf-8')
-    if old not in text:
-        raise SystemExit(f'Expected text not found in {path}: {old[:160]!r}')
-    file.write_text(text.replace(old, new, 1), encoding='utf-8')
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=flags)
+    if count != 1:
+        raise SystemExit(f'Expected exactly one match in {path}: {pattern[:140]!r}; got {count}')
+    file.write_text(updated, encoding='utf-8')
 
 
-Path('lib/core/nfc/nfc_service.dart').write_text(r'''import 'nfc_scan_result.dart';
+# NFC service contract: patrol scanning remains read-only, checkpoint setup gains an
+# explicit rewrite/provision operation.
+write('lib/core/nfc/nfc_service.dart', r'''import 'nfc_scan_result.dart';
 
 class NfcScanCancelledException implements Exception {
   const NfcScanCancelledException();
@@ -21,20 +29,21 @@ class NfcScanCancelledException implements Exception {
 abstract interface class NfcService {
   Future<bool> isAvailable();
   Future<NfcScanResult> scan();
-  Future<String> writeCheckpointTag();
+  Future<String> writeCheckpointTag({String? checkpointId});
   Future<void> cancelScan();
 }
-''', encoding='utf-8')
+''')
 
-Path('lib/core/nfc/mock_nfc_service.dart').write_text(r'''import 'dart:math';
+
+write('lib/core/nfc/mock_nfc_service.dart', r'''import 'dart:math';
 
 import 'nfc_scan_result.dart';
 import 'nfc_service.dart';
 
 class MockNfcService implements NfcService {
   final List<String> _mockTags = const [
-    '04:A1:B2:C3:D4:E5:F6',
-    '04:B2:C3:D4:E5:F6:07',
+    'TEXT:CHECKPOINT-A',
+    'TEXT:CHECKPOINT-B',
     '04:C3:D4:E5:F6:07:18',
   ];
 
@@ -60,21 +69,36 @@ class MockNfcService implements NfcService {
       tagId: tagId,
       scannedAt: DateTime.now(),
       technology: 'NFC-A (mock)',
-      ndefPayload: 'rimbakawal://checkpoint/$tagId',
+      ndefPayload: tagId.startsWith('RK-') ? tagId : null,
     );
   }
 
   @override
-  Future<String> writeCheckpointTag() async {
+  Future<String> writeCheckpointTag({String? checkpointId}) async {
     final generation = ++_scanGeneration;
-    await Future<void>.delayed(const Duration(milliseconds: 600));
+    await Future<void>.delayed(const Duration(milliseconds: 700));
     if (generation != _scanGeneration) {
       throw const NfcScanCancelledException();
     }
-    final random = Random();
-    final id = 'RK-${List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join().toUpperCase()}';
+
+    final existing = checkpointId?.trim().toUpperCase();
+    final id = existing != null && existing.startsWith('RK-') && existing.length >= 12
+        ? existing
+        : _newCheckpointId();
     _lastWrittenCheckpointId = id;
+
+    // Simulate the read-back verification performed by the real service.
+    final readBack = await scan();
+    if (readBack.tagId.toUpperCase() != id) {
+      throw StateError('Pengesahan tag selepas ditulis gagal.');
+    }
     return id;
+  }
+
+  String _newCheckpointId() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    return 'RK-${bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join().toUpperCase()}';
   }
 
   @override
@@ -82,53 +106,43 @@ class MockNfcService implements NfcService {
     _scanGeneration++;
   }
 }
-''', encoding='utf-8')
+''')
 
-Path('lib/core/nfc/real_nfc_service.dart').write_text(r'''import 'dart:async';
-import 'dart:convert';
-import 'dart:math';
 
-import 'package:flutter/foundation.dart';
-import 'package:nfc_manager/ndef_record.dart';
-import 'package:nfc_manager/nfc_manager.dart';
-import 'package:nfc_manager/nfc_manager_android.dart';
-import 'package:nfc_manager/nfc_manager_ios.dart';
+real_path = Path('lib/core/nfc/real_nfc_service.dart')
+real = real_path.read_text(encoding='utf-8')
+if "import 'dart:math';" not in real:
+    real = real.replace("import 'dart:convert';\n", "import 'dart:convert';\nimport 'dart:math';\n")
 
-import 'nfc_scan_result.dart';
-import 'nfc_service.dart';
-
-class RealNfcService implements NfcService {
-  RealNfcService({NfcManager? manager})
-      : _manager = manager ?? NfcManager.instance;
-
-  static const _checkpointRecordType = 'dev.rimbakawal:checkpoint';
-
-  final NfcManager _manager;
-  Completer<Object?>? _activeOperation;
+# Remove a previous writer implementation if this script is re-run, then insert
+# the current rewrite + read-back verified implementation.
+real = re.sub(
+    r"\n  @override\n  Future<String> writeCheckpointTag\(.*?\n  void _beginOperation",
+    "\n  void _beginOperation",
+    real,
+    count=1,
+    flags=re.S,
+)
+writer_method = r'''
 
   @override
-  Future<bool> isAvailable() async {
-    if (kIsWeb) return false;
-    if (defaultTargetPlatform != TargetPlatform.android &&
-        defaultTargetPlatform != TargetPlatform.iOS) {
-      return false;
-    }
-    try {
-      final availability = await _manager.checkAvailability();
-      return availability == NfcAvailability.enabled;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  @override
-  Future<NfcScanResult> scan() async {
-    final completer = Completer<NfcScanResult>();
+  Future<String> writeCheckpointTag({String? checkpointId}) async {
+    final completer = Completer<String>();
     _beginOperation(completer);
     var discoveryHandled = false;
     Timer? timeoutTimer;
 
-    unawaited(completer.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
+    final requested = checkpointId?.trim().toUpperCase();
+    final id = requested != null &&
+            requested.startsWith('RK-') &&
+            requested.length >= 12
+        ? requested
+        : _newCheckpointId();
+    final message = _checkpointMessage(id);
+
+    unawaited(
+      completer.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+    );
 
     try {
       await _manager.startSession(
@@ -136,169 +150,58 @@ class RealNfcService implements NfcService {
           NfcPollingOption.iso14443,
           NfcPollingOption.iso15693,
         },
-        alertMessageIos: 'Dekatkan bahagian atas iPhone pada tag checkpoint.',
+        alertMessageIos:
+            'Dekatkan bahagian atas iPhone pada tag. Kandungan tag akan ditulis semula untuk RimbaKawal.',
         invalidateAfterFirstReadIos: true,
         onDiscovered: (tag) async {
           if (completer.isCompleted || discoveryHandled) return;
           discoveryHandled = true;
           try {
-            final result = await _normalizeTag(tag);
-            await _stopQuietly(alertMessage: 'Checkpoint berjaya diimbas.');
-            if (!completer.isCompleted) completer.complete(result);
+            await _writeAndVerifyCheckpointMessage(tag, message, id);
+            await _stopQuietly(
+              alertMessage: 'Tag RimbaKawal berjaya ditulis dan disahkan.',
+            );
+            if (!completer.isCompleted) completer.complete(id);
           } catch (error, stackTrace) {
-            await _stopQuietly(errorMessage: 'Tag NFC ini tidak dapat dibaca.');
-            if (!completer.isCompleted) completer.completeError(error, stackTrace);
+            await _stopQuietly(
+              errorMessage: 'Tag NFC tidak dapat ditulis atau disahkan.',
+            );
+            if (!completer.isCompleted) {
+              completer.completeError(error, stackTrace);
+            }
           }
         },
         onSessionErrorIos: (error) => _completeIosError(completer, error),
       );
 
       if (!completer.isCompleted) {
-        timeoutTimer = _timeout(completer, 'Tiada tag NFC dikesan dalam masa 30 saat.');
-      }
-      return await completer.future;
-    } finally {
-      timeoutTimer?.cancel();
-      _endOperation(completer);
-    }
-  }
-
-  @override
-  Future<String> writeCheckpointTag() async {
-    final completer = Completer<String>();
-    _beginOperation(completer);
-    var discoveryHandled = false;
-    Timer? timeoutTimer;
-    final checkpointId = _newCheckpointId();
-    final message = _checkpointMessage(checkpointId);
-
-    unawaited(completer.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
-
-    try {
-      await _manager.startSession(
-        pollingOptions: const {NfcPollingOption.iso14443},
-        alertMessageIos: 'Dekatkan bahagian atas iPhone pada tag untuk menetapkan checkpoint.',
-        invalidateAfterFirstReadIos: true,
-        onDiscovered: (tag) async {
-          if (completer.isCompleted || discoveryHandled) return;
-          discoveryHandled = true;
-          try {
-            await _writeMessage(tag, message);
-            await _stopQuietly(alertMessage: 'Tag checkpoint berjaya ditetapkan.');
-            if (!completer.isCompleted) completer.complete(checkpointId);
-          } catch (error, stackTrace) {
-            await _stopQuietly(errorMessage: 'Tag NFC tidak dapat ditulis.');
-            if (!completer.isCompleted) completer.completeError(error, stackTrace);
-          }
-        },
-        onSessionErrorIos: (error) => _completeIosError(completer, error),
-      );
-
-      if (!completer.isCompleted) {
-        timeoutTimer = _timeout(completer, 'Tiada tag NFC dikesan dalam masa 30 saat.');
-      }
-      return await completer.future;
-    } finally {
-      timeoutTimer?.cancel();
-      _endOperation(completer);
-    }
-  }
-
-  void _beginOperation(Completer<Object?> completer) {
-    final existing = _activeOperation;
-    if (existing != null && !existing.isCompleted) {
-      throw StateError('Operasi NFC sedang berjalan.');
-    }
-    _activeOperation = completer;
-  }
-
-  void _endOperation(Completer<Object?> completer) {
-    if (identical(_activeOperation, completer)) _activeOperation = null;
-  }
-
-  Timer _timeout<T>(Completer<T> completer, String message) {
-    return Timer(const Duration(seconds: 30), () async {
-      if (completer.isCompleted) return;
-      await _stopQuietly(errorMessage: 'Masa operasi NFC telah tamat.');
-      if (!completer.isCompleted) {
-        completer.completeError(TimeoutException(message));
-      }
-    });
-  }
-
-  @override
-  Future<void> cancelScan() async {
-    final completer = _activeOperation;
-    if (completer != null && !completer.isCompleted) {
-      completer.completeError(const NfcScanCancelledException());
-    }
-    await _stopQuietly();
-  }
-
-  Future<NfcScanResult> _normalizeTag(NfcTag tag) async {
-    final checkpointId = _checkpointIdFromMessage(_cachedMessage(tag));
-
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      final androidTag = NfcTagAndroid.from(tag);
-      if (androidTag == null) {
-        throw StateError('Android mengesan tag tetapi ID tidak dapat dibaca.');
-      }
-      return NfcScanResult(
-        tagId: checkpointId ?? _hex(androidTag.id),
-        scannedAt: DateTime.now(),
-        technology: androidTag.techList.isEmpty ? 'Android NFC' : androidTag.techList.join(', '),
-        ndefPayload: checkpointId == null ? null : 'rimbakawal://checkpoint/$checkpointId',
-      );
-    }
-
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      if (checkpointId != null) {
-        return NfcScanResult(
-          tagId: checkpointId,
-          scannedAt: DateTime.now(),
-          technology: 'iOS NDEF',
-          ndefPayload: 'rimbakawal://checkpoint/$checkpointId',
+        timeoutTimer = _timeout(
+          completer,
+          'Tiada tag NFC dikesan dalam masa 30 saat.',
         );
       }
-      final miFare = MiFareIos.from(tag);
-      if (miFare != null) {
-        return NfcScanResult(tagId: _hex(miFare.identifier), scannedAt: DateTime.now(), technology: 'iOS MiFare (${miFare.mifareFamily.name})');
-      }
-      final iso7816 = Iso7816Ios.from(tag);
-      if (iso7816 != null) {
-        return NfcScanResult(tagId: _hex(iso7816.identifier), scannedAt: DateTime.now(), technology: 'iOS ISO 7816');
-      }
-      final iso15693 = Iso15693Ios.from(tag);
-      if (iso15693 != null) {
-        return NfcScanResult(tagId: _hex(iso15693.identifier), scannedAt: DateTime.now(), technology: 'iOS ISO 15693');
-      }
-      throw StateError('iPhone mengesan tag tetapi ID tag tidak dapat dibaca.');
+      return await completer.future;
+    } finally {
+      timeoutTimer?.cancel();
+      _endOperation(completer);
     }
-
-    throw UnsupportedError('NFC sebenar hanya tersedia pada Android dan iOS.');
   }
+'''
+anchor = '\n  void _beginOperation(Completer<Object?> completer) {'
+if anchor not in real:
+    raise SystemExit('Could not locate NFC operation anchor in real_nfc_service.dart')
+real = real.replace(anchor, writer_method + anchor, 1)
 
-  NdefMessage? _cachedMessage(NfcTag tag) {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return NdefAndroid.from(tag)?.cachedNdefMessage;
-    }
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      return NdefIos.from(tag)?.cachedNdefMessage;
-    }
-    return null;
-  }
-
-  String? _checkpointIdFromMessage(NdefMessage? message) {
-    if (message == null) return null;
-    for (final record in message.records) {
-      if (record.typeNameFormat != TypeNameFormat.external) continue;
-      final type = utf8.decode(record.type, allowMalformed: true).toLowerCase();
-      if (type != _checkpointRecordType) continue;
-      final value = utf8.decode(record.payload, allowMalformed: true).trim().toUpperCase();
-      if (value.startsWith('RK-') && value.length >= 12) return value;
-    }
-    return null;
-  }
+# Remove prior helper block if present, then add the current helper block before
+# the iOS error handler. Existing scan normalization is deliberately preserved.
+real = re.sub(
+    r"\n  NdefMessage _checkpointMessage\(.*?(?=\n  void _completeIosError)",
+    '',
+    real,
+    count=1,
+    flags=re.S,
+)
+helpers = r'''
 
   NdefMessage _checkpointMessage(String checkpointId) {
     return NdefMessage(
@@ -313,18 +216,36 @@ class RealNfcService implements NfcService {
     );
   }
 
-  Future<void> _writeMessage(NfcTag tag, NdefMessage message) async {
+  Future<void> _writeAndVerifyCheckpointMessage(
+    NfcTag tag,
+    NdefMessage message,
+    String checkpointId,
+  ) async {
     if (defaultTargetPlatform == TargetPlatform.android) {
       final ndef = NdefAndroid.from(tag);
       if (ndef != null) {
-        if (!ndef.isWritable) throw StateError('Tag NFC ini dikunci atau read-only.');
-        if (message.byteLength > ndef.maxSize) throw StateError('Kapasiti tag NFC tidak mencukupi.');
+        if (!ndef.isWritable) {
+          throw StateError('Tag NFC ini dikunci atau read-only.');
+        }
+        if (message.byteLength > ndef.maxSize) {
+          throw StateError('Kapasiti tag NFC tidak mencukupi.');
+        }
         await ndef.writeNdefMessage(message);
+        final readBack = await ndef.getNdefMessage();
+        _verifyCheckpointReadBack(readBack, checkpointId);
         return;
       }
+
       final formatable = NdefFormatableAndroid.from(tag);
       if (formatable != null) {
         await formatable.format(message);
+        // Some Android stacks do not expose Ndef on the same Tag object until
+        // the next discovery after formatting. Formatting success is accepted.
+        final ndefAfterFormat = NdefAndroid.from(tag);
+        if (ndefAfterFormat != null) {
+          final readBack = await ndefAfterFormat.getNdefMessage();
+          _verifyCheckpointReadBack(readBack, checkpointId);
+        }
         return;
       }
       throw StateError('Tag ini tidak menyokong penulisan NDEF.');
@@ -332,13 +253,35 @@ class RealNfcService implements NfcService {
 
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       final ndef = NdefIos.from(tag);
-      if (ndef == null) throw StateError('Tag ini tidak menyokong penulisan NDEF pada iPhone.');
-      if (message.byteLength > ndef.capacity) throw StateError('Kapasiti tag NFC tidak mencukupi.');
+      if (ndef == null) {
+        throw StateError(
+          'Tag ini tidak menyokong penulisan NDEF pada iPhone.',
+        );
+      }
+      if (message.byteLength > ndef.capacity) {
+        throw StateError('Kapasiti tag NFC tidak mencukupi.');
+      }
       await ndef.writeNdef(message);
+      final readBack = await ndef.readNdef();
+      _verifyCheckpointReadBack(readBack, checkpointId);
       return;
     }
 
-    throw UnsupportedError('Penulisan NFC hanya tersedia pada Android dan iOS.');
+    throw UnsupportedError(
+      'Penulisan NFC hanya tersedia pada Android dan iOS.',
+    );
+  }
+
+  void _verifyCheckpointReadBack(
+    NdefMessage? message,
+    String checkpointId,
+  ) {
+    final readBack = _readOnlyIdFromMessage(message)?.toUpperCase();
+    if (readBack != checkpointId.toUpperCase()) {
+      throw StateError(
+        'Tag telah disentuh tetapi ID RimbaKawal gagal dibaca semula. Cuba tag sekali lagi.',
+      );
+    }
   }
 
   String _newCheckpointId() {
@@ -346,58 +289,138 @@ class RealNfcService implements NfcService {
     final bytes = List<int>.generate(16, (_) => random.nextInt(256));
     return 'RK-${bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join().toUpperCase()}';
   }
+'''
+error_anchor = '\n  void _completeIosError<T>('
+if error_anchor not in real:
+    raise SystemExit('Could not locate iOS error anchor in real_nfc_service.dart')
+real = real.replace(error_anchor, helpers + error_anchor, 1)
+real_path.write_text(real, encoding='utf-8')
 
-  void _completeIosError<T>(Completer<T> completer, NfcReaderSessionErrorIos error) {
-    if (completer.isCompleted) return;
-    final message = error.toString();
-    final normalized = message.toLowerCase().replaceAll(' ', '');
-    if (normalized.contains('usercancel')) {
-      completer.completeError(const NfcScanCancelledException());
-    } else {
-      completer.completeError(StateError(message));
+
+screen_path = 'lib/features/admin/department_maintenance_screen.dart'
+# Replace the current read-only scan handler with explicit rewrite + read-only
+# helper actions. Patrol scan behavior elsewhere is not touched.
+patch_regex(
+    screen_path,
+    r"  Future<void> _scanTag\(\) async \{.*?\n  Future<void> _save\(\) async \{",
+    r'''  Future<void> _rewriteTag() async {
+    if (_scanning) return;
+    setState(() {
+      _scanning = true;
+      _error = null;
+    });
+    try {
+      final available = await widget.nfcService.isAvailable();
+      if (!available) {
+        throw StateError('NFC tidak tersedia pada peranti ini.');
+      }
+      final current = _uidController.text.trim().toUpperCase();
+      final checkpointId = await widget.nfcService.writeCheckpointTag(
+        checkpointId: current.startsWith('RK-') ? current : null,
+      );
+      if (!mounted) return;
+      setState(() => _uidController.text = checkpointId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Tag berjaya ditulis semula, dibaca semula dan disahkan untuk checkpoint ini.',
+          ),
+        ),
+      );
+    } on NfcScanCancelledException {
+      // User closed the native NFC prompt.
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
+    } finally {
+      if (mounted) setState(() => _scanning = false);
     }
   }
 
-  Future<void> _stopQuietly({String? alertMessage, String? errorMessage}) async {
+  Future<void> _readTagOnly() async {
+    if (_scanning) return;
+    setState(() {
+      _scanning = true;
+      _error = null;
+    });
     try {
-      if (defaultTargetPlatform == TargetPlatform.iOS) {
-        await _manager.stopSession(alertMessageIos: alertMessage, errorMessageIos: errorMessage);
-      } else {
-        await _manager.stopSession();
+      final available = await widget.nfcService.isAvailable();
+      if (!available) {
+        throw StateError('NFC tidak tersedia pada peranti ini.');
       }
-    } catch (_) {}
+      final scan = await widget.nfcService.scan();
+      if (!mounted) return;
+      setState(() => _uidController.text = scan.tagId.toUpperCase());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('ID / UID dibaca: ${scan.tagId}'),
+        ),
+      );
+    } on NfcScanCancelledException {
+      // User closed the native NFC prompt.
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
   }
 
-  String _hex(Uint8List bytes) {
-    return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0').toUpperCase()).join(':');
-  }
-}
-''', encoding='utf-8')
-
-replace_once(
-    'lib/features/admin/department_maintenance_screen.dart',
-    "  Future<void> _scanUid() async {\n    if (_scanning) return;\n    setState(() {\n      _scanning = true;\n      _error = null;\n    });\n    try {\n      final result = await showNfcScanPrompt(\n        context: context,\n        nfcService: widget.nfcService,\n        title: 'Imbas UID Tag NFC',\n      );\n      if (result == null) return;\n      if (!mounted) return;\n      _uidController.text = result.tagId.toUpperCase();\n    } catch (error) {\n      if (!mounted) return;\n      setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));\n    } finally {\n      if (mounted) setState(() => _scanning = false);\n    }\n  }",
-    "  Future<void> _scanTag() async {\n    if (_scanning) return;\n    setState(() {\n      _scanning = true;\n      _error = null;\n    });\n    try {\n      final available = await widget.nfcService.isAvailable();\n      if (!available) {\n        throw StateError('NFC tidak tersedia pada peranti ini.');\n      }\n      final checkpointId = await widget.nfcService.writeCheckpointTag();\n      if (!mounted) return;\n      setState(() => _uidController.text = checkpointId);\n      ScaffoldMessenger.of(context).showSnackBar(\n        const SnackBar(content: Text('Tag NFC berjaya ditetapkan untuk checkpoint ini.')),\n      );\n    } on NfcScanCancelledException {\n      // User closed the native NFC prompt.\n    } catch (error) {\n      if (!mounted) return;\n      setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));\n    } finally {\n      if (mounted) setState(() => _scanning = false);\n    }\n  }",
-)
-replace_once(
-    'lib/features/admin/department_maintenance_screen.dart',
-    "                        labelText: 'UID tag NFC',\n                        hintText: 'Imbas tag atau masukkan UID',",
-    "                        labelText: 'ID tag NFC',\n                        hintText: 'Tekan Scan Tag untuk menetapkan tag',",
-)
-replace_once(
-    'lib/features/admin/department_maintenance_screen.dart',
-    "                      onPressed: _scanning ? null : _scanUid,\n                      icon: const Icon(Icons.nfc_rounded),\n                      label: Text(_scanning ? 'Mengimbas…' : 'Imbas'),",
-    "                      onPressed: _scanning ? null : _scanTag,\n                      icon: const Icon(Icons.nfc_rounded),\n                      label: Text(_scanning ? 'Menulis…' : 'Scan Tag'),",
-)
-replace_once(
-    'lib/features/admin/department_maintenance_screen.dart',
-    "                    'Versi web menggunakan simulasi NFC untuk ujian konfigurasi.',",
-    "                    'Versi web menggunakan simulasi penulisan NFC untuk ujian konfigurasi.',",
-)
-replace_once(
-    'lib/features/admin/department_maintenance_screen.dart',
-    "      setState(() => _error = 'Lengkapkan nama, UID tag NFC dan susunan checkpoint.');",
-    "      setState(() => _error = 'Lengkapkan nama, Scan Tag dan susunan checkpoint.');",
+  Future<void> _save() async {''',
+    flags=re.S,
 )
 
-print('Checkpoint NFC writer patch applied.')
+screen = Path(screen_path).read_text(encoding='utf-8')
+screen = screen.replace(
+    "'Lengkapkan nama, Scan Tag dan susunan checkpoint.'",
+    "'Lengkapkan nama, daftar tag NFC dan susunan checkpoint.'",
+)
+Path(screen_path).write_text(screen, encoding='utf-8')
+
+# Replace the NFC field + old read-only button/explanation, keeping the existing
+# mock-mode notice and the rest of the dialog intact.
+patch_regex(
+    screen_path,
+    r"              TextField\(\n                controller: _uidController,.*?              if \(widget\.mockMode\) \.\.\.\[",
+    r'''              TextField(
+                controller: _uidController,
+                readOnly: true,
+                decoration: const InputDecoration(
+                  labelText: 'ID checkpoint RimbaKawal / UID',
+                  hintText: 'Tulis semula tag untuk menjana ID checkpoint',
+                  prefixIcon: Icon(Icons.nfc_rounded),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _scanning ? null : _rewriteTag,
+                  icon: const Icon(Icons.edit_rounded),
+                  label: Text(
+                    _scanning ? 'PROSES NFC…' : 'TULIS SEMULA & DAFTAR TAG',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _scanning ? null : _readTagOnly,
+                  icon: const Icon(Icons.nfc_rounded),
+                  label: const Text('BACA ID / UID SAHAJA'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'RimbaKawal akan overwrite kandungan NDEF tag dengan ID checkpoint sendiri dan membaca semula ID itu untuk pengesahan. UID cip fizikal NTAG213/215/216 ditetapkan kilang dan tidak boleh ditulis semula. Gunakan Baca ID / UID Sahaja untuk tag lama atau diagnosis tanpa mengubah tag.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+              if (widget.mockMode) ...[''',
+    flags=re.S,
+)
+
+print('Checkpoint NFC writer v2 patch applied.')
