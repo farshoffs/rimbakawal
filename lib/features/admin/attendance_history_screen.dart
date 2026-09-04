@@ -22,17 +22,24 @@ class AttendanceHistoryScreen extends StatefulWidget {
 class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   late DateTime _date;
   late Future<AttendanceAdminData> _future;
+  late Future<List<DepartmentRecord>> _departmentsFuture;
+  int _departmentFilterId = -1;
 
   @override
   void initState() {
     super.initState();
     final initial = widget.initialDate ?? DateTime.now();
     _date = DateTime(initial.year, initial.month, initial.day);
+    _departmentsFuture = widget.api.getAdminDepartments();
     _future = widget.api.getAdminAttendance(_date);
   }
 
-  void _refresh() =>
-      setState(() => _future = widget.api.getAdminAttendance(_date));
+  void _refresh() => setState(
+    () => _future = widget.api.getAdminAttendance(
+      _date,
+      departmentId: _departmentFilterId == -1 ? null : _departmentFilterId,
+    ),
+  );
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -253,6 +260,43 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 30),
               children: [
+                FutureBuilder<List<DepartmentRecord>>(
+                  future: _departmentsFuture,
+                  builder: (context, departmentSnapshot) {
+                    final departments =
+                        (departmentSnapshot.data ?? const <DepartmentRecord>[])
+                            .where((department) => department.active)
+                            .toList();
+                    return DropdownButtonFormField<int>(
+                      initialValue: _departmentFilterId,
+                      decoration: const InputDecoration(
+                        labelText: 'Filter Sekolah',
+                        prefixIcon: Icon(Icons.school_rounded),
+                      ),
+                      items: [
+                        const DropdownMenuItem<int>(
+                          value: -1,
+                          child: Text('Semua Sekolah'),
+                        ),
+                        ...departments.map(
+                          (department) => DropdownMenuItem<int>(
+                            value: department.id,
+                            child: Text(department.name),
+                          ),
+                        ),
+                      ],
+                      onChanged:
+                          departmentSnapshot.connectionState ==
+                              ConnectionState.waiting
+                          ? null
+                          : (value) {
+                              _departmentFilterId = value ?? -1;
+                              _refresh();
+                            },
+                    );
+                  },
+                ),
+                const SizedBox(height: 18),
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
