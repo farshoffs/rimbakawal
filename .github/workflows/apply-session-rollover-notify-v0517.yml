@@ -1,0 +1,151 @@
+name: Apply Session Rollover Notify v0.5.17
+
+on:
+  push:
+    branches:
+      - session-rollover-notify-v0517
+    paths:
+      - scripts/apply_session_rollover_notify_v0517.py
+      - .github/workflows/apply-session-rollover-notify-v0517.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out validation branch
+        uses: actions/checkout@v4
+        with:
+          ref: session-rollover-notify-v0517
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply rollover patch
+        run: python3 scripts/apply_session_rollover_notify_v0517.py
+
+      - name: Format changed Dart files
+        run: |
+          dart format \
+            lib/core/api/api_service.dart \
+            lib/core/notifications/notification_service.dart \
+            lib/core/notifications/notification_alert_gate.dart \
+            lib/features/dashboard/dashboard_screen.dart
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter
+        run: flutter analyze
+
+      - name: Run UI regression tests
+        run: flutter test test/core/ui/rimba_dialog_actions_test.dart
+
+      - name: Check Worker syntax
+        run: |
+          node --check worker/push.js
+          node --check worker/sos.js
+          node --check worker/index.js
+
+      - name: Double-audit rollover logic
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def text(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          pubspec = text('pubspec.yaml')
+          push = text('worker/push.js')
+          sos = text('worker/sos.js')
+          index = text('worker/index.js')
+          api = text('lib/core/api/api_service.dart')
+          notify = text('lib/core/notifications/notification_service.dart')
+          gate = text('lib/core/notifications/notification_alert_gate.dart')
+          dash = text('lib/features/dashboard/dashboard_screen.dart')
+
+          assert 'version: 0.5.17+33' in pubspec
+
+          # Exact-device dispatch, ordered warning -> session-start and collapse
+          # keys to prevent duplicate-looking session notifications.
+          assert 'export async function sendPushToDevice' in push
+          assert "'apns-collapse-id'" in push
+          assert 'tag: collapseKey' in push
+          boundary = push[push.index('if (minuteIntoSession === 0)'):]
+          assert boundary.index('session_logout_warning') < boundary.index("kind: 'session_start'")
+          assert 'await new Promise((resolve) => setTimeout(resolve, 250))' in boundary
+          assert "roles: ['patrol', 'supervisor', 'management']" in boundary
+
+          assert "/api/push/session-rollover" in sos
+          assert 'async function prepareSessionRollover' in sos
+          assert 'sendPushToDevice(env, user.id, deviceToken' in sos
+          rollover = sos[sos.index('async function prepareSessionRollover'):sos.index('async function getSosAlerts')]
+          assert rollover.index("kind: 'session_logout_warning'") < rollover.index("kind: 'session_start'")
+          assert "ready = Number(started.sent || 0) >= 1" in rollover
+          assert 'warningSent' in rollover and 'sessionSent' in rollover
+          assert 'session_start_minutes' in sos
+
+          # Protected APIs still reject a stale patrol session, but the row is
+          # not deleted until explicit logout so the special handshake can run.
+          marker = "createdAtMs < window.startMs"
+          pos = index.index(marker)
+          window = index[pos:pos + 600]
+          assert 'Sesi Rondaan baharu telah bermula' in window
+          assert 'DELETE FROM sessions' not in window
+
+          assert 'Future<Map<String, dynamic>> prepareSessionRollover' in api
+          assert "_uri('/api/push/session-rollover')" in api
+
+          assert 'String? get currentToken => _token' in notify
+          assert 'void detachUserKeepPushToken()' in notify
+          detach = notify[notify.index('void detachUserKeepPushToken()'):notify.index('Future<void> unregisterCurrentDevice()')]
+          assert '_user = null' in detach
+          assert 'deleteToken' not in detach
+          assert '_token = null' not in detach
+
+          assert 'sessionRolloverInProgress' in gate
+          assert "alert.kind == 'session_logout_warning'" in gate
+          assert "alert.kind == 'session_start'" in gate
+
+          force = dash[dash.index('Future<void> _forceReloginForNewSession'):dash.index('Future<void> _bindNotifications')]
+          assert 'prepareSessionRollover(token)' in force
+          assert 'for (var attempt = 0; attempt < 3; attempt++)' in force
+          assert 'handshake == null' in force
+          assert force.index('prepareSessionRollover(token)') < force.index('await widget.api.logout()')
+          assert 'detachUserKeepPushToken()' in force
+          assert 'unregisterCurrentDevice' not in force
+          assert '_lastSessionKey = newSessionKey' in force
+
+          # Manual logout MUST still unregister/delete the device push token.
+          manual = dash[dash.index('Future<void> _logout() async'):]
+          assert 'unregisterCurrentDevice()' in manual
+
+          print('Double audit passed: notification warning, session-start, device-specific FCM acknowledgement, then auto logout.')
+          PY
+
+      - name: Commit validated production sources
+        run: |
+          if git diff --quiet; then
+            echo "No generated source changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            pubspec.yaml \
+            worker/push.js \
+            worker/sos.js \
+            worker/index.js \
+            lib/core/api/api_service.dart \
+            lib/core/notifications/notification_service.dart \
+            lib/core/notifications/notification_alert_gate.dart \
+            lib/features/dashboard/dashboard_screen.dart
+          git commit -m "Sequence session notifications before automatic logout"
+          git push origin HEAD:session-rollover-notify-v0517
