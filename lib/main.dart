@@ -49,6 +49,14 @@ class RimbaKawalApp extends StatelessWidget {
           error: const Color(0xFFFF5D66),
         );
 
+    const actionTextStyle = TextStyle(
+      fontSize: 16,
+      fontWeight: FontWeight.w800,
+    );
+    final actionShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(18),
+    );
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'RimbaKawal',
@@ -104,13 +112,17 @@ class RimbaKawalApp extends StatelessWidget {
             backgroundColor: rimbaRed,
             foregroundColor: Colors.white,
             minimumSize: const Size.fromHeight(56),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
+            shape: actionShape,
+            textStyle: actionTextStyle,
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(56),
+            shape: actionShape,
+            side: const BorderSide(color: Color(0xFF707587)),
+            textStyle: actionTextStyle,
           ),
         ),
         chipTheme: ChipThemeData(
