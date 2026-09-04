@@ -84,7 +84,7 @@ class RimbaDialogActions extends StatelessWidget {
         }
 
         return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(child: _secondary()),
             const SizedBox(width: gap),
