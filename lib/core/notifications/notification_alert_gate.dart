@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../api/app_user.dart';
@@ -21,7 +23,9 @@ class NotificationAlertGate extends StatefulWidget {
 }
 
 class _NotificationAlertGateState extends State<NotificationAlertGate> {
+  final AudioPlayer _reminderPlayer = AudioPlayer();
   StreamSubscription<PushAlert>? _subscription;
+  Timer? _reminderStopTimer;
   bool _showing = false;
 
   @override
@@ -35,7 +39,38 @@ class _NotificationAlertGateState extends State<NotificationAlertGate> {
   @override
   void dispose() {
     _subscription?.cancel();
+    _reminderStopTimer?.cancel();
+    unawaited(_reminderPlayer.stop());
+    unawaited(_reminderPlayer.dispose());
     super.dispose();
+  }
+
+  bool _isRondaanReminder(String kind) => switch (kind) {
+    'session_start' || 'patrol_not_started' || 'session_ending' => true,
+    _ => false,
+  };
+
+  Future<void> _startReminderAlarm() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    _reminderStopTimer?.cancel();
+    try {
+      await _reminderPlayer.stop();
+      await _reminderPlayer.setReleaseMode(ReleaseMode.loop);
+      await _reminderPlayer.setVolume(1);
+      await _reminderPlayer.play(AssetSource('audio/patrol_alarm.wav'));
+      _reminderStopTimer = Timer(const Duration(seconds: 30), () {
+        unawaited(_reminderPlayer.stop());
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _stopReminderAlarm() async {
+    _reminderStopTimer?.cancel();
+    _reminderStopTimer = null;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      await _reminderPlayer.stop();
+    } catch (_) {}
   }
 
   Future<void> _onAlert(PushAlert alert) async {
@@ -56,6 +91,13 @@ class _NotificationAlertGateState extends State<NotificationAlertGate> {
     }
 
     _showing = true;
+    final reminderAlarm = _isRondaanReminder(alert.kind);
+    if (reminderAlarm) await _startReminderAlarm();
+    if (!mounted) {
+      if (reminderAlarm) await _stopReminderAlarm();
+      _showing = false;
+      return;
+    }
     try {
       await showDialog<void>(
         context: context,
@@ -93,6 +135,7 @@ class _NotificationAlertGateState extends State<NotificationAlertGate> {
         ),
       );
     } finally {
+      if (reminderAlarm) await _stopReminderAlarm();
       _showing = false;
     }
   }

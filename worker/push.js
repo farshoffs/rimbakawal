@@ -73,6 +73,10 @@ export async function sendPushToUser(env, userId, payload) {
   return sendToRows(env, result.results ?? [], payload);
 }
 
+function isRondaanReminderKind(kind) {
+  return ['session_start', 'patrol_not_started', 'session_ending'].includes(String(kind || ''));
+}
+
 async function sendToRows(env, rows, payload) {
   if (rows.length === 0) return { sent: 0, configured: true };
   let accessToken;
@@ -83,6 +87,7 @@ async function sendToRows(env, rows, payload) {
     return { sent: 0, configured: true };
   }
   let sent = 0;
+  const rondaanReminder = isRondaanReminderKind(payload.kind);
   for (const row of rows) {
     try {
       const response = await fetch(
@@ -105,11 +110,15 @@ async function sendToRows(env, rows, payload) {
               }),
               android: {
                 priority: 'HIGH',
-                notification: { sound: 'default' },
+                notification: rondaanReminder
+                  ? { sound: 'rondaan_reminder', channel_id: 'rondaan_reminder_v1' }
+                  : { sound: 'default' },
               },
               apns: {
                 headers: { 'apns-priority': '10' },
-                payload: { aps: { sound: 'default' } },
+                payload: {
+                  aps: { sound: rondaanReminder ? 'rondaan_reminder.wav' : 'default' },
+                },
               },
               webpush: {
                 headers: { Urgency: 'high' },
