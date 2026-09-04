@@ -1,0 +1,224 @@
+name: Apply Rondaan Reminder Sound
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-rondaan-reminder-sound.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Patch reminder notification implementation
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          # Foreground Android reminder alarm: use the existing SOS tone, looped
+          # for at most 30 seconds, and stop immediately when the user closes
+          # the reminder dialog. iOS foreground sound is presented by APNs.
+          path = Path('lib/core/notifications/notification_alert_gate.dart')
+          text = path.read_text()
+          old = "import 'package:flutter/material.dart';\n"
+          new = "import 'package:audioplayers/audioplayers.dart';\nimport 'package:flutter/foundation.dart';\nimport 'package:flutter/material.dart';\n"
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = "  StreamSubscription<PushAlert>? _subscription;\n  bool _showing = false;\n"
+          new = "  final AudioPlayer _reminderPlayer = AudioPlayer();\n  StreamSubscription<PushAlert>? _subscription;\n  Timer? _reminderStopTimer;\n  bool _showing = false;\n"
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = "  void dispose() {\n    _subscription?.cancel();\n    super.dispose();\n  }\n\n  Future<void> _onAlert(PushAlert alert) async {"
+          new = "  void dispose() {\n    _subscription?.cancel();\n    _reminderStopTimer?.cancel();\n    unawaited(_reminderPlayer.stop());\n    unawaited(_reminderPlayer.dispose());\n    super.dispose();\n  }\n\n  bool _isRondaanReminder(String kind) => switch (kind) {\n    'session_start' || 'patrol_not_started' || 'session_ending' => true,\n    _ => false,\n  };\n\n  Future<void> _startReminderAlarm() async {\n    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;\n    _reminderStopTimer?.cancel();\n    try {\n      await _reminderPlayer.stop();\n      await _reminderPlayer.setReleaseMode(ReleaseMode.loop);\n      await _reminderPlayer.setVolume(1);\n      await _reminderPlayer.play(AssetSource('audio/patrol_alarm.wav'));\n      _reminderStopTimer = Timer(const Duration(seconds: 30), () {\n        unawaited(_reminderPlayer.stop());\n      });\n    } catch (_) {}\n  }\n\n  Future<void> _stopReminderAlarm() async {\n    _reminderStopTimer?.cancel();\n    _reminderStopTimer = null;\n    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;\n    try {\n      await _reminderPlayer.stop();\n    } catch (_) {}\n  }\n\n  Future<void> _onAlert(PushAlert alert) async {"
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = "    _showing = true;\n    try {\n      await showDialog<void>("
+          new = "    _showing = true;\n    final reminderAlarm = _isRondaanReminder(alert.kind);\n    if (reminderAlarm) await _startReminderAlarm();\n    try {\n      await showDialog<void>("
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = "    } finally {\n      _showing = false;\n    }\n  }\n\n  bool _usesLongPrimaryLabel"
+          new = "    } finally {\n      if (reminderAlarm) await _stopReminderAlarm();\n      _showing = false;\n    }\n  }\n\n  bool _usesLongPrimaryLabel"
+          assert old in text
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+
+          # Route the three patrol reminder kinds to the dedicated native sound.
+          path = Path('worker/push.js')
+          text = path.read_text()
+          old = "async function sendToRows(env, rows, payload) {\n  if (rows.length === 0) return { sent: 0, configured: true };"
+          new = "function isRondaanReminderKind(kind) {\n  return ['session_start', 'patrol_not_started', 'session_ending'].includes(String(kind || ''));\n}\n\nasync function sendToRows(env, rows, payload) {\n  if (rows.length === 0) return { sent: 0, configured: true };"
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = "  let sent = 0;\n  for (const row of rows) {\n    try {\n      const response = await fetch("
+          new = "  let sent = 0;\n  const rondaanReminder = isRondaanReminderKind(payload.kind);\n  for (const row of rows) {\n    try {\n      const response = await fetch("
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = "              android: {\n                priority: 'HIGH',\n                notification: { sound: 'default' },\n              },\n              apns: {\n                headers: { 'apns-priority': '10' },\n                payload: { aps: { sound: 'default' } },\n              },"
+          new = "              android: {\n                priority: 'HIGH',\n                notification: rondaanReminder\n                  ? { sound: 'rondaan_reminder', channel_id: 'rondaan_reminder_v1' }\n                  : { sound: 'default' },\n              },\n              apns: {\n                headers: { 'apns-priority': '10' },\n                payload: {\n                  aps: { sound: rondaanReminder ? 'rondaan_reminder.wav' : 'default' },\n                },\n              },"
+          assert old in text
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+
+          # Production mobile projects are generated from scratch, so add the
+          # custom native files and generate a 30-second Android WAV during prep.
+          path = Path('scripts/prepare-mobile.sh')
+          text = path.read_text()
+          old = "cp -R \"$PROJECT_ROOT/assets\" \"$MOBILE_BUILD_DIR/assets\"\ncp \"$PROJECT_ROOT/pubspec.yaml\" \"$MOBILE_BUILD_DIR/pubspec.yaml\"\n"
+          new = "cp -R \"$PROJECT_ROOT/assets\" \"$MOBILE_BUILD_DIR/assets\"\ncp \"$PROJECT_ROOT/pubspec.yaml\" \"$MOBILE_BUILD_DIR/pubspec.yaml\"\n\nmkdir -p \"$MOBILE_BUILD_DIR/android/app/src/main/kotlin/dev/rimbakawal/rimbakawal\"\nmkdir -p \"$MOBILE_BUILD_DIR/android/app/src/main/res/raw\"\ncp \"$PROJECT_ROOT/mobile/android/MainActivity.kt\" \\\n  \"$MOBILE_BUILD_DIR/android/app/src/main/kotlin/dev/rimbakawal/rimbakawal/MainActivity.kt\"\ncp \"$PROJECT_ROOT/mobile/ios/AppDelegate.swift\" \\\n  \"$MOBILE_BUILD_DIR/ios/Runner/AppDelegate.swift\"\n\npython3 - \"$PROJECT_ROOT/assets/audio/patrol_alarm.wav\" \\\n  \"$MOBILE_BUILD_DIR/android/app/src/main/res/raw/rondaan_reminder.wav\" <<'PYWAV'\nimport math\nimport sys\nimport wave\n\nsource, output = sys.argv[1:3]\nwith wave.open(source, 'rb') as reader:\n    params = reader.getparams()\n    frames = reader.readframes(reader.getnframes())\n    source_frames = reader.getnframes()\n\nif source_frames <= 0 or not frames:\n    raise SystemExit('patrol_alarm.wav contains no audio frames')\n\ntarget_frames = params.framerate * 30\nrepeats = math.ceil(target_frames / source_frames)\nbytes_per_frame = params.nchannels * params.sampwidth\npayload = (frames * repeats)[: target_frames * bytes_per_frame]\n\nwith wave.open(output, 'wb') as writer:\n    writer.setparams(params)\n    writer.writeframes(payload)\nPYWAV\n"
+          assert old in text
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+          cat > mobile/android/MainActivity.kt <<'KOTLIN'
+          package dev.rimbakawal.rimbakawal
+
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.content.ContentResolver
+          import android.content.Context
+          import android.media.AudioAttributes
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import io.flutter.embedding.android.FlutterActivity
+
+          class MainActivity : FlutterActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  createRondaanReminderChannel()
+              }
+
+              private fun createRondaanReminderChannel() {
+                  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+                  val soundUri = Uri.parse(
+                      "${ContentResolver.SCHEME_ANDROID_RESOURCE}://$packageName/${R.raw.rondaan_reminder}"
+                  )
+                  val attributes = AudioAttributes.Builder()
+                      .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                      .build()
+                  val channel = NotificationChannel(
+                      "rondaan_reminder_v1",
+                      "Peringatan Rondaan",
+                      NotificationManager.IMPORTANCE_HIGH,
+                  ).apply {
+                      description = "Peringatan sesi rondaan dan rondaan yang belum selesai"
+                      enableVibration(true)
+                      vibrationPattern = longArrayOf(0, 700, 350, 700, 350, 700)
+                      setSound(soundUri, attributes)
+                  }
+                  val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  manager.createNotificationChannel(channel)
+              }
+          }
+          KOTLIN
+
+          cat > mobile/ios/AppDelegate.swift <<'SWIFT'
+          import Flutter
+          import UIKit
+
+          @main
+          @objc class AppDelegate: FlutterAppDelegate {
+            override func application(
+              _ application: UIApplication,
+              didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+            ) -> Bool {
+              prepareRondaanReminderSound()
+              GeneratedPluginRegistrant.register(with: self)
+              return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+            }
+
+            private func prepareRondaanReminderSound() {
+              let assetKey = FlutterDartProject.lookupKey(forAsset: "assets/audio/patrol_alarm.wav")
+              guard let sourcePath = Bundle.main.path(forResource: assetKey, ofType: nil),
+                    let source = try? Data(contentsOf: URL(fileURLWithPath: sourcePath)),
+                    source.count > 44 else {
+                return
+              }
+
+              // patrol_alarm.wav is 16-bit PCM. Keep the original 44-byte WAV
+              // header and repeat its PCM body to 29 seconds for iOS notification
+              // sounds (Apple requires custom notification sounds under 30 sec).
+              let byteRate = Int(readUInt32LE(source, offset: 28))
+              guard byteRate > 0 else { return }
+              let pcm = source.subdata(in: 44..<source.count)
+              guard !pcm.isEmpty else { return }
+
+              let targetBytes = byteRate * 29
+              var output = Data(source.prefix(44))
+              output.reserveCapacity(44 + targetBytes)
+              while output.count < 44 + targetBytes {
+                let remaining = 44 + targetBytes - output.count
+                output.append(pcm.prefix(min(remaining, pcm.count)))
+              }
+              writeUInt32LE(UInt32(36 + targetBytes), into: &output, offset: 4)
+              writeUInt32LE(UInt32(targetBytes), into: &output, offset: 40)
+
+              let manager = FileManager.default
+              guard let library = manager.urls(for: .libraryDirectory, in: .userDomainMask).first else {
+                return
+              }
+              let sounds = library.appendingPathComponent("Sounds", isDirectory: true)
+              try? manager.createDirectory(at: sounds, withIntermediateDirectories: true)
+              let destination = sounds.appendingPathComponent("rondaan_reminder.wav")
+              try? output.write(to: destination, options: .atomic)
+            }
+
+            private func readUInt32LE(_ data: Data, offset: Int) -> UInt32 {
+              guard offset + 3 < data.count else { return 0 }
+              return UInt32(data[offset])
+                | (UInt32(data[offset + 1]) << 8)
+                | (UInt32(data[offset + 2]) << 16)
+                | (UInt32(data[offset + 3]) << 24)
+            }
+
+            private func writeUInt32LE(_ value: UInt32, into data: inout Data, offset: Int) {
+              guard offset + 3 < data.count else { return }
+              data[offset] = UInt8(value & 0xff)
+              data[offset + 1] = UInt8((value >> 8) & 0xff)
+              data[offset + 2] = UInt8((value >> 16) & 0xff)
+              data[offset + 3] = UInt8((value >> 24) & 0xff)
+            }
+          }
+          SWIFT
+
+      - name: Format and validate source
+        shell: bash
+        run: |
+          dart format lib/core/notifications/notification_alert_gate.dart
+          node --check worker/push.js
+          bash -n scripts/prepare-mobile.sh
+          flutter pub get
+          flutter analyze
+
+      - name: Commit implementation and remove one-time workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-rondaan-reminder-sound.yml
+          git add lib/core/notifications/notification_alert_gate.dart worker/push.js scripts/prepare-mobile.sh mobile/android/MainActivity.kt mobile/ios/AppDelegate.swift
+          git commit -m "[skip ci] Add 30-second rondaan reminder alarm"
+          git push
