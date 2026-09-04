@@ -1,0 +1,2 @@
+Fresh production mobile rebuild requested 2026-09-04T11:17:00+08:00
+Source app version: 0.5.15+31
