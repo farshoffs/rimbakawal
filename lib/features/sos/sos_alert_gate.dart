@@ -181,23 +181,29 @@ class _SosAlertGateState extends State<SosAlertGate>
                             ),
                             const SizedBox(height: 22),
                             if (widget.user.canMonitor) ...[
-                              FilledButton.icon(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFF00B894),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFF00B894),
+                                  ),
+                                  onPressed: () => unawaited(
+                                    _resolveFromAlert(dialogContext, id),
+                                  ),
+                                  icon: const Icon(Icons.task_alt_rounded),
+                                  label: const Text('TANDAKAN SELESAI'),
                                 ),
-                                onPressed: () => unawaited(
-                                  _resolveFromAlert(dialogContext, id),
-                                ),
-                                icon: const Icon(Icons.task_alt_rounded),
-                                label: const Text('TANDAKAN SELESAI'),
                               ),
                               const SizedBox(height: 8),
                             ],
-                            OutlinedButton.icon(
-                              onPressed: () =>
-                                  Navigator.of(dialogContext).pop(false),
-                              icon: const Icon(Icons.visibility_rounded),
-                              label: const Text('TUTUP AMARAN'),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () =>
+                                    Navigator.of(dialogContext).pop(false),
+                                icon: const Icon(Icons.visibility_off_rounded),
+                                label: const Text('TUTUP AMARAN'),
+                              ),
                             ),
                           ],
                         ),
