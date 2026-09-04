@@ -43,6 +43,18 @@ class _NotificationAlertGateState extends State<NotificationAlertGate> {
     // SOS has a dedicated full-screen alarm/polling experience.
     if (alert.kind == 'sos') return;
 
+    if (NotificationService.instance.sessionRolloverInProgress &&
+        (alert.kind == 'session_logout_warning' ||
+            alert.kind == 'session_start')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${alert.title}\n${alert.body}'),
+          duration: const Duration(milliseconds: 1100),
+        ),
+      );
+      return;
+    }
+
     // These actions already provide immediate on-screen feedback in their
     // own workflow. Keep FCM/system notifications, but do not interrupt the
     // user with an extra foreground popup.

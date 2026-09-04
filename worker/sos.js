@@ -1,5 +1,5 @@
 import offlineWorker from './offline.js';
-import { dispatchSessionStartNotifications, pushConfigured, registerPushDevice, sendPushToUser, unregisterPushDevice } from './push.js';
+import { dispatchSessionStartNotifications, pushConfigured, registerPushDevice, sendPushToDevice, sendPushToUser, unregisterPushDevice } from './push.js';
 
 const SESSION_COOKIE = 'rk_session';
 
@@ -25,6 +25,11 @@ export default {
         const auth = await requireUser(request, env);
         if (auth.response) return auth.response;
         return json({ configured: pushConfigured(env) });
+      }
+      if (url.pathname === '/api/push/session-rollover' && request.method === 'POST') {
+        const auth = await requireUser(request, env);
+        if (auth.response) return auth.response;
+        return prepareSessionRollover(env, auth.user, await readJson(request));
       }
       if (url.pathname === '/api/sos/alerts' && request.method === 'GET') {
         return getSosAlerts(request, env);
@@ -57,6 +62,99 @@ export default {
     ctx.waitUntil(dispatchSessionStartNotifications(env, new Date(event.scheduledTime)));
   },
 };
+
+async function prepareSessionRollover(env, user, body) {
+  const deviceToken = String(body?.token ?? '').trim();
+  if (!deviceToken) {
+    return json({ ok: false, ready: false, error: 'Token push peranti tidak tersedia.' }, 409);
+  }
+  if (!user.department_id) {
+    return json({ ok: false, ready: false, error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+  }
+
+  const interval = Math.max(15, Math.min(1440, Number(user.session_interval_minutes || 120)));
+  const startMinutes = Math.max(0, Math.min(1439, Number(user.session_start_minutes ?? 420)));
+  const window = rolloverSessionWindow(new Date(), interval, startMinutes);
+  const collapseSuffix = `${user.department_id}-${window.dayKey}-${window.index}`;
+  const data = {
+    sessionIndex: window.index + 1,
+    sessionDate: window.dayKey,
+    departmentId: user.department_id,
+    rollover: '1',
+  };
+
+  const warning = await sendPushToDevice(env, user.id, deviceToken, {
+    title: 'Sesi Baharu • Peranti Akan Log Keluar',
+    body: `Sesi Rondaan ${window.index + 1} telah bermula. RimbaKawal akan log keluar selepas pemberitahuan sesi baharu berjaya dihantar.`,
+    kind: 'session_logout_warning',
+    data: { ...data, sequence: '1' },
+    collapseKey: `rk-session-logout-${collapseSuffix}`,
+  });
+  if (Number(warning.sent || 0) < 1) {
+    return json({
+      ok: false,
+      ready: false,
+      warningSent: Number(warning.sent || 0),
+      sessionSent: 0,
+      registered: warning.registered !== false,
+      error: 'Pemberitahuan log keluar belum berjaya dihantar ke peranti ini.',
+    }, 503);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 300));
+
+  const started = await sendPushToDevice(env, user.id, deviceToken, {
+    title: `Sesi Rondaan ${window.index + 1} Bermula`,
+    body: `${user.department_name || user.jabatan || 'Jabatan'} • ${rolloverHm(window.start)}–${rolloverHm(window.end)}. Sila log masuk semula dan mulakan rondaan.`,
+    kind: 'session_start',
+    data: { ...data, sequence: '2' },
+    collapseKey: `rk-session-start-${collapseSuffix}`,
+  });
+
+  const ready = Number(started.sent || 0) >= 1;
+  return json({
+    ok: ready,
+    ready,
+    warningSent: Number(warning.sent || 0),
+    sessionSent: Number(started.sent || 0),
+    registered: started.registered !== false,
+    sessionIndex: window.index + 1,
+    sessionDate: window.dayKey,
+    error: ready ? null : 'Pemberitahuan sesi baharu belum berjaya dihantar ke peranti ini.',
+  }, ready ? 200 : 503);
+}
+
+function rolloverSessionWindow(date, intervalMinutes, startMinutes) {
+  const offsetMs = 8 * 60 * 60 * 1000;
+  const malaysiaMs = date.getTime() + offsetMs;
+  const local = new Date(malaysiaMs);
+  const minuteOfDay = local.getUTCHours() * 60 + local.getUTCMinutes();
+  let anchorMalaysiaMs = Date.UTC(
+    local.getUTCFullYear(),
+    local.getUTCMonth(),
+    local.getUTCDate(),
+  ) + startMinutes * 60000;
+  if (minuteOfDay < startMinutes) anchorMalaysiaMs -= 86400000;
+  const elapsedMinutes = Math.floor((malaysiaMs - anchorMalaysiaMs) / 60000);
+  const index = Math.max(0, Math.floor(elapsedMinutes / intervalMinutes));
+  const startMalaysiaMs = anchorMalaysiaMs + index * intervalMinutes * 60000;
+  const endMalaysiaMs = startMalaysiaMs + intervalMinutes * 60000;
+  const startLocal = new Date(startMalaysiaMs);
+  const yyyy = startLocal.getUTCFullYear();
+  const mm = String(startLocal.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(startLocal.getUTCDate()).padStart(2, '0');
+  return {
+    index,
+    dayKey: `${yyyy}-${mm}-${dd}`,
+    start: new Date(startMalaysiaMs - offsetMs),
+    end: new Date(endMalaysiaMs - offsetMs),
+  };
+}
+
+function rolloverHm(date) {
+  const local = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  return `${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}`;
+}
 
 async function getSosAlerts(request, env) {
   const auth = await requireUser(request, env);
@@ -238,7 +336,9 @@ async function requireUser(request, env) {
   const user = await env.DB.prepare(
     `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
-            COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes
+            COALESCE(d.name, u.jabatan) AS department_name,
+            COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
+            COALESCE(d.session_start_minutes, 420) AS session_start_minutes
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      LEFT JOIN departments d ON d.id = u.department_id

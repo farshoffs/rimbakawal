@@ -789,7 +789,6 @@ async function requireUser(request, env) {
   const createdAtMs = Date.parse(rawCreatedAt.endsWith('Z') ? rawCreatedAt : `${rawCreatedAt}Z`);
 
   if (!Number.isFinite(createdAtMs) || createdAtMs < window.startMs) {
-    await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(tokenHash).run();
     return {
       response: json(
         { error: 'Sesi Rondaan baharu telah bermula. Sila log masuk semula.' },

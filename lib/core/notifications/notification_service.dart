@@ -111,9 +111,12 @@ class NotificationService {
   PushAlert? _pendingOpenedAlert;
   bool _ready = false;
   bool _initializing = false;
+  bool _sessionRolloverInProgress = false;
 
   bool get configured => PushConfig.isConfigured;
   bool get ready => _ready;
+  bool get sessionRolloverInProgress => _sessionRolloverInProgress;
+  String? get currentToken => _token;
 
   Future<void> init() async {
     if (_ready || _initializing || !PushConfig.isConfigured) {
@@ -257,6 +260,19 @@ class NotificationService {
     }
     _pendingOpenedAlert = null;
     scheduleMicrotask(() => _openedAlerts.add(pending));
+  }
+
+  void beginSessionRollover() {
+    _sessionRolloverInProgress = true;
+  }
+
+  void finishSessionRollover() {
+    _sessionRolloverInProgress = false;
+  }
+
+  void detachUserKeepPushToken() {
+    _user = null;
+    _pendingOpenedAlert = null;
   }
 
   Future<void> unregisterCurrentDevice() async {

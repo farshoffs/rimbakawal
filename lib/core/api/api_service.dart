@@ -731,6 +731,16 @@ class ApiService {
     );
   }
 
+  Future<Map<String, dynamic>> prepareSessionRollover(String pushToken) async {
+    return _decode(
+      await http.post(
+        _uri('/api/push/session-rollover'),
+        headers: _headers(jsonBody: true),
+        body: jsonEncode({'token': pushToken}),
+      ),
+    );
+  }
+
   Future<OfflineBootstrap> getOfflineBootstrap() async {
     final data = _decode(
       await http.get(_uri('/api/offline/bootstrap'), headers: _headers()),

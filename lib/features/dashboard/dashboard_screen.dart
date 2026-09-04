@@ -147,31 +147,81 @@ class _DashboardScreenState extends State<DashboardScreen>
       _lastSessionKey = current;
       return;
     }
-    if (current == _lastSessionKey) return;
-    _lastSessionKey = current;
-    unawaited(_forceReloginForNewSession());
+    if (current == _lastSessionKey || _forcingRelogin) return;
+    unawaited(_forceReloginForNewSession(current));
   }
 
-  Future<void> _forceReloginForNewSession() async {
+  Future<void> _forceReloginForNewSession(String newSessionKey) async {
     if (_forcingRelogin || !mounted) return;
     _forcingRelogin = true;
+    final notifications = NotificationService.instance;
+    notifications.beginSessionRollover();
     try {
-      try {
-        await NotificationService.instance.unregisterCurrentDevice();
-      } catch (_) {}
+      var token = notifications.currentToken;
+      if (token == null || token.isEmpty) {
+        await notifications.bindUser(_user);
+        token = notifications.currentToken;
+      }
+
+      if (token == null || token.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Auto logout ditangguhkan: push notification belum aktif pada peranti ini.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      Map<String, dynamic>? handshake;
+      for (var attempt = 0; attempt < 3; attempt++) {
+        try {
+          final result = await widget.api.prepareSessionRollover(token);
+          if (result['ready'] == true) {
+            handshake = result;
+            break;
+          }
+        } catch (_) {}
+        if (attempt < 2) {
+          await Future<void>.delayed(const Duration(milliseconds: 1200));
+        }
+      }
+
+      if (handshake == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Pemberitahuan sesi baharu belum berjaya dihantar. RimbaKawal akan cuba semula sebelum auto logout.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Only mark the boundary as handled after both notifications were
+      // accepted for this exact device.
+      _lastSessionKey = newSessionKey;
+      await Future<void>.delayed(const Duration(milliseconds: 1400));
       await widget.api.logout();
+      notifications.detachUserKeepPushToken();
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute<void>(
           builder: (_) => LoginScreen(
             nfcService: widget.nfcService,
             mockMode: widget.mockMode,
-            notice: 'Sesi Rondaan baharu telah bermula. Sila log masuk semula untuk meneruskan.',
+            notice: 'Sesi Rondaan baharu telah bermula. Pemberitahuan telah dihantar dan peranti dilog keluar. Sila log masuk semula untuk meneruskan.',
           ),
         ),
         (_) => false,
       );
     } finally {
+      notifications.finishSessionRollover();
       _forcingRelogin = false;
     }
   }

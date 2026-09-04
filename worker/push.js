@@ -73,8 +73,23 @@ export async function sendPushToUser(env, userId, payload) {
   return sendToRows(env, result.results ?? [], payload);
 }
 
+export async function sendPushToDevice(env, userId, token, payload) {
+  const deviceToken = String(token ?? '').trim();
+  if (!pushConfigured(env) || !userId || !deviceToken) {
+    return { sent: 0, configured: pushConfigured(env) };
+  }
+  const row = await env.DB.prepare(
+    `SELECT id, token, user_id FROM push_devices
+     WHERE user_id = ? AND token = ? AND active = 1
+     LIMIT 1`,
+  ).bind(userId, deviceToken).first();
+  if (!row) return { sent: 0, configured: true, registered: false };
+  return { ...(await sendToRows(env, [row], payload)), registered: true };
+}
+
 async function sendToRows(env, rows, payload) {
   if (rows.length === 0) return { sent: 0, configured: true };
+  const collapseKey = String(payload.collapseKey ?? '').trim().slice(0, 64);
   let accessToken;
   try {
     accessToken = await firebaseAccessToken(env);
@@ -105,10 +120,16 @@ async function sendToRows(env, rows, payload) {
               }),
               android: {
                 priority: 'HIGH',
-                notification: { sound: 'default' },
+                notification: {
+                  sound: 'default',
+                  ...(collapseKey ? { tag: collapseKey } : {}),
+                },
               },
               apns: {
-                headers: { 'apns-priority': '10' },
+                headers: {
+                  'apns-priority': '10',
+                  ...(collapseKey ? { 'apns-collapse-id': collapseKey } : {}),
+                },
                 payload: { aps: { sound: 'default' } },
               },
               webpush: {
@@ -116,6 +137,7 @@ async function sendToRows(env, rows, payload) {
                 notification: {
                   icon: '/icons/Icon-192.png',
                   badge: '/icons/Icon-192.png',
+                  ...(collapseKey ? { tag: collapseKey } : {}),
                 },
               },
             },
@@ -161,13 +183,26 @@ export async function dispatchSessionStartNotifications(env, scheduledAt = new D
 
     if (minuteIntoSession === 0) {
       await autoCloseExpiredLivePatrols(env, department.id, window.start);
+      const collapseSuffix = `${department.id}-${window.dayKey}-${window.index}`;
+      if (await claimDispatch(env, `session-logout:${collapseSuffix}`, 'session_logout_warning')) {
+        await sendPushToDepartment(env, department.id, {
+          title: 'Sesi Baharu • Log Masuk Semula',
+          body: `Sesi Rondaan ${window.index + 1} telah bermula. Peranti ini akan log keluar dan anda perlu log masuk semula.`,
+          kind: 'session_logout_warning',
+          data: commonData,
+          roles: ['patrol', 'supervisor', 'management'],
+          collapseKey: `rk-session-logout-${collapseSuffix}`,
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
       if (await claimDispatch(env, `session:${department.id}:${window.dayKey}:${window.index}`, 'session_start')) {
         await sendPushToDepartment(env, department.id, {
           title: `Sesi Rondaan ${window.index + 1} Bermula`,
-          body: `${department.name} • ${hmFromDate(window.start)}–${hmFromDate(window.end)}. Sila mulakan rondaan dan lengkapkan checkpoint.`,
+          body: `${department.name} • ${hmFromDate(window.start)}–${hmFromDate(window.end)}. Sila log masuk semula dan mulakan rondaan.`,
           kind: 'session_start',
           data: commonData,
-          roles: ['patrol', 'supervisor'],
+          roles: ['patrol', 'supervisor', 'management'],
+          collapseKey: `rk-session-start-${collapseSuffix}`,
         });
       }
       const previous = sessionWindowAt(new Date(window.start.getTime() - 60000), interval, startMinutes);
