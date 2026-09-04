@@ -30,7 +30,9 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
   }
 
   Future<_UserAdminData> _load() async {
-    final users = await widget.api.getAdminUsers();
+    final users = (await widget.api.getAdminUsers())
+        .where((user) => !user.isManagement)
+        .toList();
     final departments = await widget.api.getAdminDepartments();
     return _UserAdminData(users: users, departments: departments);
   }
@@ -79,7 +81,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Senarai Pengguna'),
+        title: const Text('Senarai PK'),
         actions: [
           IconButton(
             tooltip: 'Muat semula',
@@ -142,7 +144,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    '${filteredUsers.length} pengguna',
+                    '${filteredUsers.length} PK',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -150,9 +152,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
               const SizedBox(height: 4),
               Expanded(
                 child: filteredUsers.isEmpty
-                    ? const Center(
-                        child: Text('Tiada pengguna untuk Sekolah ini.'),
-                      )
+                    ? const Center(child: Text('Tiada PK untuk Sekolah ini.'))
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                         itemCount: filteredUsers.length,
@@ -200,7 +200,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
               ? () => _addUser(snapshot.data!.departments)
               : null,
           icon: const Icon(Icons.person_add_alt_1_rounded),
-          label: const Text('Tambah Pengguna'),
+          label: const Text('Tambah PK'),
         ),
       ),
     );
