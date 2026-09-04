@@ -466,7 +466,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
             .firstOrNull;
         if (matched == null) {
           throw const ApiException(
-            'Tag ini bukan checkpoint aktif untuk Jabatan anda.',
+            'Tag ini bukan checkpoint aktif untuk Sekolah anda.',
           );
         }
         checkpoint = matched;
@@ -492,14 +492,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
       if (completedIds.contains(checkpoint.id)) {
         throw ApiException('${checkpoint.name} sudah direkod dalam sesi ini.');
       }
-      if (bootstrap.routeOrderEnforced) {
-        final next = bootstrap.checkpoints
-            .where((item) => !completedIds.contains(item.id))
-            .firstOrNull;
-        if (next != null && next.id != checkpoint.id) {
-          throw ApiException('Checkpoint seterusnya ialah ${next.name}.');
-        }
-      }
+      // Checkpoint boleh direkod dalam apa-apa susunan; perlindungan duplikasi kekal aktif.
 
       final occurredAt = DateTime.now();
       await _store.queueEvent(

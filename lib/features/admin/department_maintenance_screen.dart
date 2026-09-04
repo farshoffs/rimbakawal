@@ -75,11 +75,11 @@ class _DepartmentMaintenanceScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Jabatan dan Checkpoint')),
+      appBar: AppBar(title: const Text('Sekolah dan Checkpoint')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _editDepartment,
         icon: const Icon(Icons.add_business_rounded),
-        label: const Text('Tambah Jabatan'),
+        label: const Text('Tambah Sekolah'),
       ),
       body: FutureBuilder<List<DepartmentRecord>>(
         future: _future,
@@ -100,7 +100,7 @@ class _DepartmentMaintenanceScreenState
           }
           final departments = snapshot.data ?? const <DepartmentRecord>[];
           if (departments.isEmpty) {
-            return const Center(child: Text('Belum ada Jabatan.'));
+            return const Center(child: Text('Belum ada Sekolah.'));
           }
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
@@ -132,7 +132,7 @@ class _DepartmentMaintenanceScreenState
                     '${department.active ? '' : ' • TIDAK AKTIF'}',
                   ),
                   trailing: IconButton(
-                    tooltip: 'Tetapan Jabatan',
+                    tooltip: 'Tetapan Sekolah',
                     onPressed: () => _editDepartment(department),
                     icon: const Icon(Icons.settings_rounded),
                   ),
@@ -458,7 +458,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     final interval = int.tryParse(_intervalController.text.trim());
     final startMinutes = _startTime.hour * 60 + _startTime.minute;
     if (name.length < 2 || interval == null) {
-      setState(() => _error = 'Masukkan nama Jabatan dan kadar sesi yang sah.');
+      setState(() => _error = 'Masukkan nama Sekolah dan kadar sesi yang sah.');
       return;
     }
     if (_latitude == null || _longitude == null) {
@@ -514,12 +514,51 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     }
   }
 
+  Future<void> _deleteSchool() async {
+    final existing = widget.department;
+    if (existing == null || _saving) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Padam Sekolah?'),
+        content: Text(
+          'Padam ${existing.name} daripada tetapan RimbaKawal? Rekod sejarah akan dikekalkan. Pengguna aktif perlu dipindahkan atau dinyahaktifkan terlebih dahulu.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Padam Sekolah'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.api.deleteDepartment(existing.id);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final center = LatLng(_latitude ?? 5.69582, _longitude ?? 100.53720);
     return AlertDialog(
       title: Text(
-        widget.department == null ? 'Tambah Jabatan' : 'Tetapan Jabatan',
+        widget.department == null ? 'Tambah Sekolah' : 'Tetapan Sekolah',
       ),
       content: SizedBox(
         width: 620,
@@ -531,7 +570,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
               TextField(
                 controller: _nameController,
                 decoration: const InputDecoration(
-                  labelText: 'Nama Jabatan',
+                  labelText: 'Nama Sekolah',
                   prefixIcon: Icon(Icons.account_tree_rounded),
                 ),
               ),
@@ -821,7 +860,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                 const SizedBox(height: 8),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Jabatan aktif'),
+                  title: const Text('Sekolah aktif'),
                   value: _active,
                   onChanged: (value) => setState(() => _active = value),
                 ),
@@ -844,6 +883,17 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.department != null) ...[
+                OutlinedButton.icon(
+                  onPressed: _saving ? null : _deleteSchool,
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  label: const Text('Padam Sekolah'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               FilledButton(
                 onPressed: _saving ? null : _save,
                 child: Text(_saving ? 'Menyimpan…' : 'Simpan'),
@@ -1014,6 +1064,45 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
     }
   }
 
+  Future<void> _deleteCheckpoint() async {
+    final existing = widget.checkpoint;
+    if (existing == null || _saving || _scanning) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Padam Checkpoint?'),
+        content: Text(
+          'Padam ${existing.name} daripada sekolah ini? Rekod rondaan lama akan dikekalkan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Padam Checkpoint'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.api.deleteCheckpoint(existing.id);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -1106,6 +1195,17 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.checkpoint != null) ...[
+                OutlinedButton.icon(
+                  onPressed: _saving || _scanning ? null : _deleteCheckpoint,
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  label: const Text('Padam Checkpoint'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               FilledButton(
                 onPressed: _saving || _scanning ? null : _save,
                 child: Text(_saving ? 'Menyimpan…' : 'Simpan'),

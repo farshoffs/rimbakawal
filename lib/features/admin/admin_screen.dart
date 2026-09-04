@@ -66,14 +66,14 @@ class AdminScreen extends StatelessWidget {
           _AdminMenuCard(
             icon: Icons.people_alt_rounded,
             title: 'Senarai Pengguna',
-            subtitle: 'Tambah pengguna dan tetapkan Jabatan.',
+            subtitle: 'Tambah pengguna dan tetapkan Sekolah.',
             onTap: () => _open(context, UserMaintenanceScreen(api: api)),
           ),
           const SizedBox(height: 10),
           _AdminMenuCard(
             icon: Icons.account_tree_rounded,
-            title: 'Jabatan dan Checkpoint',
-            subtitle: 'Selenggara Jabatan, kadar sesi dan checkpoint dalam satu skrin.',
+            title: 'Sekolah dan Checkpoint',
+            subtitle: 'Selenggara Sekolah, kadar sesi dan checkpoint dalam satu skrin.',
             onTap: () => _open(
               context,
               DepartmentMaintenanceScreen(

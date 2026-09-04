@@ -76,13 +76,13 @@ async function createUser(request, env) {
     return json({ error: 'Jawatan mesti Patrol, Supervisor atau Management.' }, 400);
   }
   if (!Number.isInteger(departmentId) || departmentId <= 0) {
-    return json({ error: 'Pilih Jabatan pengguna.' }, 400);
+    return json({ error: 'Pilih Sekolah pengguna.' }, 400);
   }
 
   const department = await env.DB.prepare(
     'SELECT id, name, session_interval_minutes FROM departments WHERE id = ? AND active = 1 LIMIT 1',
   ).bind(departmentId).first();
-  if (!department) return json({ error: 'Jabatan tidak ditemui atau tidak aktif.' }, 404);
+  if (!department) return json({ error: 'Sekolah tidak ditemui atau tidak aktif.' }, 404);
 
   const duplicate = await env.DB.prepare(
     'SELECT id FROM users WHERE no_kad_pengenalan = ? LIMIT 1',
@@ -102,7 +102,7 @@ async function startPatrolSession(request, env) {
   const auth = await requireUser(request, env);
   if (auth.response) return auth.response;
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const now = new Date();
@@ -185,14 +185,14 @@ async function smartPatrolConfig(request, env) {
   const auth = await requireUser(request, env);
   if (auth.response) return auth.response;
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const department = await env.DB.prepare(
     `SELECT id, name, session_interval_minutes, session_start_minutes, route_order_enforced
      FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
   ).bind(auth.user.department_id).first();
-  if (!department) return json({ error: 'Jabatan tidak aktif.' }, 409);
+  if (!department) return json({ error: 'Sekolah tidak aktif.' }, 409);
 
   const result = await env.DB.prepare(
     `SELECT id, name, position, job_instruction
@@ -222,7 +222,7 @@ async function smartPatrolConfig(request, env) {
       name: department.name,
       sessionIntervalMinutes: interval,
       sessionStartMinutes: Number(department.session_start_minutes ?? 420),
-      routeOrderEnforced: Boolean(department.route_order_enforced),
+      routeOrderEnforced: false,
     },
     sessionIndex,
     sessionStartAt: new Date(sessionStart).toISOString(),
@@ -247,7 +247,7 @@ async function createSmartScan(request, env) {
   const auth = await requireUser(request, env);
   if (auth.response) return auth.response;
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const body = await readJson(request);
@@ -260,7 +260,7 @@ async function createSmartScan(request, env) {
     `SELECT id, session_interval_minutes, session_start_minutes, route_order_enforced
      FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
   ).bind(auth.user.department_id).first();
-  if (!department) return json({ error: 'Jabatan tidak aktif.' }, 409);
+  if (!department) return json({ error: 'Sekolah tidak aktif.' }, 409);
 
   const checkpoint = await env.DB.prepare(
     `SELECT id, name, position, job_instruction
@@ -269,7 +269,7 @@ async function createSmartScan(request, env) {
      LIMIT 1`,
   ).bind(auth.user.department_id, nfcUid).first();
   if (!checkpoint) {
-    return json({ error: 'Tag ini tidak berdaftar sebagai checkpoint untuk Jabatan anda.' }, 403);
+    return json({ error: 'Tag ini tidak berdaftar sebagai checkpoint untuk Sekolah anda.' }, 403);
   }
 
   const now = new Date();
@@ -297,19 +297,7 @@ async function createSmartScan(request, env) {
     return json({ error: `${checkpoint.name} telah direkodkan dalam sesi ini.` }, 409);
   }
 
-  if (Boolean(department.route_order_enforced)) {
-    const expected = activeCheckpoints.find((row) => !scannedIds.has(Number(row.id)));
-    if (expected && Number(expected.id) !== Number(checkpoint.id)) {
-      return json({
-        error: `Susunan rondaan aktif. Checkpoint seterusnya ialah ${expected.name}.`,
-        expectedCheckpoint: {
-          id: Number(expected.id),
-          name: expected.name,
-          position: Number(expected.position),
-        },
-      }, 409);
-    }
-  }
+  // Flexible route: any remaining active checkpoint may be scanned next.
 
   const result = await env.DB.prepare(
     `INSERT INTO nfc_scans (user_id, nfc_uid, scanned_at, checkpoint_id, session_index)
@@ -318,8 +306,7 @@ async function createSmartScan(request, env) {
 
   const next = activeCheckpoints.find((row) =>
     Number(row.id) !== Number(checkpoint.id) &&
-    !scannedIds.has(Number(row.id)) &&
-    Number(row.position) > Number(checkpoint.position)
+    !scannedIds.has(Number(row.id))
   ) ?? null;
 
   return json({
@@ -369,7 +356,7 @@ async function createIncident(request, env) {
     const checkpoint = await env.DB.prepare(
       'SELECT id FROM checkpoints WHERE id = ? AND department_id = ? LIMIT 1',
     ).bind(checkpointId, auth.user.department_id).first();
-    if (!checkpoint) return json({ error: 'Checkpoint tidak sah untuk Jabatan anda.' }, 400);
+    if (!checkpoint) return json({ error: 'Checkpoint tidak sah untuk Sekolah anda.' }, 400);
   }
 
   const createdAt = new Date().toISOString();
@@ -649,7 +636,7 @@ async function commandCenter(request, env) {
 
 
 
-  // Liputan rondaan dikira sekali bagi setiap Jabatan/sesi, bukan sekali bagi
+  // Liputan rondaan dikira sekali bagi setiap Sekolah/sesi, bukan sekali bagi
   // setiap pengawal. Hanya sesi yang SUDAH TAMAT pada tarikh kalendar Malaysia
   // hari semasa dikira sebagai due/terlepas. Sesi akan datang tidak disentuh.
   completeCount = 0;
@@ -813,7 +800,7 @@ async function adminReport(request, env, url) {
     return json({ error: 'Julat tarikh laporan tidak sah.' }, 400);
   }
   if (departmentId != null && (!Number.isInteger(departmentId) || departmentId <= 0)) {
-    return json({ error: 'Jabatan laporan tidak sah.' }, 400);
+    return json({ error: 'Sekolah laporan tidak sah.' }, 400);
   }
 
   const fromBounds = malaysiaDayBounds(from);
@@ -827,7 +814,7 @@ async function adminReport(request, env, url) {
     department = await env.DB.prepare(
       'SELECT id, name FROM departments WHERE id = ? LIMIT 1',
     ).bind(departmentId).first();
-    if (!department) return json({ error: 'Jabatan tidak ditemui.' }, 404);
+    if (!department) return json({ error: 'Sekolah tidak ditemui.' }, 404);
   }
   const scanSql = `SELECT s.id, s.scanned_at, s.nfc_uid, s.session_index,
               u.nama, u.no_kad_pengenalan, u.jawatan,

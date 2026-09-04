@@ -44,14 +44,14 @@ async function offlineBootstrap(request, env) {
   const auth = await requireUser(request, env);
   if (auth.response) return auth.response;
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const department = await env.DB.prepare(
     `SELECT id, name, session_interval_minutes, session_start_minutes, route_order_enforced
      FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
   ).bind(auth.user.department_id).first();
-  if (!department) return json({ error: 'Jabatan tidak aktif.' }, 409);
+  if (!department) return json({ error: 'Sekolah tidak aktif.' }, 409);
 
   const checkpointsResult = await env.DB.prepare(
     `SELECT id, name, nfc_uid, position, job_instruction
@@ -68,7 +68,7 @@ async function offlineBootstrap(request, env) {
       name: department.name,
       sessionIntervalMinutes: Number(department.session_interval_minutes || 120),
       sessionStartMinutes: Number(department.session_start_minutes ?? 420),
-      routeOrderEnforced: Boolean(department.route_order_enforced),
+      routeOrderEnforced: false,
     },
     checkpoints: (checkpointsResult.results ?? []).map((row) => ({
       id: Number(row.id),
@@ -188,7 +188,7 @@ async function offlineSync(request, env) {
 }
 
 async function syncScan(env, user, clientEventId, occurredAt, payload) {
-  if (!user.department_id) throw new SyncError('Jabatan pengguna tidak ditetapkan.');
+  if (!user.department_id) throw new SyncError('Sekolah pengguna tidak ditetapkan.');
   const uid = normalizeUid(payload.nfcUid);
   let clientSessionId = cleanId(payload.clientSessionId);
   if (!uid || uid.length > 128) throw new SyncError('UID NFC tidak sah.');
@@ -210,7 +210,7 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
     `SELECT id, session_interval_minutes, session_start_minutes, route_order_enforced
      FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
   ).bind(user.department_id).first();
-  if (!department) throw new SyncError('Jabatan tidak aktif.');
+  if (!department) throw new SyncError('Sekolah tidak aktif.');
 
   const checkpoint = await env.DB.prepare(
     `SELECT id, name, position
@@ -218,7 +218,7 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
      WHERE department_id = ? AND UPPER(nfc_uid) = UPPER(?) AND active = 1
      LIMIT 1`,
   ).bind(user.department_id, uid).first();
-  if (!checkpoint) throw new SyncError('NFC tidak berdaftar untuk Jabatan ini.');
+  if (!checkpoint) throw new SyncError('NFC tidak berdaftar untuk Sekolah ini.');
 
   const interval = Number(department.session_interval_minutes || 120);
   const window = sessionWindow(occurredAt, interval, department.session_start_minutes);
@@ -242,17 +242,7 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
     throw new SyncError(`${checkpoint.name} sudah direkod dalam sesi ini.`);
   }
 
-  if (Boolean(department.route_order_enforced)) {
-    const routeResult = await env.DB.prepare(
-      `SELECT id, name FROM checkpoints
-       WHERE department_id = ? AND active = 1
-       ORDER BY position ASC, id ASC`,
-    ).bind(user.department_id).all();
-    const next = (routeResult.results ?? []).find((row) => !scannedIds.has(Number(row.id)));
-    if (next && Number(next.id) !== Number(checkpoint.id)) {
-      throw new SyncError(`Checkpoint seterusnya ialah ${next.name}.`);
-    }
-  }
+  // Flexible route: accept any unscanned active checkpoint in this session.
 
   const insert = await env.DB.prepare(
     `INSERT INTO nfc_scans

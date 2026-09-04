@@ -1097,6 +1097,15 @@ class ApiService {
     );
   }
 
+  Future<void> deleteDepartment(int departmentId) async {
+    _decode(
+      await http.delete(
+        _uri('/api/admin/departments/$departmentId'),
+        headers: _headers(),
+      ),
+    );
+  }
+
   Future<List<CheckpointRecord>> getAdminCheckpoints(int departmentId) async {
     final data = _decode(
       await http.get(
@@ -1153,6 +1162,15 @@ class ApiService {
     );
     return CheckpointRecord.fromJson(
       Map<String, dynamic>.from(data['checkpoint'] as Map),
+    );
+  }
+
+  Future<void> deleteCheckpoint(int checkpointId) async {
+    _decode(
+      await http.delete(
+        _uri('/api/admin/checkpoints/$checkpointId'),
+        headers: _headers(),
+      ),
     );
   }
 

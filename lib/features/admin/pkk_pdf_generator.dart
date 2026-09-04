@@ -1104,10 +1104,10 @@ class PkkPdfGenerator {
         signatureBlock('Disahkan Oleh:', const [
           '(Tandatangan & Cap Rasmi)',
           'Tarikh:',
-          'Institusi Pendidikan: Ketua/Timbalan Ketua Jabatan/Pengarah/Timbalan Pengarah JPN atau Institusi/Pegawai Pendidikan Daerah (PPD)/Timbalan PPD/Ketua Sektor',
+          'Institusi Pendidikan: Ketua/Timbalan Ketua Sekolah/Pengarah/Timbalan Pengarah JPN atau Institusi/Pegawai Pendidikan Daerah (PPD)/Timbalan PPD/Ketua Sektor',
           'Sekolah: Pengetua/Guru Besar',
           'Pusat Kokurikulum: Ketua Unit Pusat Kokurikulum',
-          'KIP/KRG: Ketua/Timbalan Ketua Jabatan/Pengarah/Timbalan Pengarah JPN atau Institusi/PPD/Timbalan PPD/Ketua Sektor',
+          'KIP/KRG: Ketua/Timbalan Ketua Sekolah/Pengarah/Timbalan Pengarah JPN atau Institusi/PPD/Timbalan PPD/Ketua Sektor',
         ]),
       ],
     );

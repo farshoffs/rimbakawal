@@ -61,7 +61,7 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
       });
     }
     if (selected == null) {
-      throw const ApiException('Tiada Jabatan tersedia untuk dipaparkan.');
+      throw const ApiException('Tiada Sekolah tersedia untuk dipaparkan.');
     }
     return widget.api.getHistory(_selectedDate, departmentId: selected);
   }
@@ -185,7 +185,7 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                         DropdownButtonFormField<int>(
                           initialValue: _selectedDepartmentId,
                           decoration: const InputDecoration(
-                            labelText: 'Jabatan',
+                            labelText: 'Sekolah',
                             prefixIcon: Icon(Icons.apartment_rounded),
                           ),
                           items: _departments

@@ -146,7 +146,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             value: _user.noPk.isEmpty ? '-' : _user.noPk,
           ),
           _InfoTile(label: 'Jawatan', value: _user.jawatanPaparan),
-          _InfoTile(label: 'Jabatan', value: _user.jabatan),
+          _InfoTile(label: 'Sekolah', value: _user.jabatan),
           _InfoTile(
             label: 'Kadar Sesi Rondaan',
             value: 'Setiap ${_user.sessionIntervalMinutes} minit',

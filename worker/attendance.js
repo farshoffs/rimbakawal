@@ -34,6 +34,9 @@ export default {
       if (departmentMatch && request.method === 'PUT') {
         return updateDepartment(request, env, Number(departmentMatch[1]));
       }
+      if (departmentMatch && request.method === 'DELETE') {
+        return deleteDepartment(request, env, Number(departmentMatch[1]));
+      }
 
       if (url.pathname === '/api/admin/command-center' && request.method === 'GET') {
         return commandCenterWithAttendance(request, env, ctx);
@@ -59,11 +62,11 @@ async function attendanceStatus(request, env) {
   const auth = await requireUser(request, env);
   if (auth.response) return auth.response;
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const department = await getDepartment(env, auth.user.department_id);
-  if (!department) return json({ error: 'Jabatan tidak ditemui.' }, 404);
+  if (!department) return json({ error: 'Sekolah tidak ditemui.' }, 404);
   const workDate = malaysiaDateKey(new Date());
   const result = await env.DB.prepare(
     `SELECT id, punch_type, punched_at, latitude, longitude, accuracy_m, distance_m,
@@ -89,7 +92,7 @@ async function punchAttendance(request, env) {
   const auth = await requireUser(request, env);
   if (auth.response) return auth.response;
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
   if (!auth.user.profile_picture) {
     return json({
@@ -98,12 +101,12 @@ async function punchAttendance(request, env) {
   }
 
   const department = await getDepartment(env, auth.user.department_id);
-  if (!department) return json({ error: 'Jabatan tidak ditemui.' }, 404);
+  if (!department) return json({ error: 'Sekolah tidak ditemui.' }, 404);
   const centerLat = Number(department.attendance_latitude);
   const centerLng = Number(department.attendance_longitude);
   const radius = Math.max(30, Number(department.attendance_radius_m || DEFAULT_RADIUS_M));
   if (!Number.isFinite(centerLat) || !Number.isFinite(centerLng)) {
-    return json({ error: 'Admin belum menetapkan kawasan kehadiran Jabatan pada peta.' }, 409);
+    return json({ error: 'Admin belum menetapkan kawasan kehadiran Sekolah pada peta.' }, 409);
   }
 
   const body = await readJson(request);
@@ -129,7 +132,7 @@ async function punchAttendance(request, env) {
   const distance = haversineMeters(latitude, longitude, centerLat, centerLng);
   if (distance > radius) {
     return json({
-      error: `Anda berada ${Math.round(distance)}m dari pusat kawasan. Had Jabatan ialah ${Math.round(radius)}m.`,
+      error: `Anda berada ${Math.round(distance)}m dari pusat kawasan. Had Sekolah ialah ${Math.round(radius)}m.`,
       distanceMeters: distance,
       radiusMeters: radius,
     }, 403);
@@ -447,7 +450,7 @@ async function commandCenterWithAttendance(request, env, ctx) {
   }));
 
   // Walaupun beberapa peranti tersilap memulakan rondaan serentak, paparan Status
-  // Pengawal hanya memilih seorang peronda untuk setiap Jabatan bagi sesi semasa.
+  // Pengawal hanya memilih seorang peronda untuk setiap Sekolah bagi sesi semasa.
   const chosenByDepartment = new Map();
   for (const row of rows) {
     if (!row.present) continue;
@@ -524,6 +527,7 @@ async function adminDepartments(request, env) {
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
      LEFT JOIN checkpoints c ON c.department_id = d.id
+     WHERE d.active = 1
      GROUP BY d.id
      ORDER BY d.name ASC`,
   ).all();
@@ -537,9 +541,9 @@ async function createDepartment(request, env) {
   const parsed = validateDepartmentBody(body);
   if (parsed.error) return json({ error: parsed.error }, 400);
   const duplicate = await env.DB.prepare(
-    'SELECT id FROM departments WHERE LOWER(name) = LOWER(?) LIMIT 1',
+    'SELECT id FROM departments WHERE LOWER(name) = LOWER(?) AND active = 1 LIMIT 1',
   ).bind(parsed.name).first();
-  if (duplicate) return json({ error: 'Jabatan dengan nama ini sudah wujud.' }, 409);
+  if (duplicate) return json({ error: 'Sekolah dengan nama ini sudah wujud.' }, 409);
   const result = await env.DB.prepare(
     `INSERT INTO departments (
        name, session_interval_minutes, session_start_minutes, active, updated_at,
@@ -568,11 +572,11 @@ async function updateDepartment(request, env, departmentId) {
   if (parsed.error) return json({ error: parsed.error }, 400);
   const active = body.active === false ? 0 : 1;
   const existing = await getDepartment(env, departmentId);
-  if (!existing) return json({ error: 'Jabatan tidak ditemui.' }, 404);
+  if (!existing) return json({ error: 'Sekolah tidak ditemui.' }, 404);
   const duplicate = await env.DB.prepare(
-    'SELECT id FROM departments WHERE LOWER(name) = LOWER(?) AND id <> ? LIMIT 1',
+    'SELECT id FROM departments WHERE LOWER(name) = LOWER(?) AND id <> ? AND active = 1 LIMIT 1',
   ).bind(parsed.name, departmentId).first();
-  if (duplicate) return json({ error: 'Jabatan dengan nama ini sudah wujud.' }, 409);
+  if (duplicate) return json({ error: 'Sekolah dengan nama ini sudah wujud.' }, 409);
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE departments SET
@@ -598,6 +602,35 @@ async function updateDepartment(request, env, departmentId) {
   return json({ department: departmentJson(await getDepartment(env, departmentId)) });
 }
 
+async function deleteDepartment(request, env, departmentId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  if (!Number.isInteger(departmentId) || departmentId <= 0) {
+    return json({ error: 'Sekolah tidak sah.' }, 400);
+  }
+  const existing = await getDepartment(env, departmentId);
+  if (!existing) return json({ error: 'Sekolah tidak ditemui.' }, 404);
+
+  const assigned = await env.DB.prepare(
+    'SELECT COUNT(*) AS total FROM users WHERE department_id = ? AND active = 1',
+  ).bind(departmentId).first();
+  if (Number(assigned?.total || 0) > 0) {
+    return json({
+      error: 'Pindahkan atau nyahaktifkan semua pengguna aktif sekolah ini sebelum memadam sekolah.',
+    }, 409);
+  }
+
+  await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE departments SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    ).bind(departmentId),
+    env.DB.prepare(
+      'UPDATE checkpoints SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE department_id = ?',
+    ).bind(departmentId),
+  ]);
+  return json({ ok: true, deleted: true });
+}
+
 function validateDepartmentBody(body) {
   const name = String(body.name ?? '').trim();
   const interval = Number(body.sessionIntervalMinutes ?? 120);
@@ -608,7 +641,7 @@ function validateDepartmentBody(body) {
   const locationLabel = String(body.attendanceLocationLabel ?? '').trim().slice(0, 160);
   const companyName = String(body.companyName ?? '').trim().slice(0, 180);
   const zone = String(body.zone ?? '').trim().slice(0, 100);
-  if (name.length < 2) return { error: 'Nama Jabatan terlalu pendek.' };
+  if (name.length < 2) return { error: 'Nama Sekolah terlalu pendek.' };
   if (!Number.isInteger(interval) || interval < 15 || interval > 1440) {
     return { error: 'Tempoh sesi mesti antara 15 hingga 1440 minit.' };
   }

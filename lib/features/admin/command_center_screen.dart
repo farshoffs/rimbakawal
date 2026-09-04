@@ -317,7 +317,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
             return ListTile(
               leading: const CircleAvatar(child: Icon(Icons.route_rounded)),
               title: Text(
-                '${row['department'] ?? 'Jabatan'} • ${_date(date)}',
+                '${row['department'] ?? 'Sekolah'} • ${_date(date)}',
                 style: const TextStyle(fontWeight: FontWeight.w900),
               ),
               subtitle: Text(
@@ -372,7 +372,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                   child: Icon(Icons.location_off_rounded),
                 ),
                 title: Text(
-                  '${row['department'] ?? 'Jabatan'} • ${_date(date)} • Sesi ${row['sessionIndex'] ?? '-'}',
+                  '${row['department'] ?? 'Sekolah'} • ${_date(date)} • Sesi ${row['sessionIndex'] ?? '-'}',
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
                 subtitle: Text(

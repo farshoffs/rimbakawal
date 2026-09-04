@@ -118,13 +118,13 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
                 child: DropdownButtonFormField<int>(
                   initialValue: _departmentFilterId,
                   decoration: const InputDecoration(
-                    labelText: 'Filter Jabatan',
+                    labelText: 'Filter Sekolah',
                     prefixIcon: Icon(Icons.filter_alt_rounded),
                   ),
                   items: [
                     const DropdownMenuItem<int>(
                       value: -1,
-                      child: Text('Semua Jabatan'),
+                      child: Text('Semua Sekolah'),
                     ),
                     ...data.departments.map(
                       (department) => DropdownMenuItem<int>(
@@ -151,7 +151,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
               Expanded(
                 child: filteredUsers.isEmpty
                     ? const Center(
-                        child: Text('Tiada pengguna untuk Jabatan ini.'),
+                        child: Text('Tiada pengguna untuk Sekolah ini.'),
                       )
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
@@ -314,7 +314,7 @@ class _EditUserDialogState extends State<_EditUserDialog> {
   Future<void> _save() async {
     final nama = _nameController.text.trim();
     if (nama.length < 3 || _departmentId == null) {
-      setState(() => _error = 'Lengkapkan nama dan Jabatan pengguna.');
+      setState(() => _error = 'Lengkapkan nama dan Sekolah pengguna.');
       return;
     }
     setState(() {
@@ -456,7 +456,7 @@ class _EditUserDialogState extends State<_EditUserDialog> {
               DropdownButtonFormField<int>(
                 initialValue: _departmentId,
                 decoration: const InputDecoration(
-                  labelText: 'Jabatan',
+                  labelText: 'Sekolah',
                   prefixIcon: Icon(Icons.account_tree_outlined),
                 ),
                 items: active
@@ -556,7 +556,7 @@ class _AddUserDialogState extends State<_AddUserDialog> {
     if (name.length < 3 || ic.length != 12 || _departmentId == null) {
       setState(
         () => _error =
-            'Lengkapkan nama, No. Kad Pengenalan 12 digit dan Jabatan.',
+            'Lengkapkan nama, No. Kad Pengenalan 12 digit dan Sekolah.',
       );
       return;
     }
@@ -649,7 +649,7 @@ class _AddUserDialogState extends State<_AddUserDialog> {
               DropdownButtonFormField<int>(
                 initialValue: _departmentId,
                 decoration: const InputDecoration(
-                  labelText: 'Jabatan',
+                  labelText: 'Sekolah',
                   prefixIcon: Icon(Icons.account_tree_outlined),
                 ),
                 items: active

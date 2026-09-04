@@ -53,10 +53,16 @@ export default {
       if (match && request.method === 'PUT') {
         return updateDepartment(request, env, Number(match[1]));
       }
+      if (match && request.method === 'DELETE') {
+        return deleteDepartment(request, env, Number(match[1]));
+      }
 
       match = url.pathname.match(/^\/api\/admin\/checkpoints\/(\d+)$/);
       if (match && request.method === 'PUT') {
         return updateCheckpoint(request, env, Number(match[1]));
+      }
+      if (match && request.method === 'DELETE') {
+        return deleteCheckpoint(request, env, Number(match[1]));
       }
 
       match = url.pathname.match(/^\/api\/admin\/users\/(\d+)$/);
@@ -140,7 +146,7 @@ async function patrolConfig(request, env) {
   if (auth.response) return auth.response;
 
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const checkpoints = await env.DB.prepare(
@@ -225,22 +231,22 @@ async function getScans(request, env, url) {
   if (requestedDepartment != null && requestedDepartment !== '') {
     const parsed = Number(requestedDepartment);
     if (!Number.isInteger(parsed) || parsed <= 0) {
-      return json({ error: 'Jabatan tidak sah.' }, 400);
+      return json({ error: 'Sekolah tidak sah.' }, 400);
     }
     if (role !== 'management' && parsed !== departmentId) {
-      return json({ error: 'Anda hanya boleh melihat Sejarah Rondaan Jabatan sendiri.' }, 403);
+      return json({ error: 'Anda hanya boleh melihat Sejarah Rondaan Sekolah sendiri.' }, 403);
     }
     departmentId = parsed;
   }
   if (!departmentId) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const department = await env.DB.prepare(
     `SELECT id, name, session_interval_minutes, session_start_minutes
      FROM departments WHERE id = ? LIMIT 1`,
   ).bind(departmentId).first();
-  if (!department) return json({ error: 'Jabatan tidak ditemui.' }, 404);
+  if (!department) return json({ error: 'Sekolah tidak ditemui.' }, 404);
 
   const calendarBounds = malaysiaDayBounds(requestedDate);
   if (!calendarBounds) return json({ error: 'Tarikh tidak sah.' }, 400);
@@ -478,7 +484,7 @@ async function createScan(request, env) {
   if (auth.response) return auth.response;
 
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const body = await readJson(request);
@@ -496,7 +502,7 @@ async function createScan(request, env) {
 
   if (!checkpoint) {
     return json({
-      error: 'Tag ini tidak berdaftar sebagai checkpoint untuk Jabatan anda.',
+      error: 'Tag ini tidak berdaftar sebagai checkpoint untuk Sekolah anda.',
     }, 403);
   }
 
@@ -541,6 +547,7 @@ async function adminDepartments(request, env) {
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
      LEFT JOIN checkpoints c ON c.department_id = d.id
+     WHERE d.active = 1
      GROUP BY d.id
      ORDER BY d.name ASC`,
   ).all();
@@ -559,10 +566,10 @@ async function createDepartment(request, env) {
   const validation = validateDepartment(name, interval, startMinutes);
   if (validation) return json({ error: validation }, 400);
 
-  const duplicate = await env.DB.prepare('SELECT id FROM departments WHERE LOWER(name) = LOWER(?) LIMIT 1')
+  const duplicate = await env.DB.prepare('SELECT id FROM departments WHERE LOWER(name) = LOWER(?) AND active = 1 LIMIT 1')
     .bind(name)
     .first();
-  if (duplicate) return json({ error: 'Jabatan dengan nama ini sudah wujud.' }, 409);
+  if (duplicate) return json({ error: 'Sekolah dengan nama ini sudah wujud.' }, 409);
 
   const result = await env.DB.prepare(
     `INSERT INTO departments (name, session_interval_minutes, session_start_minutes, active, updated_at)
@@ -585,12 +592,12 @@ async function updateDepartment(request, env, departmentId) {
   if (validation) return json({ error: validation }, 400);
 
   const duplicate = await env.DB.prepare(
-    'SELECT id FROM departments WHERE LOWER(name) = LOWER(?) AND id <> ? LIMIT 1',
+    'SELECT id FROM departments WHERE LOWER(name) = LOWER(?) AND id <> ? AND active = 1 LIMIT 1',
   ).bind(name, departmentId).first();
-  if (duplicate) return json({ error: 'Jabatan dengan nama ini sudah wujud.' }, 409);
+  if (duplicate) return json({ error: 'Sekolah dengan nama ini sudah wujud.' }, 409);
 
   const existing = await getDepartmentById(env, departmentId);
-  if (!existing) return json({ error: 'Jabatan tidak ditemui.' }, 404);
+  if (!existing) return json({ error: 'Sekolah tidak ditemui.' }, 404);
 
   await env.DB.batch([
     env.DB.prepare(
@@ -605,19 +612,45 @@ async function updateDepartment(request, env, departmentId) {
   return json({ department: departmentJson(department) });
 }
 
+async function deleteDepartment(request, env, departmentId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  const existing = await getDepartmentById(env, departmentId);
+  if (!existing) return json({ error: 'Sekolah tidak ditemui.' }, 404);
+
+  const assigned = await env.DB.prepare(
+    'SELECT COUNT(*) AS total FROM users WHERE department_id = ? AND active = 1',
+  ).bind(departmentId).first();
+  if (Number(assigned?.total || 0) > 0) {
+    return json({
+      error: 'Pindahkan atau nyahaktifkan semua pengguna aktif sekolah ini sebelum memadam sekolah.',
+    }, 409);
+  }
+
+  await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE departments SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    ).bind(departmentId),
+    env.DB.prepare(
+      'UPDATE checkpoints SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE department_id = ?',
+    ).bind(departmentId),
+  ]);
+  return json({ ok: true, deleted: true });
+}
+
 async function adminCheckpoints(request, env, url) {
   const auth = await requireManagement(request, env);
   if (auth.response) return auth.response;
 
   const departmentId = Number(url.searchParams.get('departmentId'));
   if (!Number.isInteger(departmentId) || departmentId <= 0) {
-    return json({ error: 'Jabatan tidak sah.' }, 400);
+    return json({ error: 'Sekolah tidak sah.' }, 400);
   }
 
   const result = await env.DB.prepare(
     `SELECT id, department_id, name, nfc_uid, position, active
      FROM checkpoints
-     WHERE department_id = ?
+     WHERE department_id = ? AND active = 1
      ORDER BY position ASC, id ASC`,
   ).bind(departmentId).all();
   return json({ checkpoints: (result.results ?? []).map(checkpointJson) });
@@ -636,7 +669,7 @@ async function createCheckpoint(request, env) {
   if (validation) return json({ error: validation }, 400);
 
   const department = await getDepartmentById(env, departmentId);
-  if (!department) return json({ error: 'Jabatan tidak ditemui.' }, 404);
+  if (!department) return json({ error: 'Sekolah tidak ditemui.' }, 404);
 
   const duplicate = await findCheckpointDuplicate(env, departmentId, name, nfcUid, 0);
   if (duplicate) return json({ error: duplicate }, 409);
@@ -677,6 +710,18 @@ async function updateCheckpoint(request, env, checkpointId) {
   return json({ checkpoint: checkpointJson(checkpoint) });
 }
 
+async function deleteCheckpoint(request, env, checkpointId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  const existing = await getCheckpointById(env, checkpointId);
+  if (!existing) return json({ error: 'Checkpoint tidak ditemui.' }, 404);
+
+  await env.DB.prepare(
+    'UPDATE checkpoints SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+  ).bind(checkpointId).run();
+  return json({ ok: true, deleted: true });
+}
+
 async function updateAdminUser(request, env, userId) {
   const auth = await requireManagement(request, env);
   if (auth.response) return auth.response;
@@ -692,14 +737,14 @@ async function updateAdminUser(request, env, userId) {
     return json({ error: 'Jawatan pengguna tidak sah.' }, 400);
   }
   if (!Number.isInteger(departmentId) || departmentId <= 0) {
-    return json({ error: 'Pilih Jabatan pengguna.' }, 400);
+    return json({ error: 'Pilih Sekolah pengguna.' }, 400);
   }
 
   const department = await env.DB.prepare(
     'SELECT id, name, active FROM departments WHERE id = ? LIMIT 1',
   ).bind(departmentId).first();
   if (!department || Number(department.active) !== 1) {
-    return json({ error: 'Jabatan aktif tidak ditemui.' }, 404);
+    return json({ error: 'Sekolah aktif tidak ditemui.' }, 404);
   }
 
   const user = await getUserById(env, userId);
@@ -737,7 +782,7 @@ async function updateUserDepartment(request, env, userId) {
   const departmentId = Number(body.departmentId);
   const department = await getDepartmentById(env, departmentId);
   if (!department || Number(department.active) !== 1) {
-    return json({ error: 'Jabatan aktif tidak ditemui.' }, 404);
+    return json({ error: 'Sekolah aktif tidak ditemui.' }, 404);
   }
 
   const user = await getUserById(env, userId);
@@ -839,15 +884,15 @@ async function getCheckpointById(env, id) {
 async function findCheckpointDuplicate(env, departmentId, name, nfcUid, exceptId) {
   const byName = await env.DB.prepare(
     `SELECT id FROM checkpoints
-     WHERE department_id = ? AND LOWER(name) = LOWER(?) AND id <> ? LIMIT 1`,
+     WHERE department_id = ? AND LOWER(name) = LOWER(?) AND id <> ? AND active = 1 LIMIT 1`,
   ).bind(departmentId, name, exceptId).first();
-  if (byName) return 'Nama checkpoint ini sudah digunakan dalam Jabatan tersebut.';
+  if (byName) return 'Nama checkpoint ini sudah digunakan dalam Sekolah tersebut.';
 
   const byUid = await env.DB.prepare(
     `SELECT id FROM checkpoints
-     WHERE department_id = ? AND UPPER(nfc_uid) = UPPER(?) AND id <> ? LIMIT 1`,
+     WHERE department_id = ? AND UPPER(nfc_uid) = UPPER(?) AND id <> ? AND active = 1 LIMIT 1`,
   ).bind(departmentId, nfcUid, exceptId).first();
-  if (byUid) return 'UID NFC ini sudah didaftarkan dalam Jabatan tersebut.';
+  if (byUid) return 'UID NFC ini sudah didaftarkan dalam Sekolah tersebut.';
   return null;
 }
 
@@ -904,7 +949,7 @@ function scanJson(scan) {
 }
 
 function validateDepartment(name, interval, startMinutes) {
-  if (name.length < 2 || name.length > 150) return 'Nama Jabatan mesti antara 2 hingga 150 aksara.';
+  if (name.length < 2 || name.length > 150) return 'Nama Sekolah mesti antara 2 hingga 150 aksara.';
   if (!Number.isInteger(interval) || interval < 15 || interval > 1440) {
     return 'Tempoh sesi mesti antara 15 hingga 1440 minit.';
   }
@@ -915,7 +960,7 @@ function validateDepartment(name, interval, startMinutes) {
 }
 
 function validateCheckpoint(departmentId, name, nfcUid, position) {
-  if (!Number.isInteger(departmentId) || departmentId <= 0) return 'Jabatan tidak sah.';
+  if (!Number.isInteger(departmentId) || departmentId <= 0) return 'Sekolah tidak sah.';
   if (name.length < 1 || name.length > 100) return 'Nama checkpoint tidak sah.';
   if (!nfcUid || nfcUid.length > 128) return 'UID NFC tidak sah.';
   if (!Number.isInteger(position) || position < 1 || position > 999) return 'Susunan checkpoint mesti antara 1 hingga 999.';

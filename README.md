@@ -41,7 +41,7 @@ RimbaKawal combines:
 - Start and end **Sesi Rondaan**.
 - Scan physical NFC checkpoints using `nfc_manager`.
 - Designed for NTAG-compatible NFC checkpoint tags.
-- Validate checkpoint UIDs against the authenticated user's Jabatan.
+- Validate checkpoint UIDs against the authenticated user's Sekolah.
 - Support configured checkpoint ordering.
 - Show checkpoint progress during an active patrol.
 - Display checkpoint/job instructions.
@@ -102,11 +102,11 @@ Management can see synchronization health information, while normal patrol users
 
 ## Attendance / Kehadiran
 
-RimbaKawal includes a punch-card style attendance system tied to a configured Jabatan location.
+RimbaKawal includes a punch-card style attendance system tied to a configured Sekolah location.
 
 ### Attendance workflow
 
-1. Management configures the Jabatan's attendance point and permitted radius.
+1. Management configures the Sekolah's attendance point and permitted radius.
 2. The user opens **Kehadiran**.
 3. The application requests current geolocation.
 4. The user captures a live selfie.
@@ -136,7 +136,7 @@ Attendance records can include:
 - timestamp
 - latitude and longitude
 - GPS accuracy
-- distance from configured Jabatan attendance point
+- distance from configured Sekolah attendance point
 - live selfie
 - registered profile-picture reference
 - face-verification status and score when available
@@ -159,11 +159,11 @@ Management can open **Sejarah Kehadiran** and inspect:
 
 A Management user can mark a record as **DISEMAK**. The reviewed state, reviewer and review timestamp are persisted in the backend.
 
-## Jabatan configuration
+## Sekolah configuration
 
-Management can maintain Jabatan settings including:
+Management can maintain Sekolah settings including:
 
-- Jabatan name
+- Sekolah name
 - patrol-session interval
 - patrol-session start time
 - active/inactive state
@@ -173,7 +173,7 @@ Management can maintain Jabatan settings including:
 - **Nama Syarikat**
 - **Zon**
 
-The map in Jabatan settings is used to define the attendance/geofence centre.
+The map in Sekolah settings is used to define the attendance/geofence centre.
 
 ## User administration
 
@@ -183,7 +183,7 @@ Management can create and edit users with data including:
 - No. Kad Pengenalan
 - **No. PK**
 - Role / Jawatan
-- Jabatan
+- Sekolah
 - profile picture
 
 Supported role concepts include:
@@ -214,7 +214,7 @@ Management includes administrative and monitoring capabilities such as:
 - attendance overview
 - attendance history and review
 - user administration
-- Jabatan administration
+- Sekolah administration
 - checkpoint administration
 - patrol-session deletion
 - incident management
@@ -259,7 +259,7 @@ The goal is to operate as a real monitoring console rather than a static history
 
 ## Reports
 
-The Management **Laporan** screen supports monthly report generation using **Bulan**, **Tahun** and optional Jabatan selection.
+The Management **Laporan** screen supports monthly report generation using **Bulan**, **Tahun** and optional Sekolah selection.
 
 ### RimbaKawal monthly patrol report
 
@@ -269,7 +269,7 @@ Includes operational information such as:
 - checkpoint scans
 - scan timestamps
 - guard names
-- Jabatan
+- Sekolah
 - checkpoint names
 - SOS records
 
@@ -301,7 +301,7 @@ RimbaKawal can generate **BPPA PKK 3 Laporan Pelaksanaan Kunci Jam / Watchman Cl
 The report:
 
 - generates weekly pages across the selected month
-- fills Nama Syarikat and Zon from Jabatan settings
+- fills Nama Syarikat and Zon from Sekolah settings
 - groups checkpoint activity by date
 - arranges checkpoint entries according to patrol session and checkpoint position
 - displays `Checkpoint 1`, `Checkpoint 2`, `Checkpoint 3`, and subsequent checkpoints using recorded times
@@ -401,10 +401,10 @@ RimbaKawal intentionally avoids trusting the mobile UI for security-sensitive de
 Examples:
 
 - an NFC UID must belong to an active checkpoint
-- the checkpoint must belong to the authenticated user's Jabatan
+- the checkpoint must belong to the authenticated user's Sekolah
 - route requirements can be validated server-side
 - Management endpoints validate Management permission server-side
-- attendance punches are checked against the configured Jabatan radius
+- attendance punches are checked against the configured Sekolah radius
 - attendance GPS accuracy is validated by the backend
 - attendance review state is persisted on the server
 - patrol-session deletion is restricted to Management

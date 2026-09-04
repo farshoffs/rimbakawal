@@ -62,7 +62,7 @@ async function getSosAlerts(request, env) {
   const auth = await requireUser(request, env);
   if (auth.response) return auth.response;
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const result = await env.DB.prepare(
@@ -92,13 +92,13 @@ async function acknowledgeSos(request, env, sosId) {
   const auth = await requireUser(request, env);
   if (auth.response) return auth.response;
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const event = await env.DB.prepare(
     `SELECT id FROM sos_events WHERE id = ? AND department_id = ? LIMIT 1`,
   ).bind(sosId, auth.user.department_id).first();
-  if (!event) return json({ error: 'SOS tidak ditemui dalam Jabatan anda.' }, 404);
+  if (!event) return json({ error: 'SOS tidak ditemui dalam Sekolah anda.' }, 404);
 
   const acknowledgedAt = new Date().toISOString();
   await env.DB.prepare(
@@ -115,7 +115,7 @@ async function getManagedSos(request, env) {
   const auth = await requireMonitor(request, env);
   if (auth.response) return auth.response;
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const result = await env.DB.prepare(
@@ -144,7 +144,7 @@ async function resolveSos(request, env, sosId) {
   const auth = await requireMonitor(request, env);
   if (auth.response) return auth.response;
   if (!auth.user.department_id) {
-    return json({ error: 'Pengguna belum dipautkan kepada Jabatan.' }, 409);
+    return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
   const body = await readJson(request);
@@ -159,7 +159,7 @@ async function resolveSos(request, env, sosId) {
      WHERE id = ? AND department_id = ?
      LIMIT 1`,
   ).bind(sosId, auth.user.department_id).first();
-  if (!current) return json({ error: 'SOS tidak ditemui dalam Jabatan anda.' }, 404);
+  if (!current) return json({ error: 'SOS tidak ditemui dalam Sekolah anda.' }, 404);
 
   if (current.status === 'resolved') {
     return json({

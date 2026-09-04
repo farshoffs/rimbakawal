@@ -52,7 +52,7 @@ class _ReportScreenState extends State<ReportScreen> {
 
   Future<Map<String, dynamic>> _reportData() async {
     if (_departmentId == null) {
-      throw Exception('Pilih satu Jabatan sebelum menjana laporan PKK.');
+      throw Exception('Pilih satu Sekolah sebelum menjana laporan PKK.');
     }
     return widget.api.getAdminReport(_from, _to, departmentId: _departmentId);
   }
@@ -131,13 +131,13 @@ class _ReportScreenState extends State<ReportScreen> {
                   DropdownButtonFormField<int?>(
                     initialValue: _departmentId,
                     decoration: const InputDecoration(
-                      labelText: 'Jabatan',
+                      labelText: 'Sekolah',
                       prefixIcon: Icon(Icons.account_tree_outlined),
                     ),
                     items: [
                       const DropdownMenuItem<int?>(
                         value: null,
-                        child: Text('Pilih Jabatan'),
+                        child: Text('Pilih Sekolah'),
                       ),
                       ..._departments.map(
                         (department) => DropdownMenuItem<int?>(

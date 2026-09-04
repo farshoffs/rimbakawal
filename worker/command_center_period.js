@@ -80,7 +80,7 @@ async function commandCenterRange(request, env, url) {
     ).bind(...(scopeDepartment ? [scopeDepartment] : [])).all(),
     env.DB.prepare(
       `SELECT c.id, c.department_id, c.name, c.position,
-              COALESCE(d.name, 'Jabatan') AS department_name
+              COALESCE(d.name, 'Sekolah') AS department_name
        FROM checkpoints c
        LEFT JOIN departments d ON d.id = c.department_id
        WHERE c.active = 1
@@ -180,10 +180,10 @@ async function commandCenterRange(request, env, url) {
     const list = checkpointsByDepartment.get(departmentId) ?? [];
     list.push(checkpoint);
     checkpointsByDepartment.set(departmentId, list);
-    departmentNames.set(departmentId, checkpoint.department_name || 'Jabatan');
+    departmentNames.set(departmentId, checkpoint.department_name || 'Sekolah');
   }
   for (const user of users) {
-    departmentNames.set(Number(user.department_id || 0), user.jabatan || 'Jabatan');
+    departmentNames.set(Number(user.department_id || 0), user.jabatan || 'Sekolah');
   }
 
   const scans = scansResult.results ?? [];
@@ -294,7 +294,7 @@ async function commandCenterRange(request, env, url) {
           missedDetails.push({
             date: dayKey,
             departmentId,
-            department: departmentNames.get(departmentId) || 'Jabatan',
+            department: departmentNames.get(departmentId) || 'Sekolah',
             sessionIndex: index + 1,
             sessionStartAt: new Date(sessionStartMs).toISOString(),
             sessionEndAt: new Date(sessionEndMs).toISOString(),
@@ -309,7 +309,7 @@ async function commandCenterRange(request, env, url) {
         coverageDays.push({
           date: dayKey,
           departmentId,
-          department: departmentNames.get(departmentId) || 'Jabatan',
+          department: departmentNames.get(departmentId) || 'Sekolah',
           dueSessions: dayDueSessions,
           completeSessions: dayCompleteSessions,
           missedSessions: dayMissedSessions,
