@@ -30,9 +30,6 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
 
-          # Foreground Android reminder alarm: use the existing SOS tone, looped
-          # for at most 30 seconds, and stop immediately when the user closes
-          # the reminder dialog. iOS foreground sound is presented by APNs.
           path = Path('lib/core/notifications/notification_alert_gate.dart')
           text = path.read_text()
           old = "import 'package:flutter/material.dart';\n"
@@ -51,7 +48,7 @@ jobs:
           text = text.replace(old, new, 1)
 
           old = "    _showing = true;\n    try {\n      await showDialog<void>("
-          new = "    _showing = true;\n    final reminderAlarm = _isRondaanReminder(alert.kind);\n    if (reminderAlarm) await _startReminderAlarm();\n    try {\n      await showDialog<void>("
+          new = "    _showing = true;\n    final reminderAlarm = _isRondaanReminder(alert.kind);\n    if (reminderAlarm) await _startReminderAlarm();\n    if (!mounted) {\n      if (reminderAlarm) await _stopReminderAlarm();\n      _showing = false;\n      return;\n    }\n    try {\n      await showDialog<void>("
           assert old in text
           text = text.replace(old, new, 1)
 
@@ -61,7 +58,6 @@ jobs:
           text = text.replace(old, new, 1)
           path.write_text(text)
 
-          # Route the three patrol reminder kinds to the dedicated native sound.
           path = Path('worker/push.js')
           text = path.read_text()
           old = "async function sendToRows(env, rows, payload) {\n  if (rows.length === 0) return { sent: 0, configured: true };"
@@ -80,8 +76,6 @@ jobs:
           text = text.replace(old, new, 1)
           path.write_text(text)
 
-          # Production mobile projects are generated from scratch, so add the
-          # custom native files and generate a 30-second Android WAV during prep.
           path = Path('scripts/prepare-mobile.sh')
           text = path.read_text()
           old = "cp -R \"$PROJECT_ROOT/assets\" \"$MOBILE_BUILD_DIR/assets\"\ncp \"$PROJECT_ROOT/pubspec.yaml\" \"$MOBILE_BUILD_DIR/pubspec.yaml\"\n"
@@ -158,9 +152,6 @@ jobs:
                 return
               }
 
-              // patrol_alarm.wav is 16-bit PCM. Keep the original 44-byte WAV
-              // header and repeat its PCM body to 29 seconds for iOS notification
-              // sounds (Apple requires custom notification sounds under 30 sec).
               let byteRate = Int(readUInt32LE(source, offset: 28))
               guard byteRate > 0 else { return }
               let pcm = source.subdata(in: 44..<source.count)
@@ -222,5 +213,3 @@ jobs:
           git add lib/core/notifications/notification_alert_gate.dart worker/push.js scripts/prepare-mobile.sh mobile/android/MainActivity.kt mobile/ios/AppDelegate.swift
           git commit -m "[skip ci] Add 30-second rondaan reminder alarm"
           git push
-
-# Triggered after initial workflow creation so GitHub can execute it.
