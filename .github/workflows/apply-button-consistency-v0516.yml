@@ -1,0 +1,133 @@
+name: Apply Button Consistency v0.5.16
+
+on:
+  push:
+    branches:
+      - button-consistency-audit-v0516
+    paths:
+      - scripts/apply_button_consistency_v0516.py
+      - .github/workflows/apply-button-consistency-v0516.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out validation branch
+        uses: actions/checkout@v4
+        with:
+          ref: button-consistency-audit-v0516
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply audited button patch
+        run: python3 scripts/apply_button_consistency_v0516.py
+
+      - name: Format changed Dart files
+        run: |
+          dart format \
+            lib/main.dart \
+            lib/core/ui/rimba_dialog_actions.dart \
+            lib/core/notifications/notification_alert_gate.dart \
+            lib/features/sos/sos_alert_gate.dart \
+            test/core/ui/rimba_dialog_actions_test.dart
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run button dimension regression tests
+        run: flutter test test/core/ui/rimba_dialog_actions_test.dart
+
+      - name: Double-audit button rules
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def text(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          main = text('lib/main.dart')
+          notification = text('lib/core/notifications/notification_alert_gate.dart')
+          helper = text('lib/core/ui/rimba_dialog_actions.dart')
+          sos = text('lib/features/sos/sos_alert_gate.dart')
+          patrol = text('lib/features/patrol/patrol_screen.dart')
+          nfc = text('lib/core/nfc/nfc_scan_prompt.dart')
+          selfie = text('lib/features/attendance/web_selfie_capture_web.dart')
+          users = text('lib/features/admin/user_maintenance_screen.dart')
+          departments = text('lib/features/admin/department_maintenance_screen.dart')
+          sos_admin = text('lib/features/admin/sos_management_screen.dart')
+          history = text('lib/features/history/clocking_history_screen.dart')
+          attendance = text('lib/features/attendance/attendance_screen.dart')
+          pubspec = text('pubspec.yaml')
+
+          assert 'version: 0.5.16+32' in pubspec
+          assert 'outlinedButtonTheme: OutlinedButtonThemeData' in main
+          assert main.count('minimumSize: const Size.fromHeight(56)') >= 2
+          assert 'RimbaDialogActions.buttonHeight' not in main
+
+          assert 'class RimbaDialogActions' in helper
+          assert 'static const double buttonHeight = 56' in helper
+          assert 'Expanded(child: _secondary())' in helper
+          assert 'Expanded(child: _primary())' in helper
+          assert 'crossAxisAlignment: CrossAxisAlignment.stretch' in helper
+
+          assert "_ => 'LIHAT'" in notification
+          assert "_ => 'BUKA'" not in notification
+          assert 'RimbaDialogActions(' in notification
+          assert "alert.kind == 'attendance_punch'" in notification
+          assert "alert.kind == 'checkpoint_scanned'" in notification
+          assert 'forceStacked: _usesLongPrimaryLabel(alert.kind)' in notification
+
+          for label in ('TANDAKAN SELESAI', 'TUTUP AMARAN'):
+              pos = sos.index(label)
+              window = sos[max(0, pos - 700):pos + 100]
+              assert 'width: double.infinity' in window, label
+
+          # Existing paired dialogs must remain full-width containers. Global
+          # Filled/Outlined themes now guarantee the same 56px minimum height.
+          checks = {
+              'patrol': (patrol, 'Teruskan Rondaan'),
+              'nfc': (nfc, "child: const Text('Batal')"),
+              'selfie': (selfie, "child: const Text('Batal')"),
+              'users': (users, "child: const Text('Batal')"),
+              'departments': (departments, "child: const Text('Batal')"),
+              'sos-admin': (sos_admin, "child: const Text('Batal')"),
+              'history': (history, "child: const Text('Batal')"),
+          }
+          for name, (source, marker) in checks.items():
+              pos = source.find(marker)
+              assert pos >= 0, f'{name}: marker missing'
+              window = source[max(0, pos - 1200):pos + 200]
+              assert 'width: double.infinity' in window, f'{name}: action group is not full width'
+
+          # Punch screen remains a single primary CTA; do not force peer-action
+          # layout where there is no peer action.
+          assert 'height: 60' in attendance
+          assert 'FilledButton.icon' in attendance
+
+          print('Double audit passed: dimensions, wording, full-width pairs, and exceptions.')
+          PY
+
+      - name: Commit applied production sources
+        run: |
+          if git diff --quiet; then
+            echo "No generated source changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            lib/features/sos/sos_alert_gate.dart
+          git commit -m "Standardize audited dialog button dimensions"
+          git push origin HEAD:button-consistency-audit-v0516
