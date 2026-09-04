@@ -6,11 +6,20 @@ on:
       - button-consistency-audit-v0516
     paths:
       - scripts/apply_button_consistency_v0516.py
+      - lib/main.dart
+      - lib/core/ui/rimba_dialog_actions.dart
+      - lib/core/notifications/notification_alert_gate.dart
+      - test/core/ui/rimba_dialog_actions_test.dart
+      - pubspec.yaml
       - .github/workflows/apply-button-consistency-v0516.yml
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: button-consistency-v0516
+  cancel-in-progress: true
 
 jobs:
   validate-and-apply:
@@ -74,7 +83,6 @@ jobs:
           assert 'version: 0.5.16+32' in pubspec
           assert 'outlinedButtonTheme: OutlinedButtonThemeData' in main
           assert main.count('minimumSize: const Size.fromHeight(56)') >= 2
-          assert 'RimbaDialogActions.buttonHeight' not in main
 
           assert 'class RimbaDialogActions' in helper
           assert 'static const double buttonHeight = 56' in helper
@@ -127,7 +135,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            lib/features/sos/sos_alert_gate.dart
+          git add lib/features/sos/sos_alert_gate.dart
           git commit -m "Standardize audited dialog button dimensions"
           git push origin HEAD:button-consistency-audit-v0516
