@@ -1,0 +1,112 @@
+name: Apply School Checkpoint Flexibility v0.5.18
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply_school_checkpoint_flexibility_v0518.py
+      - .github/workflows/apply-school-checkpoint-flexibility-v0518.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: school-checkpoint-flexibility-v0518
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply school and checkpoint patch
+        run: python3 scripts/apply_school_checkpoint_flexibility_v0518.py
+
+      - name: Format changed Dart sources
+        run: |
+          dart format \
+            lib/core/api/api_service.dart \
+            lib/features/admin/department_maintenance_screen.dart \
+            lib/features/patrol/patrol_screen.dart \
+            lib/features/admin/admin_screen.dart \
+            lib/features/admin/report_screen.dart \
+            lib/features/admin/user_maintenance_screen.dart \
+            lib/features/admin/command_center_screen.dart \
+            lib/features/admin/live_patrol_map_screen.dart \
+            lib/features/admin/sos_management_screen.dart \
+            lib/features/attendance/attendance_screen.dart \
+            lib/features/dashboard/dashboard_screen.dart \
+            lib/features/history/clocking_history_screen.dart \
+            lib/features/profile/profile_screen.dart \
+            lib/features/sos/sos_alert_gate.dart
+
+      - name: Validate worker JavaScript syntax
+        run: |
+          for file in worker/*.js; do
+            node --check "$file"
+          done
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter project
+        continue-on-error: true
+        run: flutter analyze
+
+      - name: Verify requested behavior
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          patrol = Path('lib/features/patrol/patrol_screen.dart').read_text(encoding='utf-8')
+          offline = Path('worker/offline.js').read_text(encoding='utf-8')
+          app = Path('worker/app.js').read_text(encoding='utf-8')
+          api = Path('lib/core/api/api_service.dart').read_text(encoding='utf-8')
+          settings = Path('lib/features/admin/department_maintenance_screen.dart').read_text(encoding='utf-8')
+          index = Path('worker/index.js').read_text(encoding='utf-8')
+          attendance = Path('worker/attendance.js').read_text(encoding='utf-8')
+
+          assert 'if (bootstrap.routeOrderEnforced)' not in patrol
+          assert 'if (Boolean(department.route_order_enforced))' not in offline
+          assert 'if (Boolean(department.route_order_enforced))' not in app
+          assert 'routeOrderEnforced: false' in offline
+          assert 'routeOrderEnforced: false' in app
+          assert 'deleteDepartment(int departmentId)' in api
+          assert 'deleteCheckpoint(int checkpointId)' in api
+          assert "request.method === 'DELETE'" in index
+          assert "return deleteDepartment(request, env" in attendance
+          assert "Padam Sekolah" in settings
+          assert "Padam Checkpoint" in settings
+
+          for path in Path('lib').rglob('*.dart'):
+              assert 'Jabatan' not in path.read_text(encoding='utf-8'), path
+          for path in Path('worker').glob('*.js'):
+              assert 'Jabatan' not in path.read_text(encoding='utf-8'), path
+
+          print('Requested behavior verified.')
+          PY
+
+      - name: Commit production source changes
+        run: |
+          if git diff --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib worker README.md
+          git commit -m "Allow flexible checkpoints and use school terminology"
+          git push origin HEAD:main
