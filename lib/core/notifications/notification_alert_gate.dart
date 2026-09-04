@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api/app_user.dart';
+import '../ui/rimba_dialog_actions.dart';
 import 'notification_service.dart';
 
 class NotificationAlertGate extends StatefulWidget {
@@ -74,20 +75,19 @@ class _NotificationAlertGateState extends State<NotificationAlertGate> {
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.white),
           ),
-          actionsAlignment: MainAxisAlignment.center,
+          actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
           actions: [
-            OutlinedButton.icon(
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close_rounded),
-              label: const Text('TUTUP'),
-            ),
-            FilledButton.icon(
-              onPressed: () {
+            RimbaDialogActions(
+              secondaryLabel: 'TUTUP',
+              secondaryIcon: Icons.close_rounded,
+              onSecondary: () => Navigator.of(context).pop(),
+              primaryLabel: _openLabel(alert.kind),
+              primaryIcon: _openIcon(alert.kind),
+              onPrimary: () {
                 Navigator.of(context).pop();
                 NotificationService.instance.openAlert(alert);
               },
-              icon: Icon(_openIcon(alert.kind)),
-              label: Text(_openLabel(alert.kind)),
+              forceStacked: _usesLongPrimaryLabel(alert.kind),
             ),
           ],
         ),
@@ -96,6 +96,11 @@ class _NotificationAlertGateState extends State<NotificationAlertGate> {
       _showing = false;
     }
   }
+
+  bool _usesLongPrimaryLabel(String kind) => switch (kind) {
+    'session_start' || 'patrol_not_started' || 'session_ending' => true,
+    _ => false,
+  };
 
   IconData _icon(String kind) => switch (kind) {
     'incident_urgent' => Icons.warning_rounded,
@@ -130,14 +135,14 @@ class _NotificationAlertGateState extends State<NotificationAlertGate> {
     'patrol_not_started' ||
     'session_ending' => Icons.directions_walk_rounded,
     'attendance_punch' || 'attendance_review' => Icons.fingerprint_rounded,
-    _ => Icons.open_in_new_rounded,
+    _ => Icons.visibility_rounded,
   };
 
   String _openLabel(String kind) => switch (kind) {
     'session_start' ||
     'patrol_not_started' ||
     'session_ending' => 'MULA RONDAAN',
-    _ => 'BUKA',
+    _ => 'LIHAT',
   };
 
   @override
