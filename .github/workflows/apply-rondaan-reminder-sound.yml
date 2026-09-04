@@ -222,3 +222,5 @@ jobs:
           git add lib/core/notifications/notification_alert_gate.dart worker/push.js scripts/prepare-mobile.sh mobile/android/MainActivity.kt mobile/ios/AppDelegate.swift
           git commit -m "[skip ci] Add 30-second rondaan reminder alarm"
           git push
+
+# Triggered after initial workflow creation so GitHub can execute it.
