@@ -1,0 +1,19 @@
+ZPatrol Offline Engine v2 — 0.7.0+39
+"
+    "Date: 2026-09-11
+"
+    "- Bounded local cache for normal API GET data (90-day max age, ~20 MB cap).
+"
+    "- Offline fallback for history, users, checkpoints, reports, attendance, command center and other GET-backed screens.
+"
+    "- Attendance punch now queues offline with GPS + selfie and syncs idempotently.
+"
+    "- Offline attendance uses cached/bootstrapped school geofence data.
+"
+    "- Synced media-heavy events are removed immediately; other synced events retained 14 days.
+"
+    "- Existing patrol, checkpoint, SOS and incident offline queue preserved.
+"
+    "- Admin configuration writes remain online-only to avoid destructive conflict resolution.
+"
+    

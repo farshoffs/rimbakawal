@@ -17,6 +17,9 @@ class OfflineStore extends ChangeNotifier {
   static const _bootstrapKey = 'patrol_bootstrap';
   static const _nfcModeKey = 'nfc_operation_mode';
   static const _activePatrolKeyPrefix = 'active_patrol_';
+  static const _httpCachePrefix = 'http_cache_v1:';
+  static const _httpCacheMaxEntries = 250;
+  static const _httpCacheMaxCharacters = 20 * 1024 * 1024;
 
   late Box<dynamic> _eventsBox;
   late Box<dynamic> _cacheBox;
@@ -31,7 +34,9 @@ class OfflineStore extends ChangeNotifier {
     _eventsBox = await Hive.openBox<dynamic>(_eventsBoxName);
     _cacheBox = await Hive.openBox<dynamic>(_cacheBoxName);
     _ready = true;
-    await purgeSyncedOlderThan(const Duration(days: 45));
+    await purgeSyncedOlderThan(const Duration(days: 14));
+    await purgeHttpCacheOlderThan(const Duration(days: 90));
+    await trimHttpCache();
     notifyListeners();
   }
 
@@ -163,6 +168,11 @@ class OfflineStore extends ChangeNotifier {
   Future<void> markSynced(String id) async {
     final event = _event(id);
     if (event == null) return;
+    if (event.type == 'attendance' || event.type == 'incident') {
+      await _eventsBox.delete(id);
+      notifyListeners();
+      return;
+    }
     await _eventsBox.put(
       id,
       event
@@ -244,6 +254,89 @@ class OfflineStore extends ChangeNotifier {
     }
   }
 
+  Future<void> cacheHttpResponse(
+    String key,
+    String body, {
+    int statusCode = 200,
+  }) async {
+    if (!_ready) return;
+    if (body.length > 2 * 1024 * 1024) return;
+    final scopedKey = _scopedHttpKey(key);
+    await _cacheBox.put(scopedKey, {
+      'body': body,
+      'statusCode': statusCode,
+      'storedAt': DateTime.now().toUtc().toIso8601String(),
+    });
+    await trimHttpCache();
+  }
+
+  Map<String, dynamic>? cachedHttpResponse(String key) {
+    if (!_ready) return null;
+    final value = _cacheBox.get(_scopedHttpKey(key));
+    if (value is! Map) return null;
+    try {
+      return Map<String, dynamic>.from(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> purgeHttpCacheOlderThan(Duration age) async {
+    if (!_ready) return;
+    final cutoff = DateTime.now().toUtc().subtract(age);
+    final keys = <dynamic>[];
+    for (final key in _cacheBox.keys) {
+      if (key is! String || !key.startsWith(_httpCachePrefix)) continue;
+      final value = _cacheBox.get(key);
+      if (value is! Map) {
+        keys.add(key);
+        continue;
+      }
+      final storedAt = DateTime.tryParse(value['storedAt'] as String? ?? '');
+      if (storedAt == null || storedAt.isBefore(cutoff)) keys.add(key);
+    }
+    if (keys.isNotEmpty) await _cacheBox.deleteAll(keys);
+  }
+
+  Future<void> trimHttpCache() async {
+    if (!_ready) return;
+    final entries = <MapEntry<dynamic, Map<String, dynamic>>>[];
+    for (final key in _cacheBox.keys) {
+      if (key is! String || !key.startsWith(_httpCachePrefix)) continue;
+      final value = _cacheBox.get(key);
+      if (value is! Map) continue;
+      entries.add(MapEntry(key, Map<String, dynamic>.from(value)));
+    }
+    entries.sort((a, b) {
+      final aDate =
+          DateTime.tryParse(a.value['storedAt'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+      final bDate =
+          DateTime.tryParse(b.value['storedAt'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+      return aDate.compareTo(bDate);
+    });
+    var characters = entries.fold<int>(
+      0,
+      (sum, item) => sum + (item.value['body'] as String? ?? '').length,
+    );
+    final keysToDelete = <dynamic>[];
+    while (entries.length - keysToDelete.length > _httpCacheMaxEntries ||
+        characters > _httpCacheMaxCharacters) {
+      final index = keysToDelete.length;
+      if (index >= entries.length) break;
+      final item = entries[index];
+      keysToDelete.add(item.key);
+      characters -= (item.value['body'] as String? ?? '').length;
+    }
+    if (keysToDelete.isNotEmpty) await _cacheBox.deleteAll(keysToDelete);
+  }
+
+  String _scopedHttpKey(String key) {
+    final userId = cachedUser()?.id ?? 0;
+    return '$_httpCachePrefix$userId::$key';
+  }
+
   String get nfcMode {
     if (!_ready) return 'real';
     final value = _cacheBox.get(_nfcModeKey);
@@ -301,6 +394,8 @@ class OfflineStore extends ChangeNotifier {
     'departmentId': user.departmentId,
     'sessionIntervalMinutes': user.sessionIntervalMinutes,
     'sessionStartMinutes': user.sessionStartMinutes,
+    'noPk': user.noPk,
+    'guardStatus': user.guardStatus,
     'active': user.active,
   };
 }

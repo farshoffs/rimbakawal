@@ -43,6 +43,13 @@ class OfflineBootstrap {
     this.sessionStartMinutes = 420,
     required this.routeOrderEnforced,
     required this.checkpoints,
+    this.attendanceLatitude,
+    this.attendanceLongitude,
+    this.attendanceRadiusMeters = 150,
+    this.attendanceLocationLabel = '',
+    this.attendanceNextPunchType = 'IN',
+    this.attendanceRecords = const [],
+    this.profilePictureConfigured = false,
   });
 
   final DateTime generatedAt;
@@ -53,6 +60,13 @@ class OfflineBootstrap {
   final int sessionStartMinutes;
   final bool routeOrderEnforced;
   final List<CachedCheckpoint> checkpoints;
+  final double? attendanceLatitude;
+  final double? attendanceLongitude;
+  final int attendanceRadiusMeters;
+  final String attendanceLocationLabel;
+  final String attendanceNextPunchType;
+  final List<Map<String, dynamic>> attendanceRecords;
+  final bool profilePictureConfigured;
 
   Map<String, dynamic> toJson() => {
     'generatedAt': generatedAt.toUtc().toIso8601String(),
@@ -65,6 +79,9 @@ class OfflineBootstrap {
       'profilePicture': user.profilePicture,
       'departmentId': user.departmentId,
       'sessionIntervalMinutes': user.sessionIntervalMinutes,
+      'sessionStartMinutes': user.sessionStartMinutes,
+      'noPk': user.noPk,
+      'guardStatus': user.guardStatus,
       'active': user.active,
     },
     'department': {
@@ -73,13 +90,26 @@ class OfflineBootstrap {
       'sessionIntervalMinutes': sessionIntervalMinutes,
       'sessionStartMinutes': sessionStartMinutes,
       'routeOrderEnforced': routeOrderEnforced,
+      'attendanceLatitude': attendanceLatitude,
+      'attendanceLongitude': attendanceLongitude,
+      'attendanceRadiusMeters': attendanceRadiusMeters,
+      'attendanceLocationLabel': attendanceLocationLabel,
     },
     'checkpoints': checkpoints.map((item) => item.toJson()).toList(),
+    'attendance': {
+      'nextPunchType': attendanceNextPunchType,
+      'records': attendanceRecords,
+      'profilePictureConfigured': profilePictureConfigured,
+    },
   };
 
   factory OfflineBootstrap.fromJson(Map<String, dynamic> json) {
     final department = Map<String, dynamic>.from(json['department'] as Map);
+    final attendance = Map<String, dynamic>.from(
+      json['attendance'] as Map? ?? const {},
+    );
     final rows = json['checkpoints'] as List<dynamic>? ?? const [];
+    final attendanceRows = attendance['records'] as List<dynamic>? ?? const [];
     return OfflineBootstrap(
       generatedAt:
           DateTime.tryParse(json['generatedAt'] as String? ?? '') ??
@@ -99,6 +129,20 @@ class OfflineBootstrap {
             ),
           )
           .toList(),
+      attendanceLatitude: (department['attendanceLatitude'] as num?)
+          ?.toDouble(),
+      attendanceLongitude: (department['attendanceLongitude'] as num?)
+          ?.toDouble(),
+      attendanceRadiusMeters:
+          (department['attendanceRadiusMeters'] as num?)?.toInt() ?? 150,
+      attendanceLocationLabel:
+          department['attendanceLocationLabel'] as String? ?? '',
+      attendanceNextPunchType: attendance['nextPunchType'] as String? ?? 'IN',
+      attendanceRecords: attendanceRows
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList(),
+      profilePictureConfigured:
+          attendance['profilePictureConfigured'] as bool? ?? false,
     );
   }
 }
