@@ -239,8 +239,9 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _intervalController;
   late final TextEditingController _locationLabelController;
-  late final TextEditingController _companyController;
   late final TextEditingController _zoneController;
+  late Future<List<CompanyRecord>> _companiesFuture;
+  int? _companyId;
   late final TextEditingController _locationSearchController;
   final MapController _mapController = MapController();
   late TimeOfDay _startTime;
@@ -268,9 +269,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     _locationLabelController = TextEditingController(
       text: widget.department?.attendanceLocationLabel ?? '',
     );
-    _companyController = TextEditingController(
-      text: widget.department?.companyName ?? '',
-    );
+    _companyId = widget.department?.companyId;
+    _companiesFuture = widget.api.getAdminCompanies();
     _zoneController = TextEditingController(
       text: widget.department?.zone ?? '',
     );
@@ -299,7 +299,6 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     _nameController.dispose();
     _intervalController.dispose();
     _locationLabelController.dispose();
-    _companyController.dispose();
     _zoneController.dispose();
     _locationSearchController.dispose();
     _mapController.dispose();
@@ -462,6 +461,10 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
       setState(() => _error = 'Masukkan nama Sekolah dan kadar sesi yang sah.');
       return;
     }
+    if (_companyId == null) {
+      setState(() => _error = 'Pilih Syarikat yang mengendalikan Sekolah ini.');
+      return;
+    }
     if (_latitude == null || _longitude == null) {
       setState(
         () => _error =
@@ -484,7 +487,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
           attendanceLongitude: _longitude!,
           attendanceRadiusMeters: _radius.round(),
           attendanceLocationLabel: _locationLabelController.text.trim(),
-          companyName: _companyController.text.trim(),
+          companyId: _companyId,
           zone: _zoneController.text.trim(),
         );
       } else {
@@ -500,7 +503,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
             attendanceLongitude: _longitude,
             attendanceRadiusMeters: _radius.round(),
             attendanceLocationLabel: _locationLabelController.text.trim(),
-            companyName: _companyController.text.trim(),
+            companyId: _companyId,
+            companyName: existing.companyName,
             zone: _zoneController.text.trim(),
           ),
         );
@@ -576,14 +580,32 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                 ),
               ),
               const SizedBox(height: 14),
-              TextField(
-                controller: _companyController,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'Nama Syarikat',
-                  prefixIcon: Icon(Icons.business_rounded),
-                  helperText: 'Digunakan dalam borang BPPA PKK 2 dan PKK 3.',
-                ),
+              FutureBuilder<List<CompanyRecord>>(
+                future: _companiesFuture,
+                builder: (context, snapshot) {
+                  final companies = (snapshot.data ?? const <CompanyRecord>[])
+                      .where((item) => item.active || item.id == _companyId)
+                      .toList();
+                  return DropdownButtonFormField<int>(
+                    initialValue: companies.any((item) => item.id == _companyId) ? _companyId : null,
+                    decoration: InputDecoration(
+                      labelText: 'Syarikat',
+                      prefixIcon: const Icon(Icons.business_rounded),
+                      helperText: companies.isEmpty
+                          ? 'Cipta Syarikat melalui menu Pengurusan Syarikat dahulu.'
+                          : 'Pilih syarikat induk yang mengendalikan Sekolah ini.',
+                    ),
+                    items: companies
+                        .map((company) => DropdownMenuItem<int>(
+                              value: company.id,
+                              child: Text(company.name),
+                            ))
+                        .toList(),
+                    onChanged: _saving || companies.isEmpty
+                        ? null
+                        : (value) => setState(() => _companyId = value),
+                  );
+                },
               ),
               const SizedBox(height: 14),
               TextField(

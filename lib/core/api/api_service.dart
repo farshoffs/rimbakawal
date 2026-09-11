@@ -338,6 +338,29 @@ class HistorySession {
   }
 }
 
+class CompanyRecord {
+  const CompanyRecord({
+    required this.id,
+    required this.name,
+    required this.active,
+    this.schoolCount = 0,
+    this.administrationCount = 0,
+  });
+  final int id;
+  final String name;
+  final bool active;
+  final int schoolCount;
+  final int administrationCount;
+
+  factory CompanyRecord.fromJson(Map<String, dynamic> json) => CompanyRecord(
+    id: (json['id'] as num).toInt(),
+    name: json['name'] as String? ?? '',
+    active: json['active'] as bool? ?? true,
+    schoolCount: (json['schoolCount'] as num?)?.toInt() ?? 0,
+    administrationCount: (json['administrationCount'] as num?)?.toInt() ?? 0,
+  );
+}
+
 class DepartmentRecord {
   const DepartmentRecord({
     required this.id,
@@ -350,6 +373,7 @@ class DepartmentRecord {
     this.attendanceLongitude,
     this.attendanceRadiusMeters = 150,
     this.attendanceLocationLabel = '',
+    this.companyId,
     this.companyName = '',
     this.zone = '',
   });
@@ -363,6 +387,7 @@ class DepartmentRecord {
   final double? attendanceLongitude;
   final int attendanceRadiusMeters;
   final String attendanceLocationLabel;
+  final int? companyId;
   final String companyName;
   final String zone;
 
@@ -381,6 +406,7 @@ class DepartmentRecord {
     attendanceRadiusMeters:
         (json['attendanceRadiusMeters'] as num?)?.toInt() ?? 150,
     attendanceLocationLabel: json['attendanceLocationLabel'] as String? ?? '',
+    companyId: (json['companyId'] as num?)?.toInt(),
     companyName: json['companyName'] as String? ?? '',
     zone: json['zone'] as String? ?? '',
   );
@@ -1023,7 +1049,8 @@ class ApiService {
     required String nama,
     required String noKadPengenalan,
     required String jawatan,
-    required int departmentId,
+    int? departmentId,
+    int? companyId,
     String noPk = '',
     String guardStatus = 'Tetap',
   }) async {
@@ -1036,6 +1063,7 @@ class ApiService {
           'noKadPengenalan': noKadPengenalan,
           'jawatan': jawatan,
           'departmentId': departmentId,
+          'companyId': companyId,
           'noPk': noPk,
           'guardStatus': guardStatus,
         }),
@@ -1069,6 +1097,31 @@ class ApiService {
     );
   }
 
+  Future<List<CompanyRecord>> getAdminCompanies() async {
+    final data = _decode(await _cachedGet(_uri('/api/admin/companies'), headers: _headers()));
+    return (data['companies'] as List<dynamic>? ?? const [])
+        .map((item) => CompanyRecord.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+  }
+
+  Future<CompanyRecord> createCompany(String name) async {
+    final data = _decode(await http.post(
+      _uri('/api/admin/companies'),
+      headers: _headers(jsonBody: true),
+      body: jsonEncode({'name': name}),
+    ));
+    return CompanyRecord.fromJson(Map<String, dynamic>.from(data['company'] as Map));
+  }
+
+  Future<CompanyRecord> updateCompany(CompanyRecord company) async {
+    final data = _decode(await http.put(
+      _uri('/api/admin/companies/${company.id}'),
+      headers: _headers(jsonBody: true),
+      body: jsonEncode({'name': company.name, 'active': company.active}),
+    ));
+    return CompanyRecord.fromJson(Map<String, dynamic>.from(data['company'] as Map));
+  }
+
   Future<List<DepartmentRecord>> getAdminDepartments() async {
     final data = _decode(
       await _cachedGet(_uri('/api/admin/departments'), headers: _headers()),
@@ -1089,7 +1142,7 @@ class ApiService {
     required double attendanceLongitude,
     int attendanceRadiusMeters = 150,
     String attendanceLocationLabel = '',
-    String companyName = '',
+    int? companyId,
     String zone = '',
   }) async {
     final data = _decode(
@@ -1104,7 +1157,7 @@ class ApiService {
           'attendanceLongitude': attendanceLongitude,
           'attendanceRadiusMeters': attendanceRadiusMeters,
           'attendanceLocationLabel': attendanceLocationLabel,
-          'companyName': companyName,
+          'companyId': companyId,
           'zone': zone,
         }),
       ),
@@ -1128,7 +1181,7 @@ class ApiService {
           'attendanceLongitude': department.attendanceLongitude,
           'attendanceRadiusMeters': department.attendanceRadiusMeters,
           'attendanceLocationLabel': department.attendanceLocationLabel,
-          'companyName': department.companyName,
+          'companyId': department.companyId,
           'zone': department.zone,
         }),
       ),
@@ -1235,7 +1288,8 @@ class ApiService {
     required int userId,
     required String nama,
     required String jawatan,
-    required int departmentId,
+    int? departmentId,
+    int? companyId,
     String noPk = '',
     String guardStatus = 'Tetap',
     String? profilePicture,
@@ -1245,6 +1299,7 @@ class ApiService {
       'nama': nama,
       'jawatan': jawatan,
       'departmentId': departmentId,
+      'companyId': companyId,
       'noPk': noPk,
       'guardStatus': guardStatus,
     };
