@@ -73,8 +73,8 @@ async function createUser(request, env) {
   if (!/^\d{12}$/.test(identityCard)) {
     return json({ error: 'No. Kad Pengenalan mesti mengandungi 12 digit.' }, 400);
   }
-  if (!['Patrol', 'Supervisor', 'Management'].includes(jawatan)) {
-    return json({ error: 'Jawatan mesti Patrol, Supervisor atau Management.' }, 400);
+  if (!['Patrol', 'Supervisor', 'Administration', 'Management'].includes(jawatan)) {
+    return json({ error: 'Jawatan mesti Patrol, Supervisor, Administration atau Management.' }, 400);
   }
   if (!['Tetap', 'Gantian'].includes(guardStatus)) {
     return json({ error: 'Status pengawal mesti Tetap atau Gantian.' }, 400);
@@ -792,14 +792,25 @@ async function createSos(request, env) {
 }
 
 async function adminReport(request, env, url) {
-  const auth = await requireManagement(request, env);
+  const auth = await requireReportAccess(request, env);
   if (auth.response) return auth.response;
 
   const today = malaysiaDateKey(new Date());
   const from = url.searchParams.get('from') || today;
   const to = url.searchParams.get('to') || today;
+  const role = String(auth.user.jawatan || '').trim().toLowerCase();
+  const ownDepartmentId = Number(auth.user.department_id || 0) || null;
   const rawDepartmentId = url.searchParams.get('departmentId');
-  const departmentId = rawDepartmentId == null ? null : Number(rawDepartmentId);
+  let departmentId = rawDepartmentId == null ? null : Number(rawDepartmentId);
+  if (role === 'administration') {
+    if (!ownDepartmentId) {
+      return json({ error: 'Pentadbiran Syarikat belum dipautkan kepada Sekolah.' }, 409);
+    }
+    if (departmentId != null && departmentId !== ownDepartmentId) {
+      return json({ error: 'Pentadbiran Syarikat hanya boleh memuat turun laporan lokasi sendiri.' }, 403);
+    }
+    departmentId = ownDepartmentId;
+  }
   if (!isDateKey(from) || !isDateKey(to) || from > to) {
     return json({ error: 'Julat tarikh laporan tidak sah.' }, 400);
   }
@@ -882,6 +893,16 @@ async function adminReport(request, env, url) {
     sosEvents,
     incidents,
   });
+}
+
+async function requireReportAccess(request, env) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth;
+  const role = String(auth.user.jawatan || '').trim().toLowerCase();
+  if (role !== 'management' && role !== 'administration') {
+    return { response: json({ error: 'Akses laporan hanya untuk Admin Sistem atau Pentadbiran Syarikat.' }, 403) };
+  }
+  return auth;
 }
 
 async function requireManagement(request, env) {

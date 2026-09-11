@@ -10,6 +10,7 @@ import 'core/notifications/notification_alert_gate.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/offline/offline_store.dart';
 import 'core/offline/offline_sync_service.dart';
+import 'features/admin/report_only_dashboard_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'features/sos/sos_alert_gate.dart';
@@ -182,6 +183,15 @@ class _AuthGateState extends State<_AuthGate> {
         final user = snapshot.data;
         if (user == null) {
           return LoginScreen(nfcService: _nfcService, mockMode: useMockNfc);
+        }
+
+        if (user.isAdministration) {
+          return ReportOnlyDashboardScreen(
+            user: user,
+            api: _api,
+            nfcService: _nfcService,
+            mockMode: useMockNfc,
+          );
         }
 
         return NotificationAlertGate(

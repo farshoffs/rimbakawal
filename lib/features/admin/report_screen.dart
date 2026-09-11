@@ -36,6 +36,9 @@ class _ReportScreenState extends State<ReportScreen> {
       if (!mounted) return;
       setState(() {
         _departments = departments.where((item) => item.active).toList();
+        if (_departments.length == 1) {
+          _departmentId = _departments.first.id;
+        }
         _loadingDepartments = false;
       });
     } catch (error) {

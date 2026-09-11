@@ -1215,6 +1215,22 @@ class ApiService {
     );
   }
 
+  Future<AppUser> setAdminUserBlocked({
+    required int userId,
+    required bool blocked,
+  }) async {
+    final data = _decode(
+      await http.put(
+        _uri('/api/admin/users/$userId/status'),
+        headers: _headers(jsonBody: true),
+        body: jsonEncode({'blocked': blocked}),
+      ),
+    );
+    return AppUser.fromJson(
+      Map<String, dynamic>.from(data['user'] as Map),
+    );
+  }
+
   Future<AppUser> updateAdminUser({
     required int userId,
     required String nama,

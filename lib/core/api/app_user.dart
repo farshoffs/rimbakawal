@@ -28,8 +28,10 @@ class AppUser {
   final bool active;
 
   bool get isManagement => jawatan.toLowerCase() == 'management';
+  bool get isAdministration => jawatan.toLowerCase() == 'administration';
   bool get isSupervisor => jawatan.toLowerCase() == 'supervisor';
   bool get canMonitor => isManagement || isSupervisor;
+  bool get canDownloadReports => isManagement || isAdministration;
   String get jawatanPaparan => labelJawatan(jawatan);
 
   factory AppUser.fromJson(Map<String, dynamic> json) {
@@ -55,7 +57,8 @@ class AppUser {
 String labelJawatan(String? value) {
   final raw = (value ?? '').trim();
   return switch (raw.toLowerCase()) {
-    'management' => 'Pengurusan',
+    'management' => 'Admin Sistem',
+    'administration' => 'Pentadbiran Syarikat',
     'supervisor' => 'Penyelia',
     'patrol' => 'Pengawal Rondaan',
     _ => raw.isEmpty ? '-' : raw,

@@ -518,19 +518,27 @@ async function attendanceSummary(env, date, departmentId = null) {
 }
 
 async function adminDepartments(request, env) {
-  const auth = await requireManagement(request, env);
+  const auth = await requireReportAccess(request, env);
   if (auth.response) return auth.response;
-  const result = await env.DB.prepare(
-    `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
+  const role = String(auth.user.jawatan || '').trim().toLowerCase();
+  const scopeDepartment = role === 'administration'
+    ? Number(auth.user.department_id || 0) || null
+    : null;
+  if (role === 'administration' && !scopeDepartment) {
+    return json({ error: 'Pentadbiran Syarikat belum dipautkan kepada Sekolah.' }, 409);
+  }
+  const sql = `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
             d.attendance_latitude, d.attendance_longitude, d.attendance_radius_m,
             d.attendance_location_label, d.company_name, d.zone,
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
      LEFT JOIN checkpoints c ON c.department_id = d.id
-     WHERE d.active = 1
+     WHERE d.active = 1 ${scopeDepartment ? 'AND d.id = ?' : ''}
      GROUP BY d.id
-     ORDER BY d.name ASC`,
-  ).all();
+     ORDER BY d.name ASC`;
+  const result = scopeDepartment
+    ? await env.DB.prepare(sql).bind(scopeDepartment).all()
+    : await env.DB.prepare(sql).all();
   return json({ departments: (result.results ?? []).map(departmentJson) });
 }
 
@@ -718,6 +726,16 @@ function adminAttendanceJson(row) {
     reviewedBy: row.reviewed_by == null ? null : Number(row.reviewed_by),
     reviewedByName: row.reviewed_by_name || null,
   };
+}
+
+async function requireReportAccess(request, env) {
+  const auth = await requireUser(request, env);
+  if (auth.response) return auth;
+  const role = String(auth.user.jawatan || '').trim().toLowerCase();
+  if (role !== 'management' && role !== 'administration') {
+    return { response: json({ error: 'Akses laporan hanya untuk Admin Sistem atau Pentadbiran Syarikat.' }, 403) };
+  }
+  return auth;
 }
 
 async function requireManagement(request, env) {

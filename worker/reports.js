@@ -1,8 +1,21 @@
 import commandCenterWorker from './command_center_period.js';
 
+const SESSION_COOKIE = 'rk_session';
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const reportOnlyAllowed =
+      (url.pathname === '/api/auth/session' && request.method === 'GET') ||
+      (url.pathname === '/api/auth/logout' && request.method === 'POST') ||
+      (url.pathname === '/api/admin/reports' && request.method === 'GET') ||
+      (url.pathname === '/api/admin/departments' && request.method === 'GET');
+    if (url.pathname.startsWith('/api/') &&
+        url.pathname !== '/api/auth/login' &&
+        !reportOnlyAllowed) {
+      const denied = await denyAdministrationOperationalAccess(request, env);
+      if (denied) return denied;
+    }
     if (url.pathname === '/api/admin/reports' && request.method === 'GET') {
       return monthlyReport(request, env, ctx, url);
     }
@@ -30,7 +43,12 @@ async function monthlyReport(request, env, ctx, url) {
   }
 
   const rawDepartmentId = url.searchParams.get('departmentId');
-  const departmentId = rawDepartmentId == null ? null : Number(rawDepartmentId);
+  const downstreamDepartmentId = payload.department?.id == null
+    ? null
+    : Number(payload.department.id);
+  const departmentId = rawDepartmentId == null
+    ? downstreamDepartmentId
+    : Number(rawDepartmentId);
   const scanBindings = departmentId == null
     ? [fromStart, toEnd]
     : [fromStart, toEnd, departmentId];
@@ -155,6 +173,44 @@ function addUtcDays(iso, days) {
   if (Number.isNaN(value.getTime())) return null;
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString();
+}
+
+async function denyAdministrationOperationalAccess(request, env) {
+  const token = getSessionToken(request);
+  if (!token) return null;
+  const user = await env.DB.prepare(
+    `SELECT u.jawatan
+     FROM sessions s
+     JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = ? AND s.expires_at_ms > ? AND u.active = 1
+     LIMIT 1`,
+  ).bind(await sha256(token), Date.now()).first();
+  if (String(user?.jawatan || '').trim().toLowerCase() !== 'administration') {
+    return null;
+  }
+  return json({
+    error: 'Akaun Pentadbiran Syarikat hanya dibenarkan mengakses dan memuat turun laporan PDF.',
+  }, 403);
+}
+
+function getSessionToken(request) {
+  const authorization = request.headers.get('Authorization') ?? '';
+  if (authorization.startsWith('Bearer ')) return authorization.slice(7).trim();
+  const cookie = request.headers.get('Cookie') ?? '';
+  for (const part of cookie.split(';')) {
+    const [name, ...value] = part.trim().split('=');
+    if (name === SESSION_COOKIE) {
+      try { return decodeURIComponent(value.join('=')); } catch (_) { return value.join('='); }
+    }
+  }
+  return null;
+}
+
+async function sha256(value) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function json(data, status = 200) {

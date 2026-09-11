@@ -81,7 +81,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Senarai PK'),
+        title: const Text('Pengguna Syarikat'),
         actions: [
           IconButton(
             tooltip: 'Muat semula',
@@ -144,7 +144,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    '${filteredUsers.length} PK',
+                    '${filteredUsers.length} pengguna',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -152,7 +152,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
               const SizedBox(height: 4),
               Expanded(
                 child: filteredUsers.isEmpty
-                    ? const Center(child: Text('Tiada PK untuk Sekolah ini.'))
+                    ? const Center(child: Text('Tiada pengguna untuk Sekolah ini.'))
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                         itemCount: filteredUsers.length,
@@ -180,10 +180,17 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
                                 ),
                               ),
                               subtitle: Text(
-                                '${user.noKadPengenalan}${user.noPk.isEmpty ? '' : ' • No. PK ${user.noPk}'}\n${user.jawatanPaparan} • ${user.guardStatus} • ${user.jabatan}',
+                                '${user.noKadPengenalan}${user.noPk.isEmpty ? '' : ' • No. PK ${user.noPk}'}\n${user.jawatanPaparan} • ${user.guardStatus} • ${user.jabatan}\nStatus Akaun: ${user.active ? 'AKTIF' : 'DISEKAT'}',
                               ),
                               isThreeLine: true,
-                              trailing: const Icon(Icons.edit_rounded),
+                              trailing: Icon(
+                                user.active
+                                    ? Icons.edit_rounded
+                                    : Icons.block_rounded,
+                                color: user.active
+                                    ? null
+                                    : Theme.of(context).colorScheme.error,
+                              ),
                             ),
                           );
                         },
@@ -200,7 +207,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
               ? () => _addUser(snapshot.data!.departments)
               : null,
           icon: const Icon(Icons.person_add_alt_1_rounded),
-          label: const Text('Tambah PK'),
+          label: const Text('Tambah Pengguna'),
         ),
       ),
     );
@@ -310,6 +317,26 @@ class _EditUserDialogState extends State<_EditUserDialog> {
       });
     } finally {
       if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  Future<void> _toggleBlocked() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.api.setAdminUserBlocked(
+        userId: widget.user.id,
+        blocked: widget.user.active,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -445,8 +472,8 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                     child: Text('Penyelia'),
                   ),
                   DropdownMenuItem(
-                    value: 'Management',
-                    child: Text('Pengurusan'),
+                    value: 'Administration',
+                    child: Text('Pentadbiran Syarikat'),
                   ),
                 ],
                 onChanged: _saving
@@ -513,6 +540,23 @@ class _EditUserDialogState extends State<_EditUserDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
+              OutlinedButton.icon(
+                onPressed: _saving ? null : _toggleBlocked,
+                icon: Icon(
+                  widget.user.active
+                      ? Icons.block_rounded
+                      : Icons.lock_open_rounded,
+                ),
+                label: Text(
+                  widget.user.active ? 'Sekat Akaun' : 'Nyahsekat Akaun',
+                ),
+                style: widget.user.active
+                    ? OutlinedButton.styleFrom(
+                        foregroundColor: Theme.of(context).colorScheme.error,
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 8),
               FilledButton(
                 onPressed: _saving ? null : _save,
                 child: Text(_saving ? 'Menyimpan…' : 'Simpan'),
@@ -663,8 +707,8 @@ class _AddUserDialogState extends State<_AddUserDialog> {
                     child: Text('Penyelia'),
                   ),
                   DropdownMenuItem(
-                    value: 'Management',
-                    child: Text('Pengurusan'),
+                    value: 'Administration',
+                    child: Text('Pentadbiran Syarikat'),
                   ),
                 ],
                 onChanged: (value) {

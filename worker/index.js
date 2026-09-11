@@ -70,6 +70,11 @@ export default {
         return updateAdminUser(request, env, Number(match[1]));
       }
 
+      match = url.pathname.match(/^\/api\/admin\/users\/(\d+)\/status$/);
+      if (match && request.method === 'PUT') {
+        return updateAdminUserStatus(request, env, Number(match[1]));
+      }
+
       match = url.pathname.match(/^\/api\/admin\/users\/(\d+)\/department$/);
       if (match && request.method === 'PUT') {
         return updateUserDepartment(request, env, Number(match[1]));
@@ -734,7 +739,7 @@ async function updateAdminUser(request, env, userId) {
   const guardStatus = String(body.guardStatus ?? 'Tetap').trim();
 
   if (nama.length < 3) return json({ error: 'Nama pengguna tidak sah.' }, 400);
-  if (!['Patrol', 'Supervisor', 'Management'].includes(jawatan)) {
+  if (!['Patrol', 'Supervisor', 'Administration', 'Management'].includes(jawatan)) {
     return json({ error: 'Jawatan pengguna tidak sah.' }, 400);
   }
   if (!['Tetap', 'Gantian'].includes(guardStatus)) {
@@ -776,6 +781,31 @@ async function updateAdminUser(request, env, userId) {
 
   const updated = await getUserById(env, userId);
   return json({ user: publicUser(updated) });
+}
+
+async function updateAdminUserStatus(request, env, userId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return json({ error: 'Pengguna tidak sah.' }, 400);
+  }
+  const body = await readJson(request);
+  if (typeof body.blocked !== 'boolean') {
+    return json({ error: 'Status sekatan akaun tidak sah.' }, 400);
+  }
+  if (Number(auth.user.id) === userId && body.blocked) {
+    return json({ error: 'Admin Sistem tidak boleh menyekat akaun sendiri.' }, 409);
+  }
+  const existing = await getUserById(env, userId);
+  if (!existing) return json({ error: 'Pengguna tidak ditemui.' }, 404);
+  await env.DB.prepare('UPDATE users SET active = ? WHERE id = ?')
+    .bind(body.blocked ? 0 : 1, userId)
+    .run();
+  if (body.blocked) {
+    await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId).run();
+  }
+  const updated = await getUserById(env, userId);
+  return json({ user: publicUser(updated), blocked: body.blocked });
 }
 
 async function updateUserDepartment(request, env, userId) {
