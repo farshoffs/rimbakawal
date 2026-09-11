@@ -144,36 +144,20 @@ jobs:
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_EMAIL" | npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_EMAIL --config wrangler.deploy.jsonc
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY" | npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY --config wrangler.deploy.jsonc
 
-      - name: Apply D1 migrations and seed users
+      - name: Apply D1 migrations and align existing data
         run: npx wrangler d1 migrations apply rimbakawal-db --remote --config wrangler.deploy.jsonc
 
-      - name: Verify Pentadbiran PKK presentation seed
+      - name: Verify existing Company hierarchy alignment
         shell: bash
         run: |
           npx wrangler d1 execute rimbakawal-db --remote --config wrangler.deploy.jsonc --command "
             SELECT
-              (SELECT COUNT(*)
-                 FROM users
-                WHERE no_kad_pengenalan IN ('990101020001','990101020002','990101020003','990101020004')) AS demo_guards,
-              (SELECT COUNT(*)
-                 FROM attendance_records a
-                 JOIN users u ON u.id = a.user_id
-                WHERE u.no_kad_pengenalan IN ('990101020001','990101020002','990101020003','990101020004')
-                  AND a.punched_at >= '2026-07-31T16:00:00Z'
-                  AND a.punched_at < '2026-09-02T16:00:00Z') AS demo_attendance_punches,
-              (SELECT COUNT(*)
-                 FROM nfc_scans
-                WHERE client_event_id LIKE 'DEMO-PKK4-202608-%') AS demo_pkk4_scans,
-              (SELECT COUNT(DISTINCT client_session_id)
-                 FROM nfc_scans
-                WHERE client_event_id LIKE 'DEMO-PKK4-202608-%') AS demo_scan_sessions,
-              (SELECT COUNT(*)
-                 FROM patrol_session_history
-                WHERE client_session_id LIKE 'DEMO-PKK4-202608-%') AS demo_patrol_sessions,
-              (SELECT COUNT(*)
-                 FROM checkpoints c
-                 JOIN departments d ON d.id = c.department_id
-                WHERE d.name = 'Pentadbiran' AND c.active = 1) AS active_checkpoints;
+              (SELECT COUNT(*) FROM companies) AS companies,
+              (SELECT COUNT(*) FROM departments WHERE company_id IS NOT NULL) AS linked_schools,
+              (SELECT COUNT(*) FROM departments WHERE active = 1 AND company_id IS NULL) AS unlinked_active_schools,
+              (SELECT COUNT(*) FROM users WHERE LOWER(jawatan) = 'administration' AND company_id IS NOT NULL) AS linked_company_admins,
+              (SELECT COUNT(*) FROM users WHERE LOWER(jawatan) = 'administration' AND active = 1 AND company_id IS NULL) AS unlinked_active_company_admins,
+              (SELECT COUNT(*) FROM users WHERE LOWER(jawatan) IN ('patrol','supervisor') AND department_id IS NOT NULL AND company_id IS NULL) AS operational_users_without_company;
           "
 
       - name: Deploy Worker and static assets
