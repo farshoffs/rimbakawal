@@ -23,7 +23,19 @@ jobs:
           ref: offline-v2
 
       - name: Apply Offline Engine v2
-        run: python3 scripts/apply_offline_v2.py
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/apply_offline_v2.py')
+          t = p.read_text(encoding='utf-8')
+          t = t.replace(
+              '"    \'sessionIntervalMinutes\': user.sessionIntervalMinutes,\\n    \'active\': user.active,\\n",\n    "    \'sessionIntervalMinutes\': user.sessionIntervalMinutes,\\n"\n    "    \'sessionStartMinutes\': user.sessionStartMinutes,\\n"\n    "    \'noPk\': user.noPk,\\n"',
+              '"    \'sessionStartMinutes\': user.sessionStartMinutes,\\n    \'active\': user.active,\\n",\n    "    \'sessionStartMinutes\': user.sessionStartMinutes,\\n"\n    "    \'noPk\': user.noPk,\\n"',
+          )
+          p.write_text(t, encoding='utf-8')
+          PY
+          python3 scripts/apply_offline_v2.py
 
       - name: Check worker JavaScript
         run: node --check worker/offline.js
