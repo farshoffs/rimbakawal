@@ -4,6 +4,7 @@ import '../../core/api/api_service.dart';
 import '../../core/nfc/nfc_service.dart';
 import 'attendance_history_screen.dart';
 import 'command_center_screen.dart';
+import 'company_maintenance_screen.dart';
 import 'department_maintenance_screen.dart';
 import 'live_patrol_map_screen.dart';
 import 'report_screen.dart';
@@ -63,6 +64,14 @@ class AdminScreen extends StatelessWidget {
             subtitle:
                 'Lihat SOS aktif dan tandakan selesai bersama catatan audit.',
             onTap: () => _open(context, const SosManagementScreen()),
+          ),
+          const SizedBox(height: 10),
+          _AdminMenuCard(
+            icon: Icons.business_rounded,
+            title: 'Pengurusan Syarikat',
+            subtitle:
+                'Cipta dan urus syarikat sebagai induk kepada banyak Sekolah.',
+            onTap: () => _open(context, CompanyMaintenanceScreen(api: api)),
           ),
           const SizedBox(height: 10),
           _AdminMenuCard(
