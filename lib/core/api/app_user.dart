@@ -10,6 +10,7 @@ class AppUser {
     required this.sessionIntervalMinutes,
     this.sessionStartMinutes = 420,
     this.noPk = '',
+    this.guardStatus = 'Tetap',
     this.active = true,
   });
 
@@ -23,6 +24,7 @@ class AppUser {
   final int sessionIntervalMinutes;
   final int sessionStartMinutes;
   final String noPk;
+  final String guardStatus;
   final bool active;
 
   bool get isManagement => jawatan.toLowerCase() == 'management';
@@ -44,6 +46,7 @@ class AppUser {
       sessionStartMinutes:
           (json['sessionStartMinutes'] as num?)?.toInt() ?? 420,
       noPk: json['noPk'] as String? ?? '',
+      guardStatus: json['guardStatus'] as String? ?? 'Tetap',
       active: json['active'] as bool? ?? true,
     );
   }

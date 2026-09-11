@@ -618,11 +618,20 @@ class PkkPdfGenerator {
                   children: [
                     pw.Expanded(
                       child: sideCell(
-                        index < guards.length ? 'X' : '',
+                        index < guards.length && !guards[index].isReplacement
+                            ? 'X'
+                            : '',
                         height: 9,
                       ),
                     ),
-                    pw.Expanded(child: sideCell('', height: 9)),
+                    pw.Expanded(
+                      child: sideCell(
+                        index < guards.length && guards[index].isReplacement
+                            ? 'X'
+                            : '',
+                        height: 9,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1201,6 +1210,7 @@ class PkkPdfGenerator {
         id: id,
         name: (row['nama'] ?? '-').toString(),
         noPk: (row['no_pk'] ?? '').toString(),
+        guardStatus: (row['guard_status'] ?? 'Tetap').toString(),
       );
     }
     for (final session in sessions) {
@@ -1210,6 +1220,7 @@ class PkkPdfGenerator {
           id: session.userId,
           name: session.name,
           noPk: session.noPk,
+          guardStatus: session.guardStatus,
         ),
       );
     }
@@ -1285,6 +1296,7 @@ class PkkPdfGenerator {
       userId: (input['user_id'] as num?)?.toInt() ?? 0,
       name: (input['nama'] ?? '-').toString(),
       noPk: (input['no_pk'] ?? '').toString(),
+      guardStatus: (input['guard_status'] ?? 'Tetap').toString(),
       start: start,
       end: end,
       shift: shift,
@@ -1357,10 +1369,18 @@ class PkkPdfGenerator {
 }
 
 class _GuardMeta {
-  const _GuardMeta({required this.id, required this.name, required this.noPk});
+  const _GuardMeta({
+    required this.id,
+    required this.name,
+    required this.noPk,
+    this.guardStatus = 'Tetap',
+  });
   final int id;
   final String name;
   final String noPk;
+  final String guardStatus;
+
+  bool get isReplacement => guardStatus.trim().toLowerCase() == 'gantian';
 }
 
 class _GuardSession {
@@ -1368,6 +1388,7 @@ class _GuardSession {
     required this.userId,
     required this.name,
     required this.noPk,
+    this.guardStatus = 'Tetap',
     required this.start,
     required this.end,
     required this.shift,
@@ -1375,6 +1396,7 @@ class _GuardSession {
   final int userId;
   final String name;
   final String noPk;
+  final String guardStatus;
   final DateTime start;
   final DateTime? end;
   final int shift;

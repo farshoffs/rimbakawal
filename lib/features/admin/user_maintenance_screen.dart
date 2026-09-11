@@ -180,7 +180,7 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
                                 ),
                               ),
                               subtitle: Text(
-                                '${user.noKadPengenalan}${user.noPk.isEmpty ? '' : ' • No. PK ${user.noPk}'}\n${user.jawatanPaparan} • ${user.jabatan}',
+                                '${user.noKadPengenalan}${user.noPk.isEmpty ? '' : ' • No. PK ${user.noPk}'}\n${user.jawatanPaparan} • ${user.guardStatus} • ${user.jabatan}',
                               ),
                               isThreeLine: true,
                               trailing: const Icon(Icons.edit_rounded),
@@ -226,6 +226,7 @@ class _EditUserDialogState extends State<_EditUserDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _noPkController;
   late String _jawatan;
+  late String _guardStatus;
   int? _departmentId;
   String? _newProfilePicture;
   bool _clearProfilePicture = false;
@@ -239,6 +240,7 @@ class _EditUserDialogState extends State<_EditUserDialog> {
     _nameController = TextEditingController(text: widget.user.nama);
     _noPkController = TextEditingController(text: widget.user.noPk);
     _jawatan = widget.user.jawatan;
+    _guardStatus = widget.user.guardStatus;
     _departmentId = widget.user.departmentId;
   }
 
@@ -328,6 +330,7 @@ class _EditUserDialogState extends State<_EditUserDialog> {
         jawatan: _jawatan,
         departmentId: _departmentId!,
         noPk: _noPkController.text.trim(),
+        guardStatus: _guardStatus,
         profilePicture: _newProfilePicture,
         clearProfilePicture: _clearProfilePicture,
       );
@@ -453,6 +456,27 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                       },
               ),
               const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _guardStatus,
+                decoration: const InputDecoration(
+                  labelText: 'Status Pengawal',
+                  prefixIcon: Icon(Icons.verified_user_outlined),
+                  helperText:
+                      'Digunakan pada ruangan TETAP / GANTIAN Borang PKK 2.',
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'Tetap', child: Text('Tetap')),
+                  DropdownMenuItem(value: 'Gantian', child: Text('Gantian')),
+                ],
+                onChanged: _saving
+                    ? null
+                    : (value) {
+                        if (value != null) {
+                          setState(() => _guardStatus = value);
+                        }
+                      },
+              ),
+              const SizedBox(height: 12),
               DropdownButtonFormField<int>(
                 initialValue: _departmentId,
                 decoration: const InputDecoration(
@@ -531,6 +555,7 @@ class _AddUserDialogState extends State<_AddUserDialog> {
   final _icController = TextEditingController();
   final _noPkController = TextEditingController();
   String _jawatan = 'Patrol';
+  String _guardStatus = 'Tetap';
   int? _departmentId;
   bool _saving = false;
   String? _error;
@@ -571,6 +596,7 @@ class _AddUserDialogState extends State<_AddUserDialog> {
         jawatan: _jawatan,
         departmentId: _departmentId!,
         noPk: _noPkController.text.trim(),
+        guardStatus: _guardStatus,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -644,6 +670,27 @@ class _AddUserDialogState extends State<_AddUserDialog> {
                 onChanged: (value) {
                   if (value != null) setState(() => _jawatan = value);
                 },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _guardStatus,
+                decoration: const InputDecoration(
+                  labelText: 'Status Pengawal',
+                  prefixIcon: Icon(Icons.verified_user_outlined),
+                  helperText:
+                      'Digunakan pada ruangan TETAP / GANTIAN Borang PKK 2.',
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'Tetap', child: Text('Tetap')),
+                  DropdownMenuItem(value: 'Gantian', child: Text('Gantian')),
+                ],
+                onChanged: _saving
+                    ? null
+                    : (value) {
+                        if (value != null) {
+                          setState(() => _guardStatus = value);
+                        }
+                      },
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<int>(
