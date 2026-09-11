@@ -48,12 +48,15 @@ jobs:
                 AND u.company_id IS NULL
               ORDER BY u.department_id, u.id;
             "
-            echo '=== EXISTING COMPANIES ==='
+            echo '=== EXISTING COMPANY RELATIONSHIPS ==='
             npx wrangler d1 execute rimbakawal-db --remote --command "
               SELECT c.id, c.name,
-                     COUNT(DISTINCT CASE WHEN d.active = 1 THEN d.id END) AS active_schools
+                     COUNT(DISTINCT CASE WHEN d.active = 1 THEN d.id END) AS active_schools,
+                     GROUP_CONCAT(DISTINCT CASE WHEN d.active = 1 THEN d.name END) AS school_names,
+                     COUNT(DISTINCT CASE WHEN u.active = 1 AND LOWER(u.jawatan) = 'administration' THEN u.id END) AS active_company_admins
               FROM companies c
               LEFT JOIN departments d ON d.company_id = c.id
+              LEFT JOIN users u ON u.company_id = c.id
               GROUP BY c.id, c.name
               ORDER BY c.id;
             "
