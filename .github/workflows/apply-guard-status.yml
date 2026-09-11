@@ -1,0 +1,77 @@
+name: Apply Guard Status Tetap Gantian
+
+on:
+  push:
+    branches:
+      - guard-status-tetap-gantian
+
+permissions:
+  contents: write
+
+concurrency:
+  group: guard-status-tetap-gantian
+  cancel-in-progress: true
+
+jobs:
+  apply-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: guard-status-tetap-gantian
+
+      - name: Apply guard status feature
+        run: |
+          python3 scripts/apply_guard_status.py
+          python3 scripts/fix_guard_status_post.py
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check worker/index.js
+          node --check worker/app.js
+          node --check worker/reports.js
+
+      - name: Validate migration
+        shell: bash
+        run: |
+          grep -F "guard_status TEXT NOT NULL DEFAULT 'Tetap'" migrations/0017_guard_status.sql
+          grep -F "SET guard_status = 'Gantian'" migrations/0017_guard_status.sql
+          grep -F "WHERE UPPER(TRIM(nama)) = 'BUFFER'" migrations/0017_guard_status.sql
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Format changed Dart files
+        run: |
+          dart format lib/core/api/app_user.dart
+          dart format lib/core/api/api_service.dart
+          dart format lib/features/admin/user_maintenance_screen.dart
+          dart format lib/features/admin/pkk_pdf_generator.dart
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Build web release
+        run: flutter build web --release --dart-define=USE_MOCK_NFC=true
+
+      - name: Commit feature changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib worker migrations pubspec.yaml pubspec.lock scripts/apply_guard_status.py scripts/fix_guard_status_post.py
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Add Tetap/Gantian guard status and set BUFFER as Gantian"
+          git push origin HEAD:guard-status-tetap-gantian
