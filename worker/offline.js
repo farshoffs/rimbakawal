@@ -5,6 +5,8 @@ const SESSION_COOKIE = 'rk_session';
 const MALAYSIA_OFFSET_MS = 8 * 60 * 60 * 1000;
 const MAX_SYNC_BATCH = 50;
 const MAX_EVENT_AGE_MS = 180 * 24 * 60 * 60 * 1000;
+const MAX_SELFIE_CHARS = 650000;
+const DEFAULT_ATTENDANCE_RADIUS_M = 150;
 
 export default {
   async fetch(request, env, ctx) {
@@ -48,7 +50,9 @@ async function offlineBootstrap(request, env) {
   }
 
   const department = await env.DB.prepare(
-    `SELECT id, name, session_interval_minutes, session_start_minutes, route_order_enforced
+    `SELECT id, name, session_interval_minutes, session_start_minutes, route_order_enforced,
+            attendance_latitude, attendance_longitude, attendance_radius_m,
+            attendance_location_label
      FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
   ).bind(auth.user.department_id).first();
   if (!department) return json({ error: 'Sekolah tidak aktif.' }, 409);
@@ -60,6 +64,31 @@ async function offlineBootstrap(request, env) {
      ORDER BY position ASC, id ASC`,
   ).bind(auth.user.department_id).all();
 
+  const workDate = malaysiaDateKey(new Date());
+  const attendanceResult = await env.DB.prepare(
+    `SELECT id, punch_type, punched_at, latitude, longitude, accuracy_m, distance_m,
+            face_status, face_score, face_model, face_reason
+     FROM attendance_records
+     WHERE user_id = ? AND work_date = ?
+     ORDER BY punched_at ASC, id ASC`,
+  ).bind(auth.user.id, workDate).all();
+  const attendanceRecords = (attendanceResult.results ?? []).map((row) => ({
+    id: Number(row.id),
+    punchType: row.punch_type,
+    punchedAt: row.punched_at,
+    latitude: Number(row.latitude),
+    longitude: Number(row.longitude),
+    accuracyMeters: row.accuracy_m == null ? null : Number(row.accuracy_m),
+    distanceMeters: Number(row.distance_m || 0),
+    faceStatus: row.face_status || 'review_required',
+    faceScore: row.face_score == null ? null : Number(row.face_score),
+    faceModel: row.face_model || null,
+    faceReason: row.face_reason || null,
+  }));
+  const latestAttendance = attendanceRecords.length
+    ? attendanceRecords[attendanceRecords.length - 1]
+    : null;
+
   return json({
     generatedAt: new Date().toISOString(),
     user: publicUser(auth.user),
@@ -69,6 +98,10 @@ async function offlineBootstrap(request, env) {
       sessionIntervalMinutes: Number(department.session_interval_minutes || 120),
       sessionStartMinutes: Number(department.session_start_minutes ?? 420),
       routeOrderEnforced: false,
+      attendanceLatitude: department.attendance_latitude == null ? null : Number(department.attendance_latitude),
+      attendanceLongitude: department.attendance_longitude == null ? null : Number(department.attendance_longitude),
+      attendanceRadiusMeters: Math.max(30, Number(department.attendance_radius_m || DEFAULT_ATTENDANCE_RADIUS_M)),
+      attendanceLocationLabel: department.attendance_location_label || '',
     },
     checkpoints: (checkpointsResult.results ?? []).map((row) => ({
       id: Number(row.id),
@@ -77,6 +110,11 @@ async function offlineBootstrap(request, env) {
       position: Number(row.position),
       instruction: row.job_instruction || null,
     })),
+    attendance: {
+      nextPunchType: latestAttendance?.punchType === 'IN' ? 'OUT' : 'IN',
+      records: attendanceRecords,
+      profilePictureConfigured: Boolean(auth.user.profile_picture),
+    },
     syncPolicy: {
       localFirst: true,
       batchSize: MAX_SYNC_BATCH,
@@ -129,6 +167,9 @@ async function offlineSync(request, env) {
           break;
         case 'incident':
           result = await syncIncident(env, auth.user, clientEventId, occurredAt, payload);
+          break;
+        case 'attendance':
+          result = await syncAttendance(env, auth.user, clientEventId, occurredAt, payload);
           break;
         case 'sos':
           result = await syncSos(env, auth.user, clientEventId, occurredAt, payload);
@@ -297,6 +338,104 @@ async function syncScan(env, user, clientEventId, occurredAt, payload) {
     checkpointName: checkpoint.name,
     sessionIndex,
     clientSessionId: clientSessionId || null,
+  };
+}
+
+
+async function syncAttendance(env, user, clientEventId, occurredAt, payload) {
+  if (!user.department_id) throw new SyncError('Sekolah pengguna tidak ditetapkan.');
+  if (!user.profile_picture) {
+    throw new SyncError('Gambar profil diperlukan sebelum punch kehadiran offline.');
+  }
+
+  const latitude = Number(payload.latitude);
+  const longitude = Number(payload.longitude);
+  const accuracy = Number(payload.accuracy ?? 9999);
+  const selfie = String(payload.selfie ?? '');
+  if (!validCoordinate(latitude, longitude)) throw new SyncError('Lokasi semasa tidak sah.');
+  if (!Number.isFinite(accuracy) || accuracy < 0 || accuracy > 100) {
+    throw new SyncError('Ketepatan GPS punch offline tidak mencukupi.');
+  }
+  if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(selfie)) {
+    throw new SyncError('Selfie kehadiran offline tidak sah.');
+  }
+  if (selfie.length > MAX_SELFIE_CHARS) throw new SyncError('Selfie kehadiran terlalu besar.');
+
+  const department = await env.DB.prepare(
+    `SELECT id, name, attendance_latitude, attendance_longitude, attendance_radius_m
+     FROM departments WHERE id = ? AND active = 1 LIMIT 1`,
+  ).bind(user.department_id).first();
+  if (!department) throw new SyncError('Sekolah tidak ditemui.');
+
+  const centerLat = Number(department.attendance_latitude);
+  const centerLng = Number(department.attendance_longitude);
+  const radius = Math.max(30, Number(department.attendance_radius_m || DEFAULT_ATTENDANCE_RADIUS_M));
+  if (!Number.isFinite(centerLat) || !Number.isFinite(centerLng)) {
+    throw new SyncError('Kawasan kehadiran Sekolah belum ditetapkan.');
+  }
+  const distance = haversineMeters(latitude, longitude, centerLat, centerLng);
+  if (distance > radius) {
+    throw new SyncError(`Punch offline berada ${Math.round(distance)}m dari pusat; had ialah ${Math.round(radius)}m.`);
+  }
+
+  const workDate = malaysiaDateKey(occurredAt);
+  const latest = await env.DB.prepare(
+    `SELECT id, punch_type, punched_at
+     FROM attendance_records
+     WHERE user_id = ? AND work_date = ? AND punched_at <= ?
+     ORDER BY punched_at DESC, id DESC LIMIT 1`,
+  ).bind(user.id, workDate, occurredAt.toISOString()).first();
+  if (latest && occurredAt.getTime() - Date.parse(latest.punched_at) < 60000) {
+    throw new SyncError('Punch offline terlalu rapat dengan rekod sebelumnya.');
+  }
+  const punchType = latest?.punch_type === 'IN' ? 'OUT' : 'IN';
+  const profileHash = await sha256(user.profile_picture);
+  const faceStatus = 'review_required';
+  const faceModel = 'offline-sync';
+  const faceReason = 'Punch dibuat tanpa internet; selfie disimpan untuk semakan selepas sync.';
+
+  const insert = await env.DB.prepare(
+    `INSERT INTO attendance_records (
+       user_id, department_id, work_date, punch_type, punched_at,
+       latitude, longitude, accuracy_m, distance_m, selfie_data,
+       profile_picture_hash, face_status, face_score, face_model, face_reason
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    user.id,
+    user.department_id,
+    workDate,
+    punchType,
+    occurredAt.toISOString(),
+    latitude,
+    longitude,
+    accuracy,
+    distance,
+    selfie,
+    profileHash,
+    faceStatus,
+    null,
+    faceModel,
+    faceReason,
+  ).run();
+
+  const attendanceId = Number(insert.meta?.last_row_id || 0);
+  try {
+    await sendPushToUser(env, user.id, {
+      title: 'Kehadiran Offline Disinkron',
+      body: `${department.name} • ${punchType} berjaya dihantar ke pelayan.`,
+      kind: 'attendance_punch',
+      data: { attendanceId, workDate, punchType, offline: true },
+    });
+  } catch (error) {
+    console.error('Offline attendance confirmation push failed', error);
+  }
+
+  return {
+    serverId: attendanceId,
+    clientEventId,
+    punchType,
+    punchedAt: occurredAt.toISOString(),
+    distanceMeters: distance,
   };
 }
 
@@ -882,6 +1021,22 @@ function malaysiaDayBounds(dateKey) {
 
 async function readJson(request) {
   try { return await request.json(); } catch (_) { return {}; }
+}
+
+
+function validCoordinate(lat, lng) {
+  return Number.isFinite(lat) && Number.isFinite(lng) &&
+    lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+}
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const toRad = (value) => value * Math.PI / 180;
+  const earthRadius = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 async function sha256(value) {

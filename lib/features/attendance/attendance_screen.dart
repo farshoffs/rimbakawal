@@ -99,14 +99,35 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         dataUrl = 'data:image/$mime;base64,${base64Encode(bytes)}';
       }
       if (dataUrl == null || dataUrl.isEmpty) return;
-      await widget.api.punchAttendance(
+      final record = await widget.api.punchAttendance(
         latitude: position.latitude,
         longitude: position.longitude,
         accuracy: position.accuracy,
         selfieData: dataUrl,
       );
-      await _refresh();
       if (!mounted) return;
+      if (record.id < 0) {
+        final current = _status;
+        if (current != null) {
+          setState(() {
+            _status = AttendanceStatus(
+              department: current.department,
+              nextPunchType: record.punchType == 'IN' ? 'OUT' : 'IN',
+              records: [...current.records, record],
+              profilePictureConfigured: current.profilePictureConfigured,
+            );
+          });
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Offline: punch disimpan pada telefon dan akan sync automatik.',
+            ),
+          ),
+        );
+      } else {
+        await _refresh();
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
@@ -124,12 +145,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   String _faceLabel(String value) => switch (value) {
     'matched' => 'WAJAH SEPADAN',
     'different' => 'WAJAH TIDAK SEPADAN',
+    'pending_sync' => 'MENUNGGU SYNC',
     _ => 'SEMAKAN WAJAH DIPERLUKAN',
   };
 
   Color _faceColor(String value) => switch (value) {
     'matched' => const Color(0xFF00B894),
     'different' => const Color(0xFFFF7675),
+    'pending_sync' => const Color(0xFFFDCB6E),
     _ => const Color(0xFFFDCB6E),
   };
 
@@ -242,7 +265,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             style: const TextStyle(fontWeight: FontWeight.w900),
                           ),
                           subtitle: Text(
-                            '${record.distanceMeters.toStringAsFixed(0)}m dari pusat • GPS ±${record.accuracyMeters?.toStringAsFixed(0) ?? '-'}m',
+                            record.id < 0
+                                ? 'Disimpan offline • GPS ±${record.accuracyMeters?.toStringAsFixed(0) ?? '-'}m • akan sync automatik'
+                                : '${record.distanceMeters.toStringAsFixed(0)}m dari pusat • GPS ±${record.accuracyMeters?.toStringAsFixed(0) ?? '-'}m',
                           ),
                           trailing: Container(
                             padding: const EdgeInsets.symmetric(

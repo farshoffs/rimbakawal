@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:http/http.dart' as http;
 
@@ -627,6 +628,42 @@ class ApiService {
     if (_sessionToken != null) 'Authorization': 'Bearer $_sessionToken',
   };
 
+  Future<http.Response> _cachedGet(
+    Uri uri, {
+    Map<String, String>? headers,
+  }) async {
+    final cacheKey = uri.toString();
+    try {
+      final response = await http
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode >= 200 &&
+          response.statusCode < 300 &&
+          response.bodyBytes.length <= 2 * 1024 * 1024) {
+        await _offline.cacheHttpResponse(
+          cacheKey,
+          response.body,
+          statusCode: response.statusCode,
+        );
+      }
+      if (response.statusCode >= 500) {
+        final cached = _offline.cachedHttpResponse(cacheKey);
+        if (cached != null) return _cachedResponse(cached);
+      }
+      return response;
+    } catch (_) {
+      final cached = _offline.cachedHttpResponse(cacheKey);
+      if (cached != null) return _cachedResponse(cached);
+      rethrow;
+    }
+  }
+
+  http.Response _cachedResponse(Map<String, dynamic> cached) => http.Response(
+    cached['body'] as String? ?? '{}',
+    (cached['statusCode'] as num?)?.toInt() ?? 200,
+    headers: const {'x-zpatrol-source': 'offline-cache'},
+  );
+
   Future<AppUser> login(String identityCard) async {
     final response = await http.post(
       _uri('/api/auth/login'),
@@ -665,7 +702,7 @@ class ApiService {
     }
 
     try {
-      final response = await http.get(
+      final response = await _cachedGet(
         _uri('/api/auth/session'),
         headers: _headers(),
       );
@@ -733,7 +770,7 @@ class ApiService {
 
   Future<OfflineBootstrap> getOfflineBootstrap() async {
     final data = _decode(
-      await http.get(_uri('/api/offline/bootstrap'), headers: _headers()),
+      await _cachedGet(_uri('/api/offline/bootstrap'), headers: _headers()),
     );
     final bootstrap = OfflineBootstrap.fromJson(data);
     await _offline.cacheBootstrap(bootstrap);
@@ -806,11 +843,13 @@ class ApiService {
   }
 
   Future<LiveMapData> getLiveMap() async => LiveMapData.fromJson(
-    _decode(await http.get(_uri('/api/monitor/live-map'), headers: _headers())),
+    _decode(
+      await _cachedGet(_uri('/api/monitor/live-map'), headers: _headers()),
+    ),
   );
 
   Future<PatrolConfig> getPatrolConfig() async => PatrolConfig.fromJson(
-    _decode(await http.get(_uri('/api/patrol/config'), headers: _headers())),
+    _decode(await _cachedGet(_uri('/api/patrol/config'), headers: _headers())),
   );
 
   Future<NfcLog> storeNfcScan(String uid) async {
@@ -891,7 +930,7 @@ class ApiService {
 
   Future<List<String>> getIncidentImages(int incidentId) async {
     final data = _decode(
-      await http.get(
+      await _cachedGet(
         _uri('/api/admin/incidents/$incidentId/images'),
         headers: _headers(),
       ),
@@ -910,7 +949,7 @@ class ApiService {
     final end = to ?? start;
     return CommandCenterData.fromJson(
       _decode(
-        await http.get(
+        await _cachedGet(
           _uri('/api/admin/command-center', {
             'from': _dateKey(start),
             'to': _dateKey(end),
@@ -946,7 +985,7 @@ class ApiService {
   Future<HistoryDay> getHistory(DateTime date, {int? departmentId}) async =>
       HistoryDay.fromJson(
         _decode(
-          await http.get(
+          await _cachedGet(
             _uri('/api/scans', {
               'date': _dateKey(date),
               if (departmentId != null) 'departmentId': departmentId.toString(),
@@ -973,7 +1012,7 @@ class ApiService {
 
   Future<List<AppUser>> getAdminUsers() async {
     final data = _decode(
-      await http.get(_uri('/api/admin/users'), headers: _headers()),
+      await _cachedGet(_uri('/api/admin/users'), headers: _headers()),
     );
     return (data['users'] as List<dynamic>? ?? const [])
         .map((item) => AppUser.fromJson(Map<String, dynamic>.from(item as Map)))
@@ -1010,7 +1049,7 @@ class ApiService {
     DateTime to, {
     int? departmentId,
   }) async => _decode(
-    await http.get(
+    await _cachedGet(
       _uri('/api/admin/reports', {
         'from': _dateKey(from),
         'to': _dateKey(to),
@@ -1032,7 +1071,7 @@ class ApiService {
 
   Future<List<DepartmentRecord>> getAdminDepartments() async {
     final data = _decode(
-      await http.get(_uri('/api/admin/departments'), headers: _headers()),
+      await _cachedGet(_uri('/api/admin/departments'), headers: _headers()),
     );
     return (data['departments'] as List<dynamic>? ?? const [])
         .map(
@@ -1110,7 +1149,7 @@ class ApiService {
 
   Future<List<CheckpointRecord>> getAdminCheckpoints(int departmentId) async {
     final data = _decode(
-      await http.get(
+      await _cachedGet(
         _uri('/api/admin/checkpoints', {
           'departmentId': departmentId.toString(),
         }),
@@ -1216,12 +1255,37 @@ class ApiService {
     return AppUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
   }
 
-  Future<AttendanceStatus> getAttendanceStatus() async =>
-      AttendanceStatus.fromJson(
+  Future<AttendanceStatus> getAttendanceStatus() async {
+    try {
+      return AttendanceStatus.fromJson(
         _decode(
-          await http.get(_uri('/api/attendance/status'), headers: _headers()),
+          await _cachedGet(_uri('/api/attendance/status'), headers: _headers()),
         ),
       );
+    } catch (_) {
+      final bootstrap = _offline.cachedBootstrap();
+      if (bootstrap == null) rethrow;
+      return AttendanceStatus(
+        department: DepartmentRecord(
+          id: bootstrap.departmentId,
+          name: bootstrap.departmentName,
+          sessionIntervalMinutes: bootstrap.sessionIntervalMinutes,
+          sessionStartMinutes: bootstrap.sessionStartMinutes,
+          active: true,
+          checkpointCount: bootstrap.checkpoints.length,
+          attendanceLatitude: bootstrap.attendanceLatitude,
+          attendanceLongitude: bootstrap.attendanceLongitude,
+          attendanceRadiusMeters: bootstrap.attendanceRadiusMeters,
+          attendanceLocationLabel: bootstrap.attendanceLocationLabel,
+        ),
+        nextPunchType: bootstrap.attendanceNextPunchType,
+        records: bootstrap.attendanceRecords
+            .map((item) => AttendanceRecord.fromJson(item))
+            .toList(),
+        profilePictureConfigured: bootstrap.profilePictureConfigured,
+      );
+    }
+  }
 
   Future<AttendanceRecord> punchAttendance({
     required double latitude,
@@ -1229,21 +1293,107 @@ class ApiService {
     required double accuracy,
     required String selfieData,
   }) async {
-    final data = _decode(
-      await http.post(
-        _uri('/api/attendance/punch'),
-        headers: _headers(jsonBody: true),
-        body: jsonEncode({
+    final occurredAt = DateTime.now();
+    final payload = <String, dynamic>{
+      'latitude': latitude,
+      'longitude': longitude,
+      'accuracy': accuracy,
+      'selfie': selfieData,
+    };
+
+    if (accuracy < 0 || accuracy > 100) {
+      throw const ApiException(
+        'Ketepatan GPS belum mencukupi. Cuba bergerak ke kawasan terbuka.',
+        statusCode: 422,
+      );
+    }
+    if (selfieData.length > 650000) {
+      throw const ApiException(
+        'Selfie terlalu besar. Ambil gambar semula.',
+        statusCode: 413,
+      );
+    }
+
+    final bootstrap = _offline.cachedBootstrap();
+    if (bootstrap?.attendanceLatitude != null &&
+        bootstrap?.attendanceLongitude != null) {
+      final distance = _haversineMeters(
+        latitude,
+        longitude,
+        bootstrap!.attendanceLatitude!,
+        bootstrap.attendanceLongitude!,
+      );
+      if (distance > bootstrap.attendanceRadiusMeters) {
+        throw ApiException(
+          'Anda berada ${distance.round()}m dari pusat kawasan. Had Sekolah ialah ${bootstrap.attendanceRadiusMeters}m.',
+          statusCode: 403,
+        );
+      }
+    }
+
+    try {
+      final response = await http
+          .post(
+            _uri('/api/attendance/punch'),
+            headers: _headers(jsonBody: true),
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 25));
+      if (response.statusCode >= 500) {
+        throw ApiException(
+          'Pelayan tidak dapat dicapai.',
+          statusCode: response.statusCode,
+        );
+      }
+      final data = _decode(response);
+      return AttendanceRecord.fromJson(
+        Map<String, dynamic>.from(data['record'] as Map),
+      );
+    } catch (error) {
+      if (error is ApiException &&
+          error.statusCode != null &&
+          error.statusCode! < 500) {
+        rethrow;
+      }
+      final user = _offline.cachedUser();
+      if (user == null) rethrow;
+
+      var punchType = 'IN';
+      try {
+        punchType = (await getAttendanceStatus()).nextPunchType;
+      } catch (_) {
+        punchType = bootstrap?.attendanceNextPunchType ?? 'IN';
+      }
+
+      await _offline.queueEvent(
+        userId: user.id,
+        type: 'attendance',
+        occurredAt: occurredAt,
+        location: {
           'latitude': latitude,
           'longitude': longitude,
           'accuracy': accuracy,
-          'selfie': selfieData,
-        }),
-      ),
-    );
-    return AttendanceRecord.fromJson(
-      Map<String, dynamic>.from(data['record'] as Map),
-    );
+        },
+        payload: payload,
+      );
+
+      return AttendanceRecord(
+        id: -occurredAt.microsecondsSinceEpoch,
+        punchType: punchType,
+        punchedAt: occurredAt,
+        latitude: latitude,
+        longitude: longitude,
+        accuracyMeters: accuracy,
+        distanceMeters: 0,
+        faceStatus: 'pending_sync',
+        faceReason:
+            'Punch disimpan pada peranti dan akan disegerakkan automatik.',
+        userId: user.id,
+        userName: user.nama,
+        departmentId: user.departmentId,
+        department: user.jabatan,
+      );
+    }
   }
 
   Future<AttendanceAdminData> getAdminAttendance(
@@ -1251,7 +1401,7 @@ class ApiService {
     int? departmentId,
   }) async => AttendanceAdminData.fromJson(
     _decode(
-      await http.get(
+      await _cachedGet(
         _uri('/api/admin/attendance', {
           'date': _dateKey(date),
           if (departmentId != null) 'departmentId': departmentId.toString(),
@@ -1272,6 +1422,20 @@ class ApiService {
     return AttendanceRecord.fromJson(
       Map<String, dynamic>.from(data['record'] as Map),
     );
+  }
+
+  double _haversineMeters(double lat1, double lon1, double lat2, double lon2) {
+    const earthRadius = 6371000.0;
+    double radians(double value) => value * math.pi / 180.0;
+    final dLat = radians(lat2 - lat1);
+    final dLon = radians(lon2 - lon1);
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(radians(lat1)) *
+            math.cos(radians(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    return earthRadius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
   }
 
   String _dateKey(DateTime value) {
