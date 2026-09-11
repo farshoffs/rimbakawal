@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../core/api/api_service.dart';
 import '../../core/nfc/nfc_service.dart';
 import '../../core/notifications/notification_alert_gate.dart';
+import '../admin/report_only_dashboard_screen.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../sos/sos_alert_gate.dart';
 
@@ -64,8 +65,15 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => NotificationAlertGate(
-            user: user,
+          builder: (_) => user.isAdministration
+              ? ReportOnlyDashboardScreen(
+                  user: user,
+                  api: _api,
+                  nfcService: widget.nfcService,
+                  mockMode: widget.mockMode,
+                )
+              : NotificationAlertGate(
+                  user: user,
             child: SosAlertGate(
               user: user,
               child: DashboardScreen(

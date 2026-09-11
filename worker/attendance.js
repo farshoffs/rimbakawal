@@ -521,23 +521,26 @@ async function adminDepartments(request, env) {
   const auth = await requireReportAccess(request, env);
   if (auth.response) return auth.response;
   const role = String(auth.user.jawatan || '').trim().toLowerCase();
-  const scopeDepartment = role === 'administration'
-    ? Number(auth.user.department_id || 0) || null
+  const scopeCompanyId = role === 'administration'
+    ? Number(auth.user.company_id || 0) || null
     : null;
-  if (role === 'administration' && !scopeDepartment) {
-    return json({ error: 'Pentadbiran Syarikat belum dipautkan kepada Sekolah.' }, 409);
+  if (role === 'administration' && !scopeCompanyId) {
+    return json({ error: 'Pentadbiran Syarikat belum dipautkan kepada Syarikat.' }, 409);
   }
+
   const sql = `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
             d.attendance_latitude, d.attendance_longitude, d.attendance_radius_m,
-            d.attendance_location_label, d.company_name, d.zone,
+            d.attendance_location_label, d.company_id,
+            COALESCE(co.name, d.company_name, '') AS company_name, d.zone,
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
+     LEFT JOIN companies co ON co.id = d.company_id
      LEFT JOIN checkpoints c ON c.department_id = d.id
-     WHERE d.active = 1 ${scopeDepartment ? 'AND d.id = ?' : ''}
+     WHERE d.active = 1 ${scopeCompanyId ? 'AND d.company_id = ?' : ''}
      GROUP BY d.id
      ORDER BY d.name ASC`;
-  const result = scopeDepartment
-    ? await env.DB.prepare(sql).bind(scopeDepartment).all()
+  const result = scopeCompanyId
+    ? await env.DB.prepare(sql).bind(scopeCompanyId).all()
     : await env.DB.prepare(sql).all();
   return json({ departments: (result.results ?? []).map(departmentJson) });
 }
@@ -552,12 +555,13 @@ async function createDepartment(request, env) {
     'SELECT id FROM departments WHERE LOWER(name) = LOWER(?) AND active = 1 LIMIT 1',
   ).bind(parsed.name).first();
   if (duplicate) return json({ error: 'Sekolah dengan nama ini sudah wujud.' }, 409);
+  const company = await resolveCompany(env, parsed.companyName);
   const result = await env.DB.prepare(
     `INSERT INTO departments (
        name, session_interval_minutes, session_start_minutes, active, updated_at,
        attendance_latitude, attendance_longitude, attendance_radius_m, attendance_location_label,
-       company_name, zone
-     ) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)`,
+       company_id, company_name, zone
+     ) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     parsed.name,
     parsed.interval,
@@ -566,7 +570,8 @@ async function createDepartment(request, env) {
     parsed.longitude,
     parsed.radius,
     parsed.locationLabel,
-    parsed.companyName || null,
+    company?.id ?? null,
+    (company?.name ?? parsed.companyName) || null,
     parsed.zone || null,
   ).run();
   return json({ department: departmentJson(await getDepartment(env, result.meta?.last_row_id)) }, 201);
@@ -585,12 +590,14 @@ async function updateDepartment(request, env, departmentId) {
     'SELECT id FROM departments WHERE LOWER(name) = LOWER(?) AND id <> ? AND active = 1 LIMIT 1',
   ).bind(parsed.name, departmentId).first();
   if (duplicate) return json({ error: 'Sekolah dengan nama ini sudah wujud.' }, 409);
+  const company = await resolveCompany(env, parsed.companyName);
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE departments SET
          name = ?, session_interval_minutes = ?, session_start_minutes = ?, active = ?,
          attendance_latitude = ?, attendance_longitude = ?, attendance_radius_m = ?,
-         attendance_location_label = ?, company_name = ?, zone = ?, updated_at = CURRENT_TIMESTAMP
+         attendance_location_label = ?, company_id = ?, company_name = ?, zone = ?,
+         updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
     ).bind(
       parsed.name,
@@ -601,11 +608,20 @@ async function updateDepartment(request, env, departmentId) {
       parsed.longitude,
       parsed.radius,
       parsed.locationLabel,
-      parsed.companyName || null,
+      company?.id ?? null,
+      (company?.name ?? parsed.companyName) || null,
       parsed.zone || null,
       departmentId,
     ),
-    env.DB.prepare('UPDATE users SET jabatan = ? WHERE department_id = ?').bind(parsed.name, departmentId),
+    env.DB.prepare(
+      'UPDATE users SET jabatan = CASE WHEN LOWER(jawatan) = ? THEN ? ELSE ? END, company_id = ? WHERE department_id = ?',
+    ).bind(
+      'administration',
+      (company?.name ?? parsed.companyName) || parsed.name,
+      parsed.name,
+      company?.id ?? null,
+      departmentId,
+    ),
   ]);
   return json({ department: departmentJson(await getDepartment(env, departmentId)) });
 }
@@ -639,6 +655,26 @@ async function deleteDepartment(request, env, departmentId) {
   return json({ ok: true, deleted: true });
 }
 
+async function resolveCompany(env, rawName) {
+  const name = String(rawName || '').trim();
+  if (!name) return null;
+  let company = await env.DB.prepare(
+    'SELECT id, name FROM companies WHERE LOWER(name) = LOWER(?) LIMIT 1',
+  ).bind(name).first();
+  if (company) return company;
+  try {
+    await env.DB.prepare(
+      'INSERT INTO companies (name, active, updated_at) VALUES (?, 1, CURRENT_TIMESTAMP)',
+    ).bind(name).run();
+  } catch (_) {
+    // Another concurrent request may have created the same company.
+  }
+  company = await env.DB.prepare(
+    'SELECT id, name FROM companies WHERE LOWER(name) = LOWER(?) LIMIT 1',
+  ).bind(name).first();
+  return company;
+}
+
 function validateDepartmentBody(body) {
   const name = String(body.name ?? '').trim();
   const interval = Number(body.sessionIntervalMinutes ?? 120);
@@ -662,7 +698,17 @@ function validateDepartmentBody(body) {
   if (!Number.isFinite(radius) || radius < 30 || radius > 1000) {
     return { error: 'Radius kehadiran mesti antara 30m hingga 1000m.' };
   }
-  return { name, interval, startMinutes, latitude, longitude, radius: Math.round(radius), locationLabel, companyName, zone };
+  return {
+    name,
+    interval,
+    startMinutes,
+    latitude,
+    longitude,
+    radius: Math.round(radius),
+    locationLabel,
+    companyName,
+    zone,
+  };
 }
 
 async function getDepartment(env, id) {
@@ -670,9 +716,11 @@ async function getDepartment(env, id) {
   return env.DB.prepare(
     `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
             d.attendance_latitude, d.attendance_longitude, d.attendance_radius_m,
-            d.attendance_location_label, d.company_name, d.zone,
+            d.attendance_location_label, d.company_id,
+            COALESCE(co.name, d.company_name, '') AS company_name, d.zone,
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
+     LEFT JOIN companies co ON co.id = d.company_id
      LEFT JOIN checkpoints c ON c.department_id = d.id
      WHERE d.id = ?
      GROUP BY d.id LIMIT 1`,
@@ -691,6 +739,7 @@ function departmentJson(row) {
     attendanceLongitude: row.attendance_longitude == null ? null : Number(row.attendance_longitude),
     attendanceRadiusMeters: Number(row.attendance_radius_m || DEFAULT_RADIUS_M),
     attendanceLocationLabel: row.attendance_location_label || '',
+    companyId: row.company_id == null ? null : Number(row.company_id),
     companyName: row.company_name || '',
     zone: row.zone || '',
   };
@@ -763,10 +812,13 @@ async function requireUser(request, env) {
   const user = await env.DB.prepare(
     `SELECT u.id, u.nama, u.no_kad_pengenalan, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
+            COALESCE(u.company_id, d.company_id) AS company_id,
+            COALESCE(co.name, d.company_name, '') AS company_name,
             COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      LEFT JOIN departments d ON d.id = u.department_id
+     LEFT JOIN companies co ON co.id = COALESCE(u.company_id, d.company_id)
      WHERE s.token_hash = ? AND s.expires_at_ms > ? AND u.active = 1
      LIMIT 1`,
   ).bind(await sha256(token), Date.now()).first();

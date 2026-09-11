@@ -25,17 +25,23 @@ class ReportOnlyDashboardScreen extends StatelessWidget {
     if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(
-        builder: (_) => LoginScreen(
-          nfcService: nfcService,
-          mockMode: mockMode,
-        ),
+        builder: (_) => LoginScreen(nfcService: nfcService, mockMode: mockMode),
       ),
       (_) => false,
     );
   }
 
+  void _openReports(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReportScreen(api: api, user: user),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final company = user.companyName.isEmpty ? 'Syarikat belum ditetapkan' : user.companyName;
     return Scaffold(
       appBar: AppBar(
         title: const Text('ZPatrol'),
@@ -54,11 +60,11 @@ class ReportOnlyDashboardScreen extends StatelessWidget {
             Center(
               child: Image.asset(
                 'assets/branding/zpatrol_icon.png',
-                width: 96,
-                height: 96,
+                width: 92,
+                height: 92,
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             Text(
               user.nama,
               textAlign: TextAlign.center,
@@ -66,45 +72,51 @@ class ReportOnlyDashboardScreen extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                   ),
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 4),
             Text(
-              '${user.jawatanPaparan} • ${user.jabatan}',
+              '${user.jawatanPaparan} • $company',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Icon(Icons.picture_as_pdf_rounded, size: 42),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Laporan PDF',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
+            FutureBuilder<List<DepartmentRecord>>(
+              future: api.getAdminDepartments(),
+              builder: (context, snapshot) {
+                final count = snapshot.data?.where((item) => item.active).length;
+                final subtitle = count == null
+                    ? 'Memuatkan senarai sekolah syarikat…'
+                    : '$count sekolah di bawah akses syarikat ini';
+                return Card(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => _openReports(context),
+                    child: Padding(
+                      padding: const EdgeInsets.all(22),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Icon(Icons.picture_as_pdf_rounded, size: 48),
+                          const SizedBox(height: 14),
+                          Text(
+                            'Jana Laporan PDF',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                ),
                           ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Akaun Pentadbiran Syarikat dikhaskan untuk menjana dan memuat turun laporan PDF bagi lokasi sendiri.',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 18),
-                    FilledButton.icon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => ReportScreen(api: api),
-                        ),
+                          const SizedBox(height: 7),
+                          Text(subtitle, textAlign: TextAlign.center),
+                          const SizedBox(height: 18),
+                          FilledButton.icon(
+                            onPressed: () => _openReports(context),
+                            icon: const Icon(Icons.download_rounded),
+                            label: const Text('Pilih Sekolah & Jana Laporan'),
+                          ),
+                        ],
                       ),
-                      icon: const Icon(Icons.download_rounded),
-                      label: const Text('Buka Laporan PDF'),
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 14),
             const Card(
@@ -113,11 +125,11 @@ class ReportOnlyDashboardScreen extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.lock_outline_rounded),
+                    Icon(Icons.account_tree_rounded),
                     SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Akses rondaan, kehadiran, pemantauan, pengurusan pengguna, tetapan checkpoint dan fungsi pentadbiran sistem tidak diberikan kepada tahap ini.',
+                        'Pentadbiran Syarikat boleh menjana laporan bagi semua sekolah yang dipautkan kepada syarikat yang sama. Fungsi rondaan dan konfigurasi sistem kekal dikunci.',
                       ),
                     ),
                   ],

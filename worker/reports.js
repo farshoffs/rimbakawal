@@ -85,7 +85,10 @@ async function monthlyReport(request, env, ctx, url) {
        ORDER BY a.user_id ASC, a.punched_at ASC, a.id ASC`;
 
   const departmentMeta = departmentId == null ? null : await env.DB.prepare(
-    'SELECT id, name, company_name, zone FROM departments WHERE id = ? LIMIT 1',
+    `SELECT d.id, d.name, COALESCE(c.name, d.company_name, '') AS company_name, d.zone
+     FROM departments d
+     LEFT JOIN companies c ON c.id = d.company_id
+     WHERE d.id = ? LIMIT 1`,
   ).bind(departmentId).first();
 
   const checkpointPromise = departmentId == null

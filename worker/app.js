@@ -79,14 +79,31 @@ async function createUser(request, env) {
   if (!['Tetap', 'Gantian'].includes(guardStatus)) {
     return json({ error: 'Status pengawal mesti Tetap atau Gantian.' }, 400);
   }
-  if (!Number.isInteger(departmentId) || departmentId <= 0) {
-    return json({ error: 'Pilih Sekolah pengguna.' }, 400);
-  }
 
-  const department = await env.DB.prepare(
-    'SELECT id, name, session_interval_minutes FROM departments WHERE id = ? AND active = 1 LIMIT 1',
-  ).bind(departmentId).first();
-  if (!department) return json({ error: 'Sekolah tidak ditemui atau tidak aktif.' }, 404);
+  let department = null;
+  let resolvedDepartmentId = null;
+  let companyId = null;
+  let jabatan = 'Pengurusan Sistem';
+  if (jawatan !== 'Management') {
+    if (!Number.isInteger(departmentId) || departmentId <= 0) {
+      return json({ error: 'Pilih Sekolah pengguna.' }, 400);
+    }
+    department = await env.DB.prepare(
+      `SELECT d.id, d.name, d.company_id, COALESCE(c.name, d.company_name, '') AS company_name
+       FROM departments d
+       LEFT JOIN companies c ON c.id = d.company_id
+       WHERE d.id = ? AND d.active = 1 LIMIT 1`,
+    ).bind(departmentId).first();
+    if (!department) return json({ error: 'Sekolah tidak ditemui atau tidak aktif.' }, 404);
+    if (jawatan === 'Administration' && !department.company_id) {
+      return json({ error: 'Tetapkan Nama Syarikat pada Sekolah ini dahulu.' }, 409);
+    }
+    resolvedDepartmentId = Number(department.id);
+    companyId = department.company_id == null ? null : Number(department.company_id);
+    jabatan = jawatan === 'Administration'
+      ? (department.company_name || department.name)
+      : department.name;
+  }
 
   const duplicate = await env.DB.prepare(
     'SELECT id FROM users WHERE no_kad_pengenalan = ? LIMIT 1',
@@ -94,9 +111,20 @@ async function createUser(request, env) {
   if (duplicate) return json({ error: 'No. Kad Pengenalan ini sudah berdaftar.' }, 409);
 
   const result = await env.DB.prepare(
-    `INSERT INTO users (nama, no_kad_pengenalan, no_pk, guard_status, jawatan, profile_picture, jabatan, active, department_id)
-     VALUES (?, ?, ?, ?, ?, NULL, ?, 1, ?)`,
-  ).bind(nama, identityCard, noPk || null, guardStatus, jawatan, department.name, departmentId).run();
+    `INSERT INTO users (
+       nama, no_kad_pengenalan, no_pk, guard_status, jawatan, profile_picture,
+       jabatan, active, department_id, company_id
+     ) VALUES (?, ?, ?, ?, ?, NULL, ?, 1, ?, ?)`,
+  ).bind(
+    nama,
+    identityCard,
+    noPk || null,
+    guardStatus,
+    jawatan,
+    jabatan,
+    resolvedDepartmentId,
+    companyId,
+  ).run();
 
   const user = await getUserById(env, result.meta?.last_row_id);
   return json({ user: publicUser(user) }, 201);
@@ -799,17 +827,22 @@ async function adminReport(request, env, url) {
   const from = url.searchParams.get('from') || today;
   const to = url.searchParams.get('to') || today;
   const role = String(auth.user.jawatan || '').trim().toLowerCase();
-  const ownDepartmentId = Number(auth.user.department_id || 0) || null;
+  const companyId = Number(auth.user.company_id || 0) || null;
   const rawDepartmentId = url.searchParams.get('departmentId');
   let departmentId = rawDepartmentId == null ? null : Number(rawDepartmentId);
   if (role === 'administration') {
-    if (!ownDepartmentId) {
-      return json({ error: 'Pentadbiran Syarikat belum dipautkan kepada Sekolah.' }, 409);
+    if (!companyId) {
+      return json({ error: 'Pentadbiran Syarikat belum dipautkan kepada Syarikat.' }, 409);
     }
-    if (departmentId != null && departmentId !== ownDepartmentId) {
-      return json({ error: 'Pentadbiran Syarikat hanya boleh memuat turun laporan lokasi sendiri.' }, 403);
+    if (departmentId == null) {
+      return json({ error: 'Pilih Sekolah laporan.' }, 400);
     }
-    departmentId = ownDepartmentId;
+    const allowedDepartment = await env.DB.prepare(
+      'SELECT id FROM departments WHERE id = ? AND company_id = ? AND active = 1 LIMIT 1',
+    ).bind(departmentId, companyId).first();
+    if (!allowedDepartment) {
+      return json({ error: 'Sekolah ini tidak berada di bawah syarikat akaun anda.' }, 403);
+    }
   }
   if (!isDateKey(from) || !isDateKey(to) || from > to) {
     return json({ error: 'Julat tarikh laporan tidak sah.' }, 400);
@@ -931,11 +964,14 @@ async function requireUser(request, env) {
   const user = await env.DB.prepare(
     `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.guard_status, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
+            COALESCE(u.company_id, d.company_id) AS company_id,
+            COALESCE(co.name, d.company_name, '') AS company_name,
             COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
             COALESCE(d.session_start_minutes, 420) AS session_start_minutes
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      LEFT JOIN departments d ON d.id = u.department_id
+     LEFT JOIN companies co ON co.id = COALESCE(u.company_id, d.company_id)
      WHERE s.token_hash = ? AND s.expires_at_ms > ? AND u.active = 1
      LIMIT 1`,
   ).bind(await sha256(token), Date.now()).first();
@@ -948,10 +984,14 @@ async function getUserById(env, id) {
   return env.DB.prepare(
     `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.guard_status, u.jawatan, u.profile_picture,
             u.jabatan, u.active, u.department_id,
+            COALESCE(u.company_id, d.company_id) AS company_id,
+            COALESCE(co.name, d.company_name, '') AS company_name,
+            COALESCE(d.name, u.jabatan) AS department_name,
             COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
             COALESCE(d.session_start_minutes, 420) AS session_start_minutes
      FROM users u
      LEFT JOIN departments d ON d.id = u.department_id
+     LEFT JOIN companies co ON co.id = COALESCE(u.company_id, d.company_id)
      WHERE u.id = ? LIMIT 1`,
   ).bind(id).first();
 }
@@ -965,9 +1005,11 @@ function publicUser(user) {
     guardStatus: user.guard_status || 'Tetap',
     jawatan: user.jawatan,
     profilePicture: user.profile_picture,
-    jabatan: user.jabatan,
+    jabatan: user.department_name || user.jabatan || user.company_name || 'Belum ditetapkan',
     active: Boolean(user.active),
     departmentId: user.department_id == null ? null : Number(user.department_id),
+    companyId: user.company_id == null ? null : Number(user.company_id),
+    companyName: user.company_name || '',
     sessionIntervalMinutes: Number(user.session_interval_minutes || 120),
     sessionStartMinutes: Number(user.session_start_minutes ?? 420),
   };

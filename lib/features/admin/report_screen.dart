@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 
 import '../../core/api/api_service.dart';
+import '../../core/api/app_user.dart';
 import 'pkk_pdf_generator.dart';
 
 class ReportScreen extends StatefulWidget {
-  const ReportScreen({required this.api, super.key});
+  const ReportScreen({required this.api, this.user, super.key});
 
   final ApiService api;
+  final AppUser? user;
 
   @override
   State<ReportScreen> createState() => _ReportScreenState();
@@ -34,12 +36,18 @@ class _ReportScreenState extends State<ReportScreen> {
     try {
       final departments = await widget.api.getAdminDepartments();
       if (!mounted) return;
+      final active = departments.where((item) => item.active).toList();
       setState(() {
-        _departments = departments.where((item) => item.active).toList();
-        if (_departments.length == 1) {
-          _departmentId = _departments.first.id;
-        }
+        _departments = active;
         _loadingDepartments = false;
+        if (_departmentId == null && active.length == 1) {
+          _departmentId = active.first.id;
+        }
+        if (active.isEmpty) {
+          _error = widget.user?.isAdministration == true
+              ? 'Tiada sekolah dipautkan kepada syarikat akaun ini.'
+              : 'Tiada sekolah aktif ditemui.';
+        }
       });
     } catch (error) {
       if (!mounted) return;
@@ -87,9 +95,16 @@ class _ReportScreenState extends State<ReportScreen> {
       if (bytes.isEmpty) throw Exception('Fail PDF tidak berjaya dijana.');
 
       final month = _month.toString().padLeft(2, '0');
+      String? school;
+      for (final item in _departments) {
+        if (item.id == _departmentId) {
+          school = item.name.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
+          break;
+        }
+      }
       await Printing.sharePdf(
         bytes: bytes,
-        filename: '${type.filePrefix}_${_year}_$month.pdf',
+        filename: '${type.filePrefix}_${school ?? 'SEKOLAH'}_${_year}_$month.pdf',
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -109,6 +124,8 @@ class _ReportScreenState extends State<ReportScreen> {
       DateTime.now().year - 2023,
       (index) => 2024 + index,
     ).reversed.toList();
+    final isCompanyAdmin = widget.user?.isAdministration == true;
+    final companyName = widget.user?.companyName ?? '';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Jana Laporan')),
@@ -128,15 +145,19 @@ class _ReportScreenState extends State<ReportScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Hanya PKK 2, PKK 3 dan PKK 4 dijana sebagai PDF berdasarkan data sebenar ZPatrol.',
+                  Text(
+                    isCompanyAdmin
+                        ? 'Pilih mana-mana sekolah di bawah ${companyName.isEmpty ? 'syarikat anda' : companyName}, kemudian jana PKK 2, PKK 3 atau PKK 4.'
+                        : 'Jana PKK 2, PKK 3 dan PKK 4 sebagai PDF berdasarkan data sebenar ZPatrol.',
                   ),
                   const SizedBox(height: 18),
                   DropdownButtonFormField<int?>(
                     initialValue: _departmentId,
-                    decoration: const InputDecoration(
-                      labelText: 'Sekolah',
-                      prefixIcon: Icon(Icons.account_tree_outlined),
+                    decoration: InputDecoration(
+                      labelText: isCompanyAdmin
+                          ? 'Sekolah Di Bawah Syarikat'
+                          : 'Sekolah',
+                      prefixIcon: const Icon(Icons.account_tree_outlined),
                     ),
                     items: [
                       const DropdownMenuItem<int?>(
@@ -154,6 +175,13 @@ class _ReportScreenState extends State<ReportScreen> {
                         ? null
                         : (value) => setState(() => _departmentId = value),
                   ),
+                  if (isCompanyAdmin && _departments.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '${_departments.length} sekolah tersedia untuk akaun ini.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   Row(
                     children: [
@@ -173,8 +201,7 @@ class _ReportScreenState extends State<ReportScreen> {
                           ],
                           onChanged: _generating
                               ? null
-                              : (value) =>
-                                    setState(() => _month = value ?? _month),
+                              : (value) => setState(() => _month = value ?? _month),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -192,8 +219,7 @@ class _ReportScreenState extends State<ReportScreen> {
                               .toList(),
                           onChanged: _generating
                               ? null
-                              : (value) =>
-                                    setState(() => _year = value ?? _year),
+                              : (value) => setState(() => _year = value ?? _year),
                         ),
                       ),
                     ],
@@ -202,27 +228,23 @@ class _ReportScreenState extends State<ReportScreen> {
                     const SizedBox(height: 12),
                     Text(
                       _error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
+                      style: TextStyle(color: Theme.of(context).colorScheme.error),
                     ),
                   ],
                   const SizedBox(height: 20),
                   _ReportButton(
                     icon: Icons.groups_rounded,
                     title: 'Jana PKK 2 (PDF)',
-                    subtitle:
-                        'Pengesahan bilangan pengawal dan rekod kehadiran',
-                    enabled: !_generating && !_loadingDepartments,
+                    subtitle: 'Pengesahan bilangan pengawal dan rekod kehadiran',
+                    enabled: !_generating && !_loadingDepartments && _departmentId != null,
                     onPressed: () => _generate(_PkkType.pkk2),
                   ),
                   const SizedBox(height: 10),
                   _ReportButton(
                     icon: Icons.badge_rounded,
                     title: 'Jana PKK 3 (PDF)',
-                    subtitle:
-                        'Pengesahan kehadiran pengawal berdasarkan rekod kehadiran',
-                    enabled: !_generating && !_loadingDepartments,
+                    subtitle: 'Pengesahan kehadiran pengawal berdasarkan rekod kehadiran',
+                    enabled: !_generating && !_loadingDepartments && _departmentId != null,
                     onPressed: () => _generate(_PkkType.pkk3),
                   ),
                   const SizedBox(height: 10),
@@ -230,7 +252,7 @@ class _ReportScreenState extends State<ReportScreen> {
                     icon: Icons.nfc_rounded,
                     title: 'Jana PKK 4 (PDF)',
                     subtitle: 'Pengesahan pelaksanaan rondaan dan clocking',
-                    enabled: !_generating && !_loadingDepartments,
+                    enabled: !_generating && !_loadingDepartments && _departmentId != null,
                     onPressed: () => _generate(_PkkType.pkk4),
                   ),
                   if (_generating) ...[
@@ -242,21 +264,6 @@ class _ReportScreenState extends State<ReportScreen> {
                       textAlign: TextAlign.center,
                     ),
                   ],
-                  const SizedBox(height: 18),
-                  const Divider(),
-                  const SizedBox(height: 12),
-                  const Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.verified_outlined, size: 20),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Setiap klik menjana satu fail PDF PKK sahaja. Jika laporan mempunyai lebih daripada satu muka surat, blok tandatangan disediakan pada setiap muka surat.',
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
@@ -307,10 +314,7 @@ class _ReportButton extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 2),
                 Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
               ],

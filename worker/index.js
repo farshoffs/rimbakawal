@@ -745,19 +745,34 @@ async function updateAdminUser(request, env, userId) {
   if (!['Tetap', 'Gantian'].includes(guardStatus)) {
     return json({ error: 'Status pengawal mesti Tetap atau Gantian.' }, 400);
   }
-  if (!Number.isInteger(departmentId) || departmentId <= 0) {
-    return json({ error: 'Pilih Sekolah pengguna.' }, 400);
-  }
-
-  const department = await env.DB.prepare(
-    'SELECT id, name, active FROM departments WHERE id = ? LIMIT 1',
-  ).bind(departmentId).first();
-  if (!department || Number(department.active) !== 1) {
-    return json({ error: 'Sekolah aktif tidak ditemui.' }, 404);
-  }
 
   const user = await getUserById(env, userId);
   if (!user) return json({ error: 'Pengguna tidak ditemui.' }, 404);
+
+  let department = null;
+  let resolvedDepartmentId = null;
+  let companyId = null;
+  let jabatan = user.jabatan || '';
+  if (jawatan !== 'Management') {
+    if (!Number.isInteger(departmentId) || departmentId <= 0) {
+      return json({ error: 'Pilih Sekolah pengguna.' }, 400);
+    }
+    department = await env.DB.prepare(
+      `SELECT d.id, d.name, d.company_id, COALESCE(c.name, d.company_name, '') AS company_name
+       FROM departments d
+       LEFT JOIN companies c ON c.id = d.company_id
+       WHERE d.id = ? AND d.active = 1 LIMIT 1`,
+    ).bind(departmentId).first();
+    if (!department) return json({ error: 'Sekolah aktif tidak ditemui.' }, 404);
+    if (jawatan === 'Administration' && !department.company_id) {
+      return json({ error: 'Tetapkan Nama Syarikat pada Sekolah ini dahulu.' }, 409);
+    }
+    resolvedDepartmentId = Number(department.id);
+    companyId = department.company_id == null ? null : Number(department.company_id);
+    jabatan = jawatan === 'Administration'
+      ? (department.company_name || department.name)
+      : department.name;
+  }
 
   let profilePicture = user.profile_picture || null;
   if (body.clearProfilePicture === true) {
@@ -775,9 +790,20 @@ async function updateAdminUser(request, env, userId) {
 
   await env.DB.prepare(
     `UPDATE users
-     SET nama = ?, jawatan = ?, department_id = ?, jabatan = ?, profile_picture = ?, no_pk = ?, guard_status = ?
+     SET nama = ?, jawatan = ?, department_id = ?, company_id = ?, jabatan = ?,
+         profile_picture = ?, no_pk = ?, guard_status = ?
      WHERE id = ?`,
-  ).bind(nama, jawatan, departmentId, department.name, profilePicture, noPk || null, guardStatus, userId).run();
+  ).bind(
+    nama,
+    jawatan,
+    resolvedDepartmentId,
+    companyId,
+    jabatan,
+    profilePicture,
+    noPk || null,
+    guardStatus,
+    userId,
+  ).run();
 
   const updated = await getUserById(env, userId);
   return json({ user: publicUser(updated) });
@@ -821,10 +847,22 @@ async function updateUserDepartment(request, env, userId) {
 
   const user = await getUserById(env, userId);
   if (!user) return json({ error: 'Pengguna tidak ditemui.' }, 404);
+  const role = String(user.jawatan || '').trim().toLowerCase();
+  const jabatan = role === 'administration'
+    ? (department.company_name || department.name)
+    : department.name;
+  if (role === 'administration' && !department.company_id) {
+    return json({ error: 'Tetapkan Nama Syarikat pada Sekolah ini dahulu.' }, 409);
+  }
 
-  await env.DB.prepare('UPDATE users SET department_id = ?, jabatan = ? WHERE id = ?')
-    .bind(departmentId, department.name, userId)
-    .run();
+  await env.DB.prepare(
+    'UPDATE users SET department_id = ?, company_id = ?, jabatan = ? WHERE id = ?',
+  ).bind(
+    departmentId,
+    department.company_id ?? null,
+    jabatan,
+    userId,
+  ).run();
   const updated = await getUserById(env, userId);
   return json({ user: publicUser(updated) });
 }
@@ -884,10 +922,13 @@ function userSelect() {
   return `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.guard_status, u.jawatan, u.profile_picture,
                  u.jabatan, u.department_id, u.active,
                  COALESCE(d.name, u.jabatan) AS department_name,
+                 COALESCE(u.company_id, d.company_id) AS company_id,
+                 COALESCE(co.name, d.company_name, '') AS company_name,
                  COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
                  COALESCE(d.session_start_minutes, 420) AS session_start_minutes
           FROM users u
-          LEFT JOIN departments d ON d.id = u.department_id`;
+          LEFT JOIN departments d ON d.id = u.department_id
+          LEFT JOIN companies co ON co.id = COALESCE(u.company_id, d.company_id)`;
 }
 
 async function getUserById(env, id) {
@@ -898,8 +939,10 @@ async function getDepartmentById(env, id) {
   if (!Number.isInteger(Number(id)) || Number(id) <= 0) return null;
   return env.DB.prepare(
     `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
+            d.company_id, COALESCE(co.name, d.company_name, '') AS company_name,
             COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
      FROM departments d
+     LEFT JOIN companies co ON co.id = d.company_id
      LEFT JOIN checkpoints c ON c.department_id = d.id
      WHERE d.id = ?
      GROUP BY d.id
@@ -939,8 +982,10 @@ function publicUser(user) {
     guardStatus: user.guard_status || 'Tetap',
     jawatan: user.jawatan,
     profilePicture: user.profile_picture,
-    jabatan: user.department_name || user.jabatan || 'Belum ditetapkan',
+    jabatan: user.department_name || user.jabatan || user.company_name || 'Belum ditetapkan',
     departmentId: user.department_id == null ? null : Number(user.department_id),
+    companyId: user.company_id == null ? null : Number(user.company_id),
+    companyName: user.company_name || '',
     sessionIntervalMinutes: Number(user.session_interval_minutes || 120),
     sessionStartMinutes: Number(user.session_start_minutes ?? 420),
     active: user.active === undefined ? true : Boolean(user.active),

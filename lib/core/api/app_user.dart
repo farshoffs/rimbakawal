@@ -12,6 +12,8 @@ class AppUser {
     this.noPk = '',
     this.guardStatus = 'Tetap',
     this.active = true,
+    this.companyId,
+    this.companyName = '',
   });
 
   final int id;
@@ -21,6 +23,8 @@ class AppUser {
   final String jabatan;
   final String? profilePicture;
   final int? departmentId;
+  final int? companyId;
+  final String companyName;
   final int sessionIntervalMinutes;
   final int sessionStartMinutes;
   final String noPk;
@@ -43,6 +47,8 @@ class AppUser {
       jabatan: json['jabatan'] as String? ?? 'Belum ditetapkan',
       profilePicture: json['profilePicture'] as String?,
       departmentId: (json['departmentId'] as num?)?.toInt(),
+      companyId: (json['companyId'] as num?)?.toInt(),
+      companyName: json['companyName'] as String? ?? '',
       sessionIntervalMinutes:
           (json['sessionIntervalMinutes'] as num?)?.toInt() ?? 120,
       sessionStartMinutes:
