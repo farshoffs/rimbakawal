@@ -16,8 +16,8 @@ import 'features/sos/sos_alert_gate.dart';
 
 const useMockNfc = bool.fromEnvironment('USE_MOCK_NFC', defaultValue: false);
 
-const rimbaRed = Color(0xFFC0392B);
-const rimbaBlue = Color(0xFF4834D4);
+const rimbaRed = Color(0xFF6D28D9);
+const rimbaBlue = Color(0xFF8B5CF6);
 const rimbaInk = Color(0xFF080910);
 const rimbaSurface = Color(0xFF12141E);
 
@@ -27,11 +27,11 @@ Future<void> main() async {
   await ApiService.instance.init();
   await NotificationService.instance.init();
   await OfflineSyncService.instance.start();
-  runApp(const RimbaKawalApp());
+  runApp(const ZPatrolApp());
 }
 
-class RimbaKawalApp extends StatelessWidget {
-  const RimbaKawalApp({super.key});
+class ZPatrolApp extends StatelessWidget {
+  const ZPatrolApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +59,7 @@ class RimbaKawalApp extends StatelessWidget {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'RimbaKawal',
+      title: 'ZPatrol',
       themeMode: ThemeMode.dark,
       darkTheme: ThemeData(
         brightness: Brightness.dark,

@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "rimbakawal",
+  "name": "zpatrol",
   "main": "./worker/reports.js",
   "compatibility_date": "2026-08-29",
   "workers_dev": true,

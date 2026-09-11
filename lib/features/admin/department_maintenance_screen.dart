@@ -412,7 +412,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
         headers: kIsWeb
             ? const {'Accept-Language': 'ms,en;q=0.8'}
             : const {
-                'User-Agent': 'RimbaKawal/0.5.14 (location search)',
+                'User-Agent': 'ZPatrol/0.5.14 (location search)',
                 'Accept-Language': 'ms,en;q=0.8',
               },
       );
@@ -431,7 +431,8 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
       setState(() {
         _locationResults = results;
         if (results.isEmpty) {
-          _error = 'Tiada lokasi ditemui. Cuba nama sekolah, jalan, bandar atau poskod.';
+          _error =
+              'Tiada lokasi ditemui. Cuba nama sekolah, jalan, bandar atau poskod.';
         }
       });
     } catch (error) {
@@ -522,7 +523,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Padam Sekolah?'),
         content: Text(
-          'Padam ${existing.name} daripada tetapan RimbaKawal? Rekod sejarah akan dikekalkan. Pengguna aktif perlu dipindahkan atau dinyahaktifkan terlebih dahulu.',
+          'Padam ${existing.name} daripada tetapan ZPatrol? Rekod sejarah akan dikekalkan. Pengguna aktif perlu dipindahkan atau dinyahaktifkan terlebih dahulu.',
         ),
         actions: [
           TextButton(
@@ -647,8 +648,9 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
               const SizedBox(height: 16),
               Text(
                 'Kawasan Kehadiran',
-                style: Theme.of(context).textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 6),
               const Text(
@@ -773,11 +775,12 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                               point: LatLng(_latitude!, _longitude!),
                               radius: _radius,
                               useRadiusInMeter: true,
-                              color: Theme.of(context).colorScheme.primary
-                                  .withValues(alpha: 0.16),
-                              borderColor: Theme.of(context)
-                                  .colorScheme
-                                  .primary,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.16),
+                              borderColor: Theme.of(
+                                context,
+                              ).colorScheme.primary,
                               borderStrokeWidth: 2,
                             ),
                           ],

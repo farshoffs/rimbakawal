@@ -1,35 +1,19 @@
 {
-    "name": "RimbaKawal",
-    "short_name": "RimbaKawal",
+    "name": "ZPatrol",
+    "short_name": "ZPatrol",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0B0B12",
-    "theme_color": "#4834D4",
-    "description": "RimbaKawal — Sistem Rondaan Pintar.",
+    "theme_color": "#7C3AED",
+    "description": "ZPatrol — Sistem Rondaan Pintar.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
         {
-            "src": "icons/Icon-192.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-512.png",
-            "sizes": "512x512",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-maskable-192.png",
-            "sizes": "192x192",
+            "src": "assets/assets/branding/zpatrol_icon.png",
+            "sizes": "1024x1024",
             "type": "image/png",
-            "purpose": "maskable"
-        },
-        {
-            "src": "icons/Icon-maskable-512.png",
-            "sizes": "512x512",
-            "type": "image/png",
-            "purpose": "maskable"
+            "purpose": "any maskable"
         }
     ]
 }

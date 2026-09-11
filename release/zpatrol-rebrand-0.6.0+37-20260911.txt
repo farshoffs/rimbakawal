@@ -1,0 +1,8 @@
+ZPatrol rebrand release 0.6.0+37
+Date: 2026-09-11
+Previous product name: RimbaKawal
+New product name: ZPatrol
+Cloudflare Worker: zpatrol.fscapitalmanagement.workers.dev
+Compatibility: existing dev.rimbakawal.rimbakawal package/bundle ID retained.
+Data: existing rimbakawal-db D1 database retained; no patrol/attendance data migration required.
+Branding: new purple shield + Z/lightning launcher/PWA identity.

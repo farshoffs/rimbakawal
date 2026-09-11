@@ -36,7 +36,7 @@ class PushAlert {
     );
     return PushAlert(
       kind: data['kind'] ?? 'general',
-      title: message.notification?.title ?? data['title'] ?? 'RimbaKawal',
+      title: message.notification?.title ?? data['title'] ?? 'ZPatrol',
       body:
           message.notification?.body ??
           data['body'] ??

@@ -166,7 +166,8 @@ class _DashboardScreenState extends State<DashboardScreen>
           builder: (_) => LoginScreen(
             nfcService: widget.nfcService,
             mockMode: widget.mockMode,
-            notice: 'Sesi Rondaan baharu telah bermula. Sila log masuk semula untuk meneruskan.',
+            notice:
+                'Sesi Rondaan baharu telah bermula. Sila log masuk semula untuk meneruskan.',
           ),
         ),
         (_) => false,
@@ -271,7 +272,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          enabled ? 'Pemberitahuan RimbaKawal telah diaktifkan.' : 'Kebenaran pemberitahuan belum diberikan pada peranti atau pelayar ini.',
+          enabled
+              ? 'Pemberitahuan ZPatrol telah diaktifkan.'
+              : 'Kebenaran pemberitahuan belum diberikan pada peranti atau pelayar ini.',
         ),
       ),
     );
@@ -377,7 +380,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('RimbaKawal'),
+        title: const Text('ZPatrol'),
         actions: [
           IconButton(
             tooltip: 'Aktifkan pemberitahuan',
@@ -529,8 +532,9 @@ class _DashboardScreenState extends State<DashboardScreen>
               const SizedBox(height: 22),
               Text(
                 'Operasi',
-                style: Theme.of(context).textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 12),
               LayoutBuilder(
@@ -686,8 +690,9 @@ class _MenuCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.secondary
-                          .withValues(alpha: 0.11),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.secondary.withValues(alpha: 0.11),
                       borderRadius: BorderRadius.circular(15),
                     ),
                     child: Icon(

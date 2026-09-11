@@ -431,7 +431,8 @@ class _PatrolScreenState extends State<PatrolScreen> {
     final bootstrap = _bootstrap ?? _store.cachedBootstrap();
     if (bootstrap == null) {
       setState(() {
-        _error = 'Konfigurasi rondaan belum pernah dimuat turun. Sambungkan peranti ke Internet sekali untuk menyediakan penggunaan luar talian.';
+        _error =
+            'Konfigurasi rondaan belum pernah dimuat turun. Sambungkan peranti ke Internet sekali untuk menyediakan penggunaan luar talian.';
       });
       return;
     }
@@ -775,7 +776,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Aktifkan SOS?'),
         content: const Text(
-          'SOS akan direkod bersama lokasi rondaan semasa dan dihantar kepada pemantauan RimbaKawal. Ia tidak menghubungi talian kecemasan secara automatik.',
+          'SOS akan direkod bersama lokasi rondaan semasa dan dihantar kepada pemantauan ZPatrol. Ia tidak menghubungi talian kecemasan secara automatik.',
         ),
         actions: [
           SizedBox(
@@ -855,8 +856,9 @@ class _PatrolScreenState extends State<PatrolScreen> {
       if (mounted) setState(() => _torchOn = !_torchOn);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(_cleanError(error))));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_cleanError(error))));
     } finally {
       if (mounted) setState(() => _torchChanging = false);
     }
@@ -1330,8 +1332,9 @@ class _PatrolScreenState extends State<PatrolScreen> {
                   Expanded(
                     child: Text(
                       'Rekod sesi',
-                      style: Theme.of(context).textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                   TextButton.icon(
@@ -1459,8 +1462,9 @@ class _LiveHero extends StatelessWidget {
                       user.nama,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(user.jabatan),
@@ -1608,8 +1612,9 @@ class _RouteCard extends StatelessWidget {
                   children: [
                     Text(
                       department,
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     Text(
                       sessionLabel,
@@ -1625,8 +1630,9 @@ class _RouteCard extends StatelessWidget {
               ),
               Text(
                 '$completed/$total',
-                style: Theme.of(context).textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ],
           ),

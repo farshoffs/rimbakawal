@@ -1,4 +1,4 @@
-name: Build RimbaKawal Mobile Production
+name: Build ZPatrol Mobile Production
 
 on:
   push:
@@ -7,14 +7,14 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: rimbakawal-mobile-production
+  group: zpatrol-mobile-production
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 env:
-  API_BASE_URL: https://rimbakawal.fscapitalmanagement.workers.dev
+  API_BASE_URL: https://zpatrol.fscapitalmanagement.workers.dev
   FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
   FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
   FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
@@ -38,10 +38,10 @@ jobs:
           cache: true
 
       - name: Prepare Android project
-        run: bash scripts/prepare-mobile.sh "$RUNNER_TEMP/rimbakawal-mobile"
+        run: bash scripts/prepare-mobile.sh "$RUNNER_TEMP/zpatrol-mobile"
 
       - name: Build production APK
-        working-directory: ${{ runner.temp }}/rimbakawal-mobile
+        working-directory: ${{ runner.temp }}/zpatrol-mobile
         run: >-
           flutter build apk --release
           --dart-define=USE_MOCK_NFC=false
@@ -55,7 +55,7 @@ jobs:
           --dart-define=FIREBASE_WEB_VAPID_KEY=${{ env.FIREBASE_WEB_VAPID_KEY }}
 
       - name: Build production app bundle
-        working-directory: ${{ runner.temp }}/rimbakawal-mobile
+        working-directory: ${{ runner.temp }}/zpatrol-mobile
         run: >-
           flutter build appbundle --release
           --dart-define=USE_MOCK_NFC=false
@@ -71,12 +71,12 @@ jobs:
       - name: Upload Android release files
         uses: actions/upload-artifact@v4
         with:
-          name: RimbaKawal-Android-Production
+          name: ZPatrol-Android-Production
           if-no-files-found: error
           retention-days: 14
           path: |
-            ${{ runner.temp }}/rimbakawal-mobile/build/app/outputs/flutter-apk/app-release.apk
-            ${{ runner.temp }}/rimbakawal-mobile/build/app/outputs/bundle/release/app-release.aab
+            ${{ runner.temp }}/zpatrol-mobile/build/app/outputs/flutter-apk/app-release.apk
+            ${{ runner.temp }}/zpatrol-mobile/build/app/outputs/bundle/release/app-release.aab
 
   ios-release-unsigned:
     if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[web-only]') }}
@@ -92,10 +92,10 @@ jobs:
           cache: true
 
       - name: Prepare iOS project
-        run: bash scripts/prepare-mobile.sh "$RUNNER_TEMP/rimbakawal-mobile"
+        run: bash scripts/prepare-mobile.sh "$RUNNER_TEMP/zpatrol-mobile"
 
       - name: Build production iOS app without signing
-        working-directory: ${{ runner.temp }}/rimbakawal-mobile
+        working-directory: ${{ runner.temp }}/zpatrol-mobile
         run: >-
           flutter build ios --release --no-codesign
           --dart-define=USE_MOCK_NFC=false
@@ -114,14 +114,14 @@ jobs:
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/Payload"
           mkdir -p "$RUNNER_TEMP/Payload"
-          cp -R "$RUNNER_TEMP/rimbakawal-mobile/build/ios/iphoneos/Runner.app" "$RUNNER_TEMP/Payload/Runner.app"
+          cp -R "$RUNNER_TEMP/zpatrol-mobile/build/ios/iphoneos/Runner.app" "$RUNNER_TEMP/Payload/Runner.app"
           cd "$RUNNER_TEMP"
-          zip -qry RimbaKawal-iOS-Production-Unsigned.ipa Payload
+          zip -qry ZPatrol-iOS-Production-Unsigned.ipa Payload
 
       - name: Upload iOS release file
         uses: actions/upload-artifact@v4
         with:
-          name: RimbaKawal-iOS-Production-Unsigned
+          name: ZPatrol-iOS-Production-Unsigned
           if-no-files-found: error
           retention-days: 14
-          path: ${{ runner.temp }}/RimbaKawal-iOS-Production-Unsigned.ipa
+          path: ${{ runner.temp }}/ZPatrol-iOS-Production-Unsigned.ipa
