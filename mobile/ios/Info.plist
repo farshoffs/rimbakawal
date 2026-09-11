@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>RimbaKawal</string>
+	<string>ZPatrol</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>RimbaKawal</string>
+	<string>ZPatrol</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -50,12 +50,12 @@
 		<string>remote-notification</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>RimbaKawal menggunakan kamera untuk gambar laporan insiden dan selfie pengesahan kehadiran.</string>
+	<string>ZPatrol menggunakan kamera untuk gambar laporan insiden dan selfie pengesahan kehadiran.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>RimbaKawal menggunakan galeri untuk lampiran laporan insiden.</string>
+	<string>ZPatrol menggunakan galeri untuk lampiran laporan insiden.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>RimbaKawal menggunakan lokasi semasa rondaan aktif dan semasa punch kehadiran dalam kawasan Jabatan.</string>
+	<string>ZPatrol menggunakan lokasi semasa rondaan aktif dan semasa punch kehadiran dalam kawasan Jabatan.</string>
 	<key>NFCReaderUsageDescription</key>
-	<string>RimbaKawal menggunakan NFC untuk mengimbas checkpoint rondaan.</string>
+	<string>ZPatrol menggunakan NFC untuk mengimbas checkpoint rondaan.</string>
 </dict>
 </plist>

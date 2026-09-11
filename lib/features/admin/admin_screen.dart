@@ -44,14 +44,16 @@ class AdminScreen extends StatelessWidget {
           _AdminMenuCard(
             icon: Icons.monitor_heart_rounded,
             title: 'Pusat Pemantauan',
-            subtitle: 'Pantau rondaan, sesi terlepas, SOS dan insiden secara langsung.',
+            subtitle:
+                'Pantau rondaan, sesi terlepas, SOS dan insiden secara langsung.',
             onTap: () => _open(context, CommandCenterScreen(api: api)),
           ),
           const SizedBox(height: 10),
           _AdminMenuCard(
             icon: Icons.fingerprint_rounded,
             title: 'Sejarah Kehadiran',
-            subtitle: 'Semak punch masuk/keluar, geofence dan detail pengesahan wajah.',
+            subtitle:
+                'Semak punch masuk/keluar, geofence dan detail pengesahan wajah.',
             onTap: () => _open(context, AttendanceHistoryScreen(api: api)),
           ),
           const SizedBox(height: 10),
@@ -73,7 +75,8 @@ class AdminScreen extends StatelessWidget {
           _AdminMenuCard(
             icon: Icons.account_tree_rounded,
             title: 'Sekolah dan Checkpoint',
-            subtitle: 'Selenggara Sekolah, kadar sesi dan checkpoint dalam satu skrin.',
+            subtitle:
+                'Selenggara Sekolah, kadar sesi dan checkpoint dalam satu skrin.',
             onTap: () => _open(
               context,
               DepartmentMaintenanceScreen(

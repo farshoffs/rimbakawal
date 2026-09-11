@@ -1,5 +1,5 @@
 name: rimbakawal
-version: 0.5.18+36
+version: 0.6.0+37
 publish_to: 'none'
 
 environment:
@@ -36,11 +36,11 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: assets/branding/rimbakawal_icon.png
+  image_path: assets/branding/zpatrol_icon.png
   remove_alpha_ios: true
 
 flutter:
   uses-material-design: true
   assets:
     - assets/audio/patrol_alarm.wav
-    - assets/branding/rimbakawal_icon.png
+    - assets/branding/zpatrol_icon.png

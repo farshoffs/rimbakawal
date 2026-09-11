@@ -1,6 +1,6 @@
-# RimbaKawal
+# ZPatrol
 
-**RimbaKawal** is an offline-first guard patrol, attendance, checkpoint, monitoring and reporting platform built with Flutter and Cloudflare.
+**ZPatrol** is an offline-first guard patrol, attendance, checkpoint, monitoring and reporting platform built with Flutter and Cloudflare.
 
 It is designed for real security operations in schools and other managed sites. Core patrol activity can continue when connectivity is unreliable, while cloud-backed features such as attendance verification, live patrol monitoring, administration and reporting remain centrally managed.
 
@@ -8,7 +8,7 @@ It is designed for real security operations in schools and other managed sites. 
 
 ## Overview
 
-RimbaKawal combines:
+ZPatrol combines:
 
 - NFC-based guard patrol checkpoints
 - offline-first patrol operations
@@ -102,7 +102,7 @@ Management can see synchronization health information, while normal patrol users
 
 ## Attendance / Kehadiran
 
-RimbaKawal includes a punch-card style attendance system tied to a configured Sekolah location.
+ZPatrol includes a punch-card style attendance system tied to a configured Sekolah location.
 
 ### Attendance workflow
 
@@ -224,7 +224,7 @@ Sensitive authorization is enforced by backend routes and should never rely only
 
 ## Live patrol GPS
 
-When a patrol is active, RimbaKawal can publish position updates to the cloud so authorized users can monitor patrol movement.
+When a patrol is active, ZPatrol can publish position updates to the cloud so authorized users can monitor patrol movement.
 
 The system distinguishes patrol presence from GPS availability, allowing states such as:
 
@@ -261,7 +261,7 @@ The goal is to operate as a real monitoring console rather than a static history
 
 The Management **Laporan** screen supports monthly report generation using **Bulan**, **Tahun** and optional Sekolah selection.
 
-### RimbaKawal monthly patrol report
+### ZPatrol monthly patrol report
 
 Includes operational information such as:
 
@@ -275,7 +275,7 @@ Includes operational information such as:
 
 ### BPPA PKK 2 — Borang Kehadiran Pengawal
 
-RimbaKawal can generate the monthly **BPPA PKK 2 Borang Kehadiran Pengawal** using attendance data.
+ZPatrol can generate the monthly **BPPA PKK 2 Borang Kehadiran Pengawal** using attendance data.
 
 The report uses stored operational metadata for:
 
@@ -296,7 +296,7 @@ The report remains structured according to the BPPA PKK 2 form layout used by th
 
 ### BPPA PKK 3 — Laporan Pelaksanaan Kunci Jam
 
-RimbaKawal can generate **BPPA PKK 3 Laporan Pelaksanaan Kunci Jam / Watchman Clock** reports by month.
+ZPatrol can generate **BPPA PKK 3 Laporan Pelaksanaan Kunci Jam / Watchman Clock** reports by month.
 
 The report:
 
@@ -365,7 +365,7 @@ USE_MOCK_NFC=true
 
 Current production web application:
 
-**https://rimbakawal.fscapitalmanagement.workers.dev**
+**https://zpatrol.fscapitalmanagement.workers.dev**
 
 ## Backend responsibilities
 
@@ -396,7 +396,7 @@ The Worker API handles responsibilities including:
 
 ## Data integrity model
 
-RimbaKawal intentionally avoids trusting the mobile UI for security-sensitive decisions.
+ZPatrol intentionally avoids trusting the mobile UI for security-sensitive decisions.
 
 Examples:
 
@@ -451,13 +451,13 @@ flutter analyze
 ```bash
 flutter run -d chrome \
   --dart-define=USE_MOCK_NFC=true \
-  --dart-define=API_BASE_URL=https://rimbakawal.fscapitalmanagement.workers.dev
+  --dart-define=API_BASE_URL=https://zpatrol.fscapitalmanagement.workers.dev
 ```
 
 PowerShell:
 
 ```powershell
-flutter run -d chrome --dart-define=USE_MOCK_NFC=true --dart-define=API_BASE_URL=https://rimbakawal.fscapitalmanagement.workers.dev
+flutter run -d chrome --dart-define=USE_MOCK_NFC=true --dart-define=API_BASE_URL=https://zpatrol.fscapitalmanagement.workers.dev
 ```
 
 ### Run Android with real NFC
@@ -465,7 +465,7 @@ flutter run -d chrome --dart-define=USE_MOCK_NFC=true --dart-define=API_BASE_URL
 ```bash
 flutter run \
   --dart-define=USE_MOCK_NFC=false \
-  --dart-define=API_BASE_URL=https://rimbakawal.fscapitalmanagement.workers.dev
+  --dart-define=API_BASE_URL=https://zpatrol.fscapitalmanagement.workers.dev
 ```
 
 ## Production builds
@@ -475,7 +475,7 @@ flutter run \
 ```bash
 flutter build apk --release \
   --dart-define=USE_MOCK_NFC=false \
-  --dart-define=API_BASE_URL=https://rimbakawal.fscapitalmanagement.workers.dev
+  --dart-define=API_BASE_URL=https://zpatrol.fscapitalmanagement.workers.dev
 ```
 
 ### Android App Bundle
@@ -483,7 +483,7 @@ flutter build apk --release \
 ```bash
 flutter build appbundle --release \
   --dart-define=USE_MOCK_NFC=false \
-  --dart-define=API_BASE_URL=https://rimbakawal.fscapitalmanagement.workers.dev
+  --dart-define=API_BASE_URL=https://zpatrol.fscapitalmanagement.workers.dev
 ```
 
 ### iOS
@@ -578,7 +578,7 @@ Production user, patrol, attendance, incident and location data should remain in
 
 ## Product direction
 
-RimbaKawal is evolving from a simple checkpoint reader into a broader **guard operations platform**:
+ZPatrol is evolving from a simple checkpoint reader into a broader **guard operations platform**:
 
 ```text
 NFC checkpoint patrol

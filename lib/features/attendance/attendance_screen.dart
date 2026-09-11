@@ -213,8 +213,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   const SizedBox(height: 24),
                   Text(
                     'Punch Hari Ini',
-                    style: Theme.of(context).textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   if (status == null || status.records.isEmpty)

@@ -1,4 +1,4 @@
-/* RimbaKawal FCM web background service worker.
+/* ZPatrol FCM web background service worker.
  * Values are injected during the production GitHub Actions build.
  */
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
@@ -15,6 +15,6 @@ if (Object.values(config).every((value) => value && !value.startsWith('__'))) {
   firebase.initializeApp(config);
   const messaging = firebase.messaging();
   messaging.onBackgroundMessage((payload) => {
-    console.debug('[RimbaKawal] background push', payload?.data?.kind || 'general');
+    console.debug('[ZPatrol] background push', payload?.data?.kind || 'general');
   });
 }

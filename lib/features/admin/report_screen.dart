@@ -120,12 +120,13 @@ class _ReportScreenState extends State<ReportScreen> {
                 children: [
                   Text(
                     'Jana Laporan PKK',
-                    style: Theme.of(context).textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Hanya PKK 2, PKK 3 dan PKK 4 dijana sebagai PDF berdasarkan data sebenar RimbaKawal.',
+                    'Hanya PKK 2, PKK 3 dan PKK 4 dijana sebagai PDF berdasarkan data sebenar ZPatrol.',
                   ),
                   const SizedBox(height: 18),
                   DropdownButtonFormField<int?>(
@@ -216,7 +217,8 @@ class _ReportScreenState extends State<ReportScreen> {
                   _ReportButton(
                     icon: Icons.badge_rounded,
                     title: 'Jana PKK 3 (PDF)',
-                    subtitle: 'Pengesahan kehadiran pengawal berdasarkan rekod kehadiran',
+                    subtitle:
+                        'Pengesahan kehadiran pengawal berdasarkan rekod kehadiran',
                     enabled: !_generating && !_loadingDepartments,
                     onPressed: () => _generate(_PkkType.pkk3),
                   ),
@@ -233,7 +235,7 @@ class _ReportScreenState extends State<ReportScreen> {
                     const LinearProgressIndicator(),
                     const SizedBox(height: 8),
                     const Text(
-                      'Menjana PDF daripada data RimbaKawal…',
+                      'Menjana PDF daripada data ZPatrol…',
                       textAlign: TextAlign.center,
                     ),
                   ],

@@ -116,8 +116,9 @@ class _SosAlertGateState extends State<SosAlertGate>
                             ],
                           ),
                           border: Border.all(
-                            color: const Color(0xFFFF7675)
-                                .withValues(alpha: 0.45),
+                            color: const Color(
+                              0xFFFF7675,
+                            ).withValues(alpha: 0.45),
                           ),
                         ),
                         child: Column(
@@ -240,8 +241,9 @@ class _SosAlertGateState extends State<SosAlertGate>
       if (dialogContext.mounted) Navigator.of(dialogContext).pop(true);
     } catch (error) {
       if (!dialogContext.mounted) return;
-      ScaffoldMessenger.of(dialogContext)
-          .showSnackBar(SnackBar(content: Text(error.toString())));
+      ScaffoldMessenger.of(
+        dialogContext,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -265,7 +267,8 @@ class _SosAlertGateState extends State<SosAlertGate>
               maxLines: 6,
               decoration: const InputDecoration(
                 labelText: 'Catatan penyelesaian',
-                hintText: 'Contoh: Pengawal telah ditemui dan keadaan disahkan selamat.',
+                hintText:
+                    'Contoh: Pengawal telah ditemui dan keadaan disahkan selamat.',
               ),
             ),
           ],

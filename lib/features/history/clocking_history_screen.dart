@@ -149,8 +149,9 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
       _load(_selectedDate);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error.toString())));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 

@@ -18,4 +18,4 @@ flutter build web --release --dart-define=USE_MOCK_NFC=true
 
 test -f build/web/index.html
 
-echo "RimbaKawal Flutter web build ready at build/web"
+echo "ZPatrol Flutter web build ready at build/web"

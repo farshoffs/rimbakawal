@@ -7,8 +7,8 @@ import '../../core/notifications/notification_alert_gate.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../sos/sos_alert_gate.dart';
 
-const _rimbaRed = Color(0xFFC0392B);
-const _rimbaBlue = Color(0xFF4834D4);
+const _rimbaRed = Color(0xFF6D28D9);
+const _rimbaBlue = Color(0xFF8B5CF6);
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
@@ -109,7 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const Align(child: _TemporaryLogo()),
                         const SizedBox(height: 24),
                         Text(
-                          'RimbaKawal',
+                          'ZPatrol',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.displaySmall
                               ?.copyWith(
@@ -160,12 +160,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                   width: double.infinity,
                                   padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF4834D4)
-                                        .withValues(alpha: 0.16),
+                                    color: const Color(
+                                      0xFF8B5CF6,
+                                    ).withValues(alpha: 0.16),
                                     borderRadius: BorderRadius.circular(14),
                                     border: Border.all(
-                                      color: const Color(0xFF6C5CE7)
-                                          .withValues(alpha: 0.35),
+                                      color: const Color(
+                                        0xFF6C5CE7,
+                                      ).withValues(alpha: 0.35),
                                     ),
                                   ),
                                   child: Text(
@@ -255,11 +257,11 @@ class _TemporaryLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Image.asset(
-    'assets/branding/rimbakawal_icon.png',
+    'assets/branding/zpatrol_icon.png',
     width: 104,
     height: 104,
     filterQuality: FilterQuality.high,
-    semanticLabel: 'Logo RimbaKawal',
+    semanticLabel: 'Logo ZPatrol',
   );
 }
 

@@ -372,7 +372,7 @@ async function syncSos(env, user, clientEventId, occurredAt, payload) {
   const sosId = Number(insert.meta?.last_row_id || 0);
   try {
     await sendPushToDepartment(env, user.department_id, {
-      title: 'SOS RimbaKawal',
+      title: 'SOS ZPatrol',
       body: `${user.nama} mencetuskan SOS${note ? ` • ${note}` : ''}`.slice(0, 240),
       kind: 'sos',
       data: { sosId },

@@ -110,7 +110,8 @@ class RealNfcService implements NfcService {
           NfcPollingOption.iso14443,
           NfcPollingOption.iso15693,
         },
-        alertMessageIos: 'Dekatkan bahagian atas iPhone pada tag. Kandungan tag akan ditulis semula untuk RimbaKawal.',
+        alertMessageIos:
+            'Dekatkan bahagian atas iPhone pada tag. Kandungan tag akan ditulis semula untuk RimbaKawal.',
         invalidateAfterFirstReadIos: true,
         onDiscovered: (tag) async {
           if (completer.isCompleted || discoveryHandled) return;

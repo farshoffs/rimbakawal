@@ -768,7 +768,7 @@ async function createSos(request, env) {
   const pushedSosId = Number(result.meta?.last_row_id || 0);
   try {
     await sendPushToDepartment(env, auth.user.department_id, {
-      title: 'SOS RimbaKawal',
+      title: 'SOS ZPatrol',
       body: `${auth.user.nama} mencetuskan SOS${note ? ` • ${note}` : ''}`.slice(0, 240),
       kind: 'sos',
       data: { sosId: pushedSosId },
