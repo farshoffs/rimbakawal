@@ -1,0 +1,60 @@
+name: Apply Company Administration Access
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply_company_administration_access.py
+      - .github/workflows/apply-company-administration-access.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply ZPatrol access-control patch
+        run: python3 scripts/apply_company_administration_access.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter
+        run: flutter analyze
+
+      - name: Validate Worker JavaScript
+        run: |
+          node --check worker/index.js
+          node --check worker/app.js
+          node --check worker/attendance.js
+          node --check worker/reports.js
+
+      - name: Validate patch formatting
+        run: git diff --check
+
+      - name: Commit validated changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib worker docs
+          git commit -m "Add company administration role and account blocking"
+          git push origin HEAD:main
