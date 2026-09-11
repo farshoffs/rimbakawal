@@ -1,0 +1,73 @@
+name: Apply Multi-School Company Scope
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply_multi_school_company_scope.py
+      - .github/workflows/apply-multi-school-company-scope.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply multi-school company hierarchy
+        run: python3 scripts/apply_multi_school_company_scope.py
+
+      - name: Normalize generated JavaScript syntax
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ['worker/attendance.js']:
+              p = Path(name)
+              text = p.read_text(encoding='utf-8')
+              text = text.replace('company?.name ?? parsed.companyName || null', '(company?.name ?? parsed.companyName) || null')
+              text = text.replace('company?.name ?? parsed.companyName || parsed.name', '(company?.name ?? parsed.companyName) || parsed.name')
+              p.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter
+        run: flutter analyze
+
+      - name: Validate Worker JavaScript
+        run: |
+          node --check worker/index.js
+          node --check worker/app.js
+          node --check worker/attendance.js
+          node --check worker/reports.js
+
+      - name: Validate patch formatting
+        run: git diff --check
+
+      - name: Commit validated changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib worker migrations docs pubspec.yaml
+          git commit -m "Support multi-school company administration reports"
+          git push origin HEAD:main
