@@ -731,10 +731,14 @@ async function updateAdminUser(request, env, userId) {
   const jawatan = String(body.jawatan ?? '').trim();
   const departmentId = Number(body.departmentId);
   const noPk = String(body.noPk ?? '').trim().slice(0, 50);
+  const guardStatus = String(body.guardStatus ?? 'Tetap').trim();
 
   if (nama.length < 3) return json({ error: 'Nama pengguna tidak sah.' }, 400);
   if (!['Patrol', 'Supervisor', 'Management'].includes(jawatan)) {
     return json({ error: 'Jawatan pengguna tidak sah.' }, 400);
+  }
+  if (!['Tetap', 'Gantian'].includes(guardStatus)) {
+    return json({ error: 'Status pengawal mesti Tetap atau Gantian.' }, 400);
   }
   if (!Number.isInteger(departmentId) || departmentId <= 0) {
     return json({ error: 'Pilih Sekolah pengguna.' }, 400);
@@ -766,9 +770,9 @@ async function updateAdminUser(request, env, userId) {
 
   await env.DB.prepare(
     `UPDATE users
-     SET nama = ?, jawatan = ?, department_id = ?, jabatan = ?, profile_picture = ?, no_pk = ?
+     SET nama = ?, jawatan = ?, department_id = ?, jabatan = ?, profile_picture = ?, no_pk = ?, guard_status = ?
      WHERE id = ?`,
-  ).bind(nama, jawatan, departmentId, department.name, profilePicture, noPk || null, userId).run();
+  ).bind(nama, jawatan, departmentId, department.name, profilePicture, noPk || null, guardStatus, userId).run();
 
   const updated = await getUserById(env, userId);
   return json({ user: publicUser(updated) });
@@ -847,7 +851,7 @@ async function requireUser(request, env) {
 }
 
 function userSelect() {
-  return `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan, u.profile_picture,
+  return `SELECT u.id, u.nama, u.no_kad_pengenalan, u.no_pk, u.guard_status, u.jawatan, u.profile_picture,
                  u.jabatan, u.department_id, u.active,
                  COALESCE(d.name, u.jabatan) AS department_name,
                  COALESCE(d.session_interval_minutes, 120) AS session_interval_minutes,
@@ -902,6 +906,7 @@ function publicUser(user) {
     nama: user.nama,
     noKadPengenalan: user.no_kad_pengenalan,
     noPk: user.no_pk || '',
+    guardStatus: user.guard_status || 'Tetap',
     jawatan: user.jawatan,
     profilePicture: user.profile_picture,
     jabatan: user.department_name || user.jabatan || 'Belum ditetapkan',

@@ -986,6 +986,7 @@ class ApiService {
     required String jawatan,
     required int departmentId,
     String noPk = '',
+    String guardStatus = 'Tetap',
   }) async {
     final data = _decode(
       await http.post(
@@ -997,6 +998,7 @@ class ApiService {
           'jawatan': jawatan,
           'departmentId': departmentId,
           'noPk': noPk,
+          'guardStatus': guardStatus,
         }),
       ),
     );
@@ -1180,6 +1182,7 @@ class ApiService {
     required String jawatan,
     required int departmentId,
     String noPk = '',
+    String guardStatus = 'Tetap',
     String? profilePicture,
     bool clearProfilePicture = false,
   }) async {
@@ -1188,6 +1191,7 @@ class ApiService {
       'jawatan': jawatan,
       'departmentId': departmentId,
       'noPk': noPk,
+      'guardStatus': guardStatus,
     };
     if (profilePicture != null) body['profilePicture'] = profilePicture;
     if (clearProfilePicture) body['clearProfilePicture'] = true;

@@ -39,7 +39,7 @@ async function monthlyReport(request, env, ctx, url) {
     : [fromStart, attendanceToEnd, departmentId];
 
   const scanSql = `SELECT s.id, s.user_id, s.checkpoint_id, s.scanned_at, s.nfc_uid, s.session_index,
-              u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan,
+              u.nama, u.no_kad_pengenalan, u.no_pk, u.guard_status, u.jawatan,
               COALESCE(d.name, u.jabatan) AS jabatan,
               COALESCE(c.name, 'Checkpoint') AS checkpoint_name,
               c.position AS checkpoint_position
@@ -57,7 +57,7 @@ async function monthlyReport(request, env, ctx, url) {
   // the selected report month.
   const attendanceSql = `SELECT a.id, a.user_id, a.department_id, a.work_date,
               a.punch_type, a.punched_at,
-              u.nama, u.no_kad_pengenalan, u.no_pk, u.jawatan,
+              u.nama, u.no_kad_pengenalan, u.no_pk, u.guard_status, u.jawatan,
               COALESCE(d.name, u.jabatan) AS jabatan
        FROM attendance_records a
        JOIN users u ON u.id = a.user_id
@@ -82,7 +82,7 @@ async function monthlyReport(request, env, ctx, url) {
   const guardPromise = departmentId == null
     ? Promise.resolve({ results: [] })
     : env.DB.prepare(
-      `SELECT id, nama, no_kad_pengenalan, no_pk, jawatan
+      `SELECT id, nama, no_kad_pengenalan, no_pk, guard_status, jawatan
        FROM users
        WHERE department_id = ?
          AND active = 1
@@ -122,6 +122,7 @@ async function monthlyReport(request, env, ctx, url) {
     nama: row.nama,
     no_kad_pengenalan: row.no_kad_pengenalan || '',
     no_pk: row.no_pk || '',
+    guard_status: row.guard_status || 'Tetap',
     jawatan: row.jawatan || 'patrol',
   }));
   payload.summary = {
