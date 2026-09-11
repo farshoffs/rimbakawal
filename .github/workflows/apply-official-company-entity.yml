@@ -1,0 +1,81 @@
+name: Apply Official Company Entity
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-official-company-entity.yml'
+      - 'scripts/patch_company_api_models.py'
+      - 'scripts/patch_company_api_payloads.py'
+      - 'scripts/patch_company_department_ui.py'
+      - 'scripts/patch_company_user_ui_data.py'
+      - 'scripts/patch_company_user_ui_edit.py'
+      - 'scripts/patch_company_user_ui_add.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Apply Flutter company model/API patches
+        run: |
+          python scripts/patch_company_api_models.py
+          python scripts/patch_company_api_payloads.py
+          python scripts/patch_company_department_ui.py
+          python scripts/patch_company_user_ui_data.py
+          python scripts/patch_company_user_ui_edit.py
+          python scripts/patch_company_user_ui_add.py
+
+      - name: Point Worker to Company management wrapper
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('wrangler.jsonc')
+          text = p.read_text()
+          text = text.replace('"main": "./worker/reports.js"', '"main": "./worker/company_management.js"')
+          p.write_text(text)
+          PY
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter
+        run: flutter analyze
+
+      - name: Validate Worker JavaScript
+        run: |
+          node --check worker/company_management.js
+          node --check worker/reports.js
+          node --check worker/attendance.js
+          node --check worker/app.js
+          node --check worker/index.js
+
+      - name: Validate patch formatting
+        run: git diff --check
+
+      - name: Commit validated changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No generated changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib worker wrangler.jsonc
+          git commit -m 'Make Company a first-class ZPatrol entity'
+          git push
