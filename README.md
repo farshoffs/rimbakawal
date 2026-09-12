@@ -1,60 +1,110 @@
 # ZPatrol
 
-**ZPatrol** is an offline-first guard patrol, attendance, checkpoint, monitoring and reporting platform built with Flutter and Cloudflare.
+**ZPatrol** is an offline-first security guard patrol, attendance, checkpoint, live monitoring and reporting platform built with Flutter and Cloudflare.
 
-It is designed for real security operations in schools and other managed sites. Core patrol activity can continue when connectivity is unreliable, while cloud-backed features such as attendance verification, live patrol monitoring, administration and reporting remain centrally managed.
+It is designed for real security operations in schools and other managed sites. Guards can continue core patrol duties when Internet connectivity is unreliable, while centralized features such as attendance verification, company administration, multi-site monitoring and reporting remain cloud-managed.
 
-> **Status:** Active production development.
+> **Current application version:** `0.8.1+42`  
+> **Status:** Active production development  
+> **Production web:** https://zpatrol.fscapitalmanagement.workers.dev
 
-## Overview
+## What ZPatrol does
 
-ZPatrol combines:
+ZPatrol combines the operational functions normally spread across a watchman clock, attendance system, patrol logbook, incident channel and management dashboard into one platform:
 
 - NFC-based guard patrol checkpoints
-- offline-first patrol operations
-- automatic synchronization
-- live patrol GPS monitoring
-- geofenced attendance with selfie capture
-- attendance review and audit records
-- incident and SOS workflows
-- department and checkpoint administration
+- offline-first patrol operation with automatic synchronization
+- live GPS patrol monitoring
+- geofenced attendance with live selfie capture
+- AI-assisted attendance image verification and Management review
+- company, school/site, user and checkpoint administration
+- multi-school company hierarchy and company-level administration
+- incidents, SOS and welfare workflows
+- Command Center / Pusat Pemantauan
+- patrol and attendance history with audit records
 - monthly operational reporting
 - BPPA PKK 2 attendance reports
 - BPPA PKK 3 watchman-clock reports
 - Flutter web, Android and iOS codebase
 - Cloudflare Workers + D1 backend
+- GitHub Actions CI/CD for production deployment and mobile builds
 
-## Core principles
+## Latest architecture: Company -> School -> Operations
 
-- **Offline first for patrol operations** — checkpoint activity should not stop simply because Internet access is unavailable.
-- **Local write first** — supported field events are persisted locally before synchronization.
-- **Automatic synchronization** — normal patrol users are not expected to manage a manual sync queue.
-- **Server-side validation** — sensitive rules are enforced by the backend, not merely by hidden UI controls.
-- **Role-aware access** — Patrol, Supervisor and Management users receive different capabilities.
-- **Auditable operations** — patrol, attendance, incident and administrative data are stored as operational records.
-- **Real-time features where required** — active patrol GPS and cloud attendance verification intentionally depend on connectivity.
+ZPatrol now treats **Company / Syarikat** as a first-class entity instead of storing a company name as free text inside each school record.
 
-## Main features
+```text
+Company / Syarikat
+    |
+    +-- Administration users
+    |
+    +-- School / Site A
+    |      +-- Patrol users
+    |      +-- Supervisor users
+    |      +-- Checkpoints
+    |      +-- Attendance geofence
+    |
+    +-- School / Site B
+    |      +-- Patrol users
+    |      +-- Supervisor users
+    |      +-- Checkpoints
+    |      +-- Attendance geofence
+    |
+    +-- School / Site C ...
+```
 
-### 1. Guard patrol operations
+This structure allows one security company to manage multiple schools or operational sites without duplicating company data.
+
+### Company management
+
+Management can:
+
+- create and maintain Company records
+- activate or deactivate a Company
+- view how many schools are linked to a Company
+- view how many Administration users are linked to a Company
+- assign a school/site to an official Company record
+- assign Administration users at Company level
+- keep Patrol and Supervisor users scoped to their operational school/site
+
+The deployment pipeline also verifies that production data remains aligned to the Company hierarchy after database migrations.
+
+### Multi-school administration
+
+Company-level Administration is designed to support operations across multiple schools/sites belonging to the same Company. This enables centralized oversight while keeping patrol users, checkpoints, attendance boundaries and operational records scoped to the correct location.
+
+Reports and administrative workflows can therefore operate across the Company's schools instead of assuming one administrator belongs to only one school.
+
+## Core design principles
+
+- **Offline-first patrol operation** - checkpoint duties should not stop because Internet access is unavailable.
+- **Local write first** - supported field events are persisted locally before synchronization.
+- **Automatic synchronization** - normal guards are not expected to operate a manual sync queue.
+- **Server-side validation** - sensitive rules are enforced by the backend, not only by hidden Flutter controls.
+- **Role-aware access** - Patrol, Supervisor, Administration and Management capabilities are separated.
+- **Auditable operations** - patrol, attendance, incident and administrative actions are stored as records.
+- **Real-time where necessary** - live patrol GPS and cloud attendance verification use connectivity when available.
+- **Multi-site ready** - the Company hierarchy supports one company managing multiple schools or sites.
+
+## 1. Guard patrol operations
 
 - Start and end **Sesi Rondaan**.
 - Scan physical NFC checkpoints using `nfc_manager`.
 - Designed for NTAG-compatible NFC checkpoint tags.
-- Validate checkpoint UIDs against the authenticated user's Sekolah.
+- Validate checkpoint UIDs against the authenticated user's assigned school/site.
 - Support configured checkpoint ordering.
 - Show checkpoint progress during an active patrol.
 - Display checkpoint/job instructions.
-- Track patrol start time, completion time and route trail.
+- Record patrol start time, completion time and route trail.
 - Record which guard scanned each checkpoint.
 - View patrol history by session.
-- Management can delete a patrol session from Sejarah Rondaan.
-- Flashlight shortcut is available during active patrols.
+- Allow authorized Management users to delete a patrol session from **Sejarah Rondaan**.
+- Provide a flashlight shortcut during active patrols.
 - Record incidents, SOS events and welfare actions.
 
-### 2. Offline-first patrol data flow
+## 2. Offline-first patrol data flow
 
-Field patrol activity is designed to avoid depending on a successful HTTP request for every action.
+Field patrol activity does not depend on a successful HTTP request for every action.
 
 ```text
 Patrol action
@@ -85,34 +135,34 @@ Examples of local-first events include:
 - SOS records
 - welfare checks
 
-Queued events use unique identifiers so synchronization retries can be processed safely and duplicate cloud records can be reduced.
+Queued events use unique identifiers so synchronization retries can be handled safely and duplicate cloud records can be reduced.
 
-### 3. Automatic synchronization
+## 3. Automatic synchronization
 
 The client can attempt synchronization:
 
 - when the application starts
-- when network connectivity returns
+- when connectivity returns
 - periodically while the application is running
 - when the application resumes
 - after new local events are created
 - before logout when possible
 
-Management can see synchronization health information, while normal patrol users are not required to operate a Sync Center.
+Management can inspect synchronization health while normal patrol users are not required to manage a Sync Center.
 
-## Attendance / Kehadiran
+## 4. Attendance / Kehadiran
 
-ZPatrol includes a punch-card style attendance system tied to a configured Sekolah location.
+ZPatrol includes a punch-card style attendance system tied to the configured location of each school/site.
 
 ### Attendance workflow
 
-1. Management configures the Sekolah's attendance point and permitted radius.
+1. Management configures the site's attendance point and permitted radius.
 2. The user opens **Kehadiran**.
-3. The application requests current geolocation.
+3. The application requests the current geolocation.
 4. The user captures a live selfie.
 5. The backend verifies that the device is inside the configured attendance radius.
 6. The attendance event is stored as `IN` or `OUT`.
-7. Management can review attendance history and supporting evidence.
+7. Management reviews attendance history and supporting evidence when needed.
 
 ### Web attendance
 
@@ -121,14 +171,14 @@ The production web application supports:
 - browser geolocation permission
 - webcam permission
 - live webcam preview
-- front-facing/user-facing camera preference when supported by the browser
+- front-facing/user-facing camera preference when supported
 - selfie capture before punch submission
 
 ### Mobile attendance
 
 Mobile builds use the device camera and high-accuracy location services for attendance capture.
 
-### Attendance validation
+### Attendance evidence and validation
 
 Attendance records can include:
 
@@ -136,14 +186,14 @@ Attendance records can include:
 - timestamp
 - latitude and longitude
 - GPS accuracy
-- distance from configured Sekolah attendance point
+- distance from the configured attendance point
 - live selfie
-- registered profile-picture reference
-- face-verification status and score when available
+- registered profile picture reference
+- AI-assisted face-verification status and score when available
 - Management review status
-- reviewer and review time
+- reviewer and review timestamp
 
-Face comparison is an **AI-assisted verification signal**, not an infallible biometric identity system. Uncertain cases can be marked for Management review instead of being silently treated as confirmed.
+Face comparison is an **AI-assisted verification signal**, not an infallible biometric identity system. Uncertain results can be escalated for Management review.
 
 ### Attendance review
 
@@ -157,40 +207,39 @@ Management can open **Sejarah Kehadiran** and inspect:
 - verification score/reason when available
 - review status
 
-A Management user can mark a record as **DISEMAK**. The reviewed state, reviewer and review timestamp are persisted in the backend.
+An authorized Management user can mark a record as **DISEMAK**. The reviewed state, reviewer and review timestamp are persisted in the backend.
 
-## Sekolah configuration
+## 5. School / site configuration
 
-Management can maintain Sekolah settings including:
+Management can maintain school/site settings including:
 
-- Sekolah name
+- school/site name
+- linked Company
 - patrol-session interval
 - patrol-session start time
 - active/inactive state
 - attendance latitude/longitude
 - attendance radius
 - attendance location label
-- **Nama Syarikat**
-- **Zon**
+- Zon
 
-The map in Sekolah settings is used to define the attendance/geofence centre.
+The map in the school/site settings is used to define the attendance/geofence centre.
 
-## User administration
+## 6. User administration
 
 Management can create and edit users with data including:
 
 - Name
 - No. Kad Pengenalan
-- **No. PK**
+- No. PK
 - Role / Jawatan
-- Sekolah
+- Company or school assignment, depending on role
+- Guard status where applicable
 - profile picture
-
-Supported role concepts include:
 
 ### Patrol
 
-Typical access:
+Typical capabilities:
 
 - Mula Rondaan
 - NFC checkpoint scanning
@@ -203,26 +252,31 @@ Typical access:
 
 ### Supervisor
 
-Supervisor access can include monitoring capabilities for the relevant operational scope.
+Supervisor capabilities can include monitoring for the relevant school/site operational scope.
+
+### Administration
+
+Administration users can be associated with a **Company** rather than being restricted to a single school. This supports centralized multi-school administration for the Company's operational sites.
 
 ### Management
 
-Management includes administrative and monitoring capabilities such as:
+Management includes higher-level administrative and monitoring capabilities such as:
 
 - Command Center / Pusat Pemantauan
 - live patrol map
 - attendance overview
 - attendance history and review
+- Company management
 - user administration
-- Sekolah administration
+- school/site administration
 - checkpoint administration
 - patrol-session deletion
 - incident management
 - report generation
 
-Sensitive authorization is enforced by backend routes and should never rely only on Flutter UI visibility.
+Sensitive authorization is enforced by backend routes and does not rely only on Flutter UI visibility.
 
-## Live patrol GPS
+## 7. Live patrol GPS
 
 When a patrol is active, ZPatrol can publish position updates to the cloud so authorized users can monitor patrol movement.
 
@@ -233,11 +287,11 @@ The system distinguishes patrol presence from GPS availability, allowing states 
 - delayed/stale location
 - patrol ended
 
-Location trail records can later be shown as part of the patrol history.
+Location trail records can later be shown as part of patrol history.
 
 > Continuous tracking after the operating system force-kills the application is not guaranteed by normal foreground location tracking.
 
-## Pusat Pemantauan / Command Center
+## 8. Pusat Pemantauan / Command Center
 
 The monitoring dashboard can include:
 
@@ -257,27 +311,29 @@ The monitoring dashboard can include:
 
 The goal is to operate as a real monitoring console rather than a static history page.
 
-## Reports
+## 9. Reports
 
-The Management **Laporan** screen supports monthly report generation using **Bulan**, **Tahun** and optional Sekolah selection.
+The Management **Laporan** screen supports monthly report generation using **Bulan**, **Tahun** and operational scope such as school/site.
+
+The latest Company hierarchy also supports administration and reporting across multiple schools managed by the same Company.
 
 ### ZPatrol monthly patrol report
 
-Includes operational information such as:
+Can include:
 
 - active users
 - checkpoint scans
 - scan timestamps
 - guard names
-- Sekolah
+- school/site
 - checkpoint names
 - SOS records
 
-### BPPA PKK 2 — Borang Kehadiran Pengawal
+### BPPA PKK 2 - Borang Kehadiran Pengawal
 
-ZPatrol can generate the monthly **BPPA PKK 2 Borang Kehadiran Pengawal** using attendance data.
+ZPatrol can generate the monthly **BPPA PKK 2 Borang Kehadiran Pengawal** using stored attendance data.
 
-The report uses stored operational metadata for:
+The report can use operational metadata for:
 
 - Nama Pengawal
 - No. PK
@@ -287,26 +343,24 @@ The report uses stored operational metadata for:
 - Zon
 - Syif
 
-Shift is derived automatically from the Malaysian punch time:
+Shift is derived automatically from Malaysian punch time:
 
-- **1 — SIANG:** `07:00` to `18:59`
-- **2 — MALAM:** `19:00` to `06:59`
+- **1 - SIANG:** `07:00` to `18:59`
+- **2 - MALAM:** `19:00` to `06:59`
 
-The report remains structured according to the BPPA PKK 2 form layout used by the project.
-
-### BPPA PKK 3 — Laporan Pelaksanaan Kunci Jam
+### BPPA PKK 3 - Laporan Pelaksanaan Kunci Jam
 
 ZPatrol can generate **BPPA PKK 3 Laporan Pelaksanaan Kunci Jam / Watchman Clock** reports by month.
 
 The report:
 
 - generates weekly pages across the selected month
-- fills Nama Syarikat and Zon from Sekolah settings
+- fills Company and Zon data from the configured hierarchy
 - groups checkpoint activity by date
 - arranges checkpoint entries according to patrol session and checkpoint position
-- displays `Checkpoint 1`, `Checkpoint 2`, `Checkpoint 3`, and subsequent checkpoints using recorded times
+- displays checkpoint times using recorded operational data
 
-## NFC architecture
+## 10. NFC architecture
 
 ```text
 PatrolScreen
@@ -361,18 +415,14 @@ USE_MOCK_NFC=true
 - REST API under `/api/*`
 - GitHub Actions for automated deployment
 
-## Production web
-
-Current production web application:
-
-**https://zpatrol.fscapitalmanagement.workers.dev**
-
 ## Backend responsibilities
 
 The Worker API handles responsibilities including:
 
 - authentication and session validation
-- role/Management authorization
+- role/permission authorization
+- Company CRUD and Company-user relationships
+- school/site-to-Company relationships
 - patrol bootstrap/configuration
 - NFC checkpoint validation
 - route-order validation
@@ -382,7 +432,7 @@ The Worker API handles responsibilities including:
 - attendance geofence validation
 - attendance evidence storage
 - attendance review
-- department configuration
+- school/site configuration
 - user profile metadata
 - incidents
 - SOS
@@ -390,6 +440,7 @@ The Worker API handles responsibilities including:
 - live patrol presence
 - live location trail
 - Command Center data
+- multi-site Administration scope
 - monthly reports
 - BPPA report data
 - administrative CRUD operations
@@ -401,24 +452,26 @@ ZPatrol intentionally avoids trusting the mobile UI for security-sensitive decis
 Examples:
 
 - an NFC UID must belong to an active checkpoint
-- the checkpoint must belong to the authenticated user's Sekolah
+- the checkpoint must belong to the authenticated user's school/site
 - route requirements can be validated server-side
-- Management endpoints validate Management permission server-side
-- attendance punches are checked against the configured Sekolah radius
+- privileged endpoints validate permission server-side
+- attendance punches are checked against the configured geofence radius
 - attendance GPS accuracy is validated by the backend
 - attendance review state is persisted on the server
-- patrol-session deletion is restricted to Management
-- synchronization identifiers are used to make retries safer
+- patrol-session deletion is restricted to authorized users
+- synchronization identifiers make retries safer
+- school/site records are linked to official Company records
+- Company Administration scope is represented explicitly in the data model
 
 ## Authentication
 
-The current application supports No. Kad Pengenalan based login as specified by the project.
+The current application supports **No. Kad Pengenalan** based login as specified by the project.
 
-For stronger future production security, possible enhancements include:
+Potential future production enhancements include:
 
 - PIN/password in addition to identity number
 - passkeys
-- MFA for Management
+- MFA for privileged users
 - login throttling
 - device registration
 
@@ -496,16 +549,17 @@ GitHub Actions can compile an unsigned iOS build for validation, but an unsigned
 
 Production deployment is automated through GitHub Actions after changes reach `main`.
 
-The deployment pipeline performs operations including:
+The pipeline includes:
 
 1. `flutter pub get`
 2. `flutter analyze`
 3. Flutter web release build
-4. configure web service-worker assets
-5. install the pinned Wrangler version
-6. resolve the D1 database
-7. apply D1 migrations
-8. deploy the Worker and static assets
+4. web service-worker/static asset preparation
+5. pinned Wrangler setup
+6. D1 database resolution
+7. D1 migrations and Company hierarchy alignment
+8. production data hierarchy verification
+9. Worker + static asset deployment
 
 D1 migrations:
 
@@ -521,7 +575,7 @@ worker/
 
 ## Mobile CI
 
-The repository also contains GitHub Actions automation for production mobile compilation, including Android release builds and unsigned iOS build validation.
+The repository contains GitHub Actions automation for production mobile compilation, including Android release builds and unsigned iOS build validation.
 
 ## Project structure
 
@@ -533,7 +587,7 @@ lib/
     offline/          local storage, session vault and auto-sync
 
   features/
-    admin/            Management, reports and Command Center
+    admin/            Company, school, user, reports and Command Center
     attendance/       geofenced attendance workflow
     auth/             login
     dashboard/        role-aware dashboard
@@ -553,10 +607,10 @@ Areas that can still be expanded include:
 - stronger authentication such as PIN/passkeys/MFA
 - robust continuous background GPS after application termination
 - larger-scale image storage such as Cloudflare R2
-- more advanced patrol and workforce scheduling
-- additional attendance rules and exception workflows
+- more advanced workforce scheduling
+- configurable notifications and escalation rules
 - richer analytics and trend reports
-- configurable notifications
+- additional attendance exception workflows
 - immutable configuration snapshots for long-term audit requirements
 
 ## Security and privacy
@@ -568,19 +622,20 @@ Do not commit:
 - real identity-card numbers
 - passwords or session tokens
 - Cloudflare API credentials
-- Firebase credentials
 - private staff photos
 - attendance selfies
-- real incident reports containing sensitive information
+- sensitive incident reports
 - private GPS/location trails
 
 Production user, patrol, attendance, incident and location data should remain in runtime storage/services rather than source control.
 
 ## Product direction
 
-ZPatrol is evolving from a simple checkpoint reader into a broader **guard operations platform**:
+ZPatrol is evolving from a simple checkpoint reader into a broader **multi-site guard operations platform**:
 
 ```text
+Company / multi-school administration
+        +
 NFC checkpoint patrol
         +
 Offline field operations
@@ -600,4 +655,4 @@ Management Command Center
 Monthly BPPA reporting
 ```
 
-The operating principle remains simple: **guards should be able to perform core patrol duties even when connectivity is unreliable, while Management retains a clear operational record when the cloud is available.**
+The operating principle remains simple: **guards should be able to perform core patrol duties even when connectivity is unreliable, while authorized administrators retain a centralized, auditable view across the Company's managed sites whenever the cloud is available.**
