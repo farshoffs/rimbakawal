@@ -17,6 +17,7 @@ class UserMaintenanceScreen extends StatefulWidget {
 
 class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
   late Future<_UserAdminData> _future;
+  int _companyFilterId = -1;
   int _departmentFilterId = -1;
 
   @override
@@ -35,13 +36,24 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
         .toList();
     final departments = await widget.api.getAdminDepartments();
     final companies = await widget.api.getAdminCompanies();
-    return _UserAdminData(users: users, departments: departments, companies: companies);
+    return _UserAdminData(
+      users: users,
+      departments: departments,
+      companies: companies,
+    );
   }
 
-  Future<void> _addUser(List<DepartmentRecord> departments, List<CompanyRecord> companies) async {
+  Future<void> _addUser(
+    List<DepartmentRecord> departments,
+    List<CompanyRecord> companies,
+  ) async {
     final changed = await showDialog<bool>(
       context: context,
-      builder: (_) => _AddUserDialog(api: widget.api, departments: departments, companies: companies),
+      builder: (_) => _AddUserDialog(
+        api: widget.api,
+        departments: departments,
+        companies: companies,
+      ),
     );
     if (changed == true && mounted) _refresh();
   }
@@ -111,27 +123,74 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
             );
           }
           final data = snapshot.data!;
-          final filteredUsers = _departmentFilterId == -1
-              ? data.users
-              : data.users
-                    .where((user) => user.departmentId == _departmentFilterId)
+          final departmentsById = {
+            for (final department in data.departments)
+              department.id: department,
+          };
+          final companyDepartments = _companyFilterId == -1
+              ? data.departments
+              : data.departments
+                    .where(
+                      (department) => department.companyId == _companyFilterId,
+                    )
                     .toList();
+          final filteredUsers = data.users.where((user) {
+            final resolvedCompanyId =
+                user.companyId ?? departmentsById[user.departmentId]?.companyId;
+            final matchesCompany =
+                _companyFilterId == -1 || resolvedCompanyId == _companyFilterId;
+            final matchesDepartment =
+                _departmentFilterId == -1 ||
+                user.departmentId == _departmentFilterId;
+            return matchesCompany && matchesDepartment;
+          }).toList();
           return Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: DropdownButtonFormField<int>(
+                  initialValue: _companyFilterId,
+                  decoration: const InputDecoration(
+                    labelText: 'Filter Syarikat',
+                    prefixIcon: Icon(Icons.business_rounded),
+                  ),
+                  items: [
+                    const DropdownMenuItem<int>(
+                      value: -1,
+                      child: Text('Semua Syarikat'),
+                    ),
+                    ...data.companies.map(
+                      (company) => DropdownMenuItem<int>(
+                        value: company.id,
+                        child: Text(company.name),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _companyFilterId = value ?? -1;
+                      _departmentFilterId = -1;
+                    });
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: DropdownButtonFormField<int>(
+                  key: ValueKey(
+                    'department-filter-$_companyFilterId-$_departmentFilterId',
+                  ),
                   initialValue: _departmentFilterId,
                   decoration: const InputDecoration(
                     labelText: 'Filter Sekolah',
-                    prefixIcon: Icon(Icons.filter_alt_rounded),
+                    prefixIcon: Icon(Icons.account_tree_outlined),
                   ),
                   items: [
                     const DropdownMenuItem<int>(
                       value: -1,
                       child: Text('Semua Sekolah'),
                     ),
-                    ...data.departments.map(
+                    ...companyDepartments.map(
                       (department) => DropdownMenuItem<int>(
                         value: department.id,
                         child: Text(department.name),
@@ -155,7 +214,9 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
               const SizedBox(height: 4),
               Expanded(
                 child: filteredUsers.isEmpty
-                    ? const Center(child: Text('Tiada pengguna untuk Sekolah ini.'))
+                    ? const Center(
+                        child: Text('Tiada pengguna untuk penapis dipilih.'),
+                      )
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                         itemCount: filteredUsers.length,
@@ -164,7 +225,11 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
                           final user = filteredUsers[index];
                           return Card(
                             child: ListTile(
-                              onTap: () => _editUser(user, data.departments, data.companies),
+                              onTap: () => _editUser(
+                                user,
+                                data.departments,
+                                data.companies,
+                              ),
                               leading: CircleAvatar(
                                 backgroundImage: _imageProvider(
                                   user.profilePicture,
@@ -207,7 +272,10 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
         future: _future,
         builder: (context, snapshot) => FloatingActionButton.extended(
           onPressed: snapshot.hasData
-              ? () => _addUser(snapshot.data!.departments, snapshot.data!.companies)
+              ? () => _addUser(
+                  snapshot.data!.departments,
+                  snapshot.data!.companies,
+                )
               : null,
           icon: const Icon(Icons.person_add_alt_1_rounded),
           label: const Text('Tambah Pengguna'),
@@ -350,10 +418,13 @@ class _EditUserDialogState extends State<_EditUserDialog> {
   Future<void> _save() async {
     final nama = _nameController.text.trim();
     final isAdministration = _jawatan == 'Administration';
-    if (nama.length < 3 || (isAdministration ? _companyId == null : _departmentId == null)) {
-      setState(() => _error = isAdministration
-          ? 'Lengkapkan nama dan Syarikat pengguna.'
-          : 'Lengkapkan nama dan Sekolah pengguna.');
+    if (nama.length < 3 ||
+        (isAdministration ? _companyId == null : _departmentId == null)) {
+      setState(
+        () => _error = isAdministration
+            ? 'Lengkapkan nama dan Syarikat pengguna.'
+            : 'Lengkapkan nama dan Sekolah pengguna.',
+      );
       return;
     }
     setState(() {
@@ -385,7 +456,9 @@ class _EditUserDialogState extends State<_EditUserDialog> {
   @override
   Widget build(BuildContext context) {
     final active = widget.departments.where((item) => item.active).toList();
-    final activeCompanies = widget.companies.where((item) => item.active || item.id == _companyId).toList();
+    final activeCompanies = widget.companies
+        .where((item) => item.active || item.id == _companyId)
+        .toList();
     final isAdministration = _jawatan == 'Administration';
     final preview = _previewImage();
     return AlertDialog(
@@ -495,10 +568,14 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                         if (value != null) {
                           setState(() {
                             _jawatan = value;
-                            if (value == 'Administration' && _companyId == null && activeCompanies.isNotEmpty) {
+                            if (value == 'Administration' &&
+                                _companyId == null &&
+                                activeCompanies.isNotEmpty) {
                               _companyId = activeCompanies.first.id;
                             }
-                            if (value != 'Administration' && _departmentId == null && active.isNotEmpty) {
+                            if (value != 'Administration' &&
+                                _departmentId == null &&
+                                active.isNotEmpty) {
                               _departmentId = active.first.id;
                             }
                           });
@@ -529,16 +606,27 @@ class _EditUserDialogState extends State<_EditUserDialog> {
               const SizedBox(height: 12),
               if (isAdministration)
                 DropdownButtonFormField<int>(
-                  initialValue: activeCompanies.any((item) => item.id == _companyId) ? _companyId : null,
+                  initialValue:
+                      activeCompanies.any((item) => item.id == _companyId)
+                      ? _companyId
+                      : null,
                   decoration: const InputDecoration(
                     labelText: 'Syarikat',
                     prefixIcon: Icon(Icons.business_rounded),
-                    helperText: 'Akaun ini mengakses laporan semua Sekolah di bawah syarikat.',
+                    helperText:
+                        'Akaun ini mengakses laporan semua Sekolah di bawah syarikat.',
                   ),
                   items: activeCompanies
-                      .map((company) => DropdownMenuItem<int>(value: company.id, child: Text(company.name)))
+                      .map(
+                        (company) => DropdownMenuItem<int>(
+                          value: company.id,
+                          child: Text(company.name),
+                        ),
+                      )
                       .toList(),
-                  onChanged: _saving ? null : (value) => setState(() => _companyId = value),
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _companyId = value),
                 )
               else
                 DropdownButtonFormField<int>(
@@ -548,9 +636,16 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                     prefixIcon: Icon(Icons.account_tree_outlined),
                   ),
                   items: active
-                      .map((department) => DropdownMenuItem<int>(value: department.id, child: Text(department.name)))
+                      .map(
+                        (department) => DropdownMenuItem<int>(
+                          value: department.id,
+                          child: Text(department.name),
+                        ),
+                      )
                       .toList(),
-                  onChanged: _saving ? null : (value) => setState(() => _departmentId = value),
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _departmentId = value),
                 ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
@@ -608,7 +703,11 @@ class _EditUserDialogState extends State<_EditUserDialog> {
 }
 
 class _UserAdminData {
-  const _UserAdminData({required this.users, required this.departments, required this.companies});
+  const _UserAdminData({
+    required this.users,
+    required this.departments,
+    required this.companies,
+  });
 
   final List<AppUser> users;
   final List<DepartmentRecord> departments;
@@ -616,7 +715,11 @@ class _UserAdminData {
 }
 
 class _AddUserDialog extends StatefulWidget {
-  const _AddUserDialog({required this.api, required this.departments, required this.companies});
+  const _AddUserDialog({
+    required this.api,
+    required this.departments,
+    required this.companies,
+  });
 
   final ApiService api;
   final List<DepartmentRecord> departments;
@@ -658,7 +761,9 @@ class _AddUserDialogState extends State<_AddUserDialog> {
     final name = _nameController.text.trim();
     final ic = _icController.text.replaceAll(RegExp(r'\D'), '');
     final isAdministration = _jawatan == 'Administration';
-    if (name.length < 3 || ic.length != 12 || (isAdministration ? _companyId == null : _departmentId == null)) {
+    if (name.length < 3 ||
+        ic.length != 12 ||
+        (isAdministration ? _companyId == null : _departmentId == null)) {
       setState(
         () => _error = isAdministration
             ? 'Lengkapkan nama, No. Kad Pengenalan 12 digit dan Syarikat.'
@@ -692,7 +797,9 @@ class _AddUserDialogState extends State<_AddUserDialog> {
   @override
   Widget build(BuildContext context) {
     final active = widget.departments.where((item) => item.active).toList();
-    final activeCompanies = widget.companies.where((item) => item.active).toList();
+    final activeCompanies = widget.companies
+        .where((item) => item.active)
+        .toList();
     final isAdministration = _jawatan == 'Administration';
     return AlertDialog(
       title: const Text('Tambah Pengguna'),
@@ -754,10 +861,14 @@ class _AddUserDialogState extends State<_AddUserDialog> {
                   if (value != null) {
                     setState(() {
                       _jawatan = value;
-                      if (value == 'Administration' && _companyId == null && activeCompanies.isNotEmpty) {
+                      if (value == 'Administration' &&
+                          _companyId == null &&
+                          activeCompanies.isNotEmpty) {
                         _companyId = activeCompanies.first.id;
                       }
-                      if (value != 'Administration' && _departmentId == null && active.isNotEmpty) {
+                      if (value != 'Administration' &&
+                          _departmentId == null &&
+                          active.isNotEmpty) {
                         _departmentId = active.first.id;
                       }
                     });
@@ -788,14 +899,23 @@ class _AddUserDialogState extends State<_AddUserDialog> {
               const SizedBox(height: 12),
               if (isAdministration)
                 DropdownButtonFormField<int>(
-                  initialValue: activeCompanies.any((item) => item.id == _companyId) ? _companyId : null,
+                  initialValue:
+                      activeCompanies.any((item) => item.id == _companyId)
+                      ? _companyId
+                      : null,
                   decoration: const InputDecoration(
                     labelText: 'Syarikat',
                     prefixIcon: Icon(Icons.business_rounded),
-                    helperText: 'Pentadbiran Syarikat dipaut terus kepada Syarikat, bukan satu Sekolah.',
+                    helperText:
+                        'Pentadbiran Syarikat dipaut terus kepada Syarikat, bukan satu Sekolah.',
                   ),
                   items: activeCompanies
-                      .map((company) => DropdownMenuItem<int>(value: company.id, child: Text(company.name)))
+                      .map(
+                        (company) => DropdownMenuItem<int>(
+                          value: company.id,
+                          child: Text(company.name),
+                        ),
+                      )
                       .toList(),
                   onChanged: (value) => setState(() => _companyId = value),
                 )
@@ -807,7 +927,12 @@ class _AddUserDialogState extends State<_AddUserDialog> {
                     prefixIcon: Icon(Icons.account_tree_outlined),
                   ),
                   items: active
-                      .map((department) => DropdownMenuItem<int>(value: department.id, child: Text(department.name)))
+                      .map(
+                        (department) => DropdownMenuItem<int>(
+                          value: department.id,
+                          child: Text(department.name),
+                        ),
+                      )
                       .toList(),
                   onChanged: (value) => setState(() => _departmentId = value),
                 ),
