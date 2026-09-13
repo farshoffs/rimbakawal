@@ -1,0 +1,4 @@
+Deploy verified multi-company / multi-school admin refactor.
+
+Final validated code commit: 1549f7014ed48f672ae2bfd9c70832aae160febd
+Validation: flutter analyze success, Worker syntax checks success, git diff check success.
