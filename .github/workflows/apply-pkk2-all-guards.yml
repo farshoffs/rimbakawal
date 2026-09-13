@@ -1,0 +1,55 @@
+name: Apply PKK2 All Guards
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/apply_pkk2_all_guards.py'
+      - '.github/workflows/apply-pkk2-all-guards.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply PKK2 all-guards patch
+        run: python scripts/apply_pkk2_all_guards.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Format updated generator
+        run: dart format lib/features/admin/pkk_pdf_generator.dart
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit PKK2 update
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/features/admin/pkk_pdf_generator.dart
+          git commit -m 'Keep all guards together in PKK2'
+          git pull --rebase origin main
+          git push origin HEAD:main
