@@ -1,0 +1,66 @@
+name: Apply Multi Tenant Admin Followup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/patch_command_active_scope_fix.py'
+      - 'scripts/patch_user_company_school_cascade.py'
+      - 'scripts/patch_company_filters.py'
+      - '.github/workflows/apply-multi-tenant-admin-followup.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply follow-up patches
+        run: |
+          python scripts/patch_command_active_scope_fix.py
+          python scripts/patch_user_company_school_cascade.py
+          python scripts/patch_company_filters.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Format Dart files
+        run: |
+          dart format \
+            lib/features/admin/user_maintenance_screen.dart \
+            lib/features/admin/company_maintenance_screen.dart
+
+      - name: Check Worker syntax
+        run: node --check worker/command_center_period.js
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit follow-up
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib worker
+          git commit -m 'Polish multi-company admin workflows'
+          git pull --rebase origin main
+          git push origin HEAD:main
