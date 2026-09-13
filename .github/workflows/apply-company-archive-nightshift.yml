@@ -7,6 +7,9 @@ on:
     paths:
       - scripts/apply_company_archive_nightshift.py
       - .github/workflows/apply-company-archive-nightshift.yml
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -16,10 +19,11 @@ jobs:
   apply-and-validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out feature branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: fix/company-report-nightshift-20260913
 
       - name: Apply company/archive/night-shift patch
         run: python3 scripts/apply_company_archive_nightshift.py
