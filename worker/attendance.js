@@ -24,7 +24,7 @@ export default {
         return reviewAttendance(request, env, Number(attendanceReviewMatch[1]));
       }
       if (url.pathname === '/api/admin/departments' && request.method === 'GET') {
-        return adminDepartments(request, env);
+        return adminDepartments(request, env, url);
       }
       if (url.pathname === '/api/admin/departments' && request.method === 'POST') {
         return createDepartment(request, env);
@@ -36,6 +36,10 @@ export default {
       }
       if (departmentMatch && request.method === 'DELETE') {
         return deleteDepartment(request, env, Number(departmentMatch[1]));
+      }
+      const departmentRestoreMatch = url.pathname.match(/^\/api\/admin\/departments\/(\d+)\/restore$/);
+      if (departmentRestoreMatch && request.method === 'POST') {
+        return restoreDepartment(request, env, Number(departmentRestoreMatch[1]));
       }
 
       if (url.pathname === '/api/admin/command-center' && request.method === 'GET') {
@@ -67,7 +71,16 @@ async function attendanceStatus(request, env) {
 
   const department = await getDepartment(env, auth.user.department_id);
   if (!department) return json({ error: 'Sekolah tidak ditemui.' }, 404);
-  const workDate = malaysiaDateKey(new Date());
+  const todayWorkDate = malaysiaDateKey(new Date());
+  const latestGlobal = await env.DB.prepare(
+    `SELECT id, work_date, punch_type, punched_at
+       FROM attendance_records
+      WHERE user_id = ?
+      ORDER BY punched_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(auth.user.id).first();
+  const hasOpenShift = latestGlobal?.punch_type === 'IN';
+  const workDate = hasOpenShift ? String(latestGlobal.work_date) : todayWorkDate;
   const result = await env.DB.prepare(
     `SELECT id, punch_type, punched_at, latitude, longitude, accuracy_m, distance_m,
             face_status, face_score, face_model, face_reason
@@ -80,8 +93,10 @@ async function attendanceStatus(request, env) {
 
   return json({
     workDate,
+    currentDate: todayWorkDate,
+    openShiftFromPreviousDate: hasOpenShift && workDate !== todayWorkDate,
     department: departmentJson(department),
-    nextPunchType: latest?.punchType === 'IN' ? 'OUT' : 'IN',
+    nextPunchType: hasOpenShift ? 'OUT' : 'IN',
     latest,
     records,
     profilePictureConfigured: Boolean(auth.user.profile_picture),
@@ -138,17 +153,23 @@ async function punchAttendance(request, env) {
     }, 403);
   }
 
-  const workDate = malaysiaDateKey(new Date());
+  const todayWorkDate = malaysiaDateKey(new Date());
   const latest = await env.DB.prepare(
-    `SELECT id, punch_type, punched_at
-     FROM attendance_records
-     WHERE user_id = ? AND work_date = ?
-     ORDER BY punched_at DESC, id DESC LIMIT 1`,
-  ).bind(auth.user.id, workDate).first();
+    `SELECT id, work_date, punch_type, punched_at
+       FROM attendance_records
+      WHERE user_id = ?
+      ORDER BY punched_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(auth.user.id).first();
   if (latest && Date.now() - Date.parse(latest.punched_at) < 60000) {
     return json({ error: 'Punch terlalu rapat. Tunggu sekurang-kurangnya 1 minit.' }, 429);
   }
   const punchType = latest?.punch_type === 'IN' ? 'OUT' : 'IN';
+  // OUT belongs to the same work/shift date as its preceding IN even when the
+  // calendar has crossed midnight (for example 20:00 -> 08:00).
+  const workDate = punchType === 'OUT' && latest?.work_date
+    ? String(latest.work_date)
+    : todayWorkDate;
 
   const face = await verifyFace(env, auth.user.profile_picture, selfie);
   if (face.status === 'different' && Number(face.score || 0) >= 80) {
@@ -517,17 +538,24 @@ async function attendanceSummary(env, date, departmentId = null) {
   };
 }
 
-async function adminDepartments(request, env) {
+async function adminDepartments(request, env, url) {
   const auth = await requireReportAccess(request, env);
   if (auth.response) return auth.response;
   const role = String(auth.user.jawatan || '').trim().toLowerCase();
-  const scopeCompanyId = role === 'administration'
-    ? Number(auth.user.company_id || 0) || null
-    : null;
+  const ownCompanyId = Number(auth.user.company_id || 0) || null;
+  const requestedCompanyId = Number(url.searchParams.get('companyId') || 0) || null;
+  const scopeCompanyId = role === 'administration' ? ownCompanyId : requestedCompanyId;
   if (role === 'administration' && !scopeCompanyId) {
     return json({ error: 'Pentadbiran Syarikat belum dipautkan kepada Syarikat.' }, 409);
   }
+  const includeArchived = role === 'management' && url.searchParams.get('includeArchived') === '1';
 
+  const where = [includeArchived ? '1 = 1' : 'd.active = 1'];
+  const binds = [];
+  if (scopeCompanyId) {
+    where.push('d.company_id = ?');
+    binds.push(scopeCompanyId);
+  }
   const sql = `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
             d.attendance_latitude, d.attendance_longitude, d.attendance_radius_m,
             d.attendance_location_label, d.company_id,
@@ -536,12 +564,10 @@ async function adminDepartments(request, env) {
      FROM departments d
      LEFT JOIN companies co ON co.id = d.company_id
      LEFT JOIN checkpoints c ON c.department_id = d.id
-     WHERE d.active = 1 ${scopeCompanyId ? 'AND d.company_id = ?' : ''}
+     WHERE ${where.join(' AND ')}
      GROUP BY d.id
-     ORDER BY d.name ASC`;
-  const result = scopeCompanyId
-    ? await env.DB.prepare(sql).bind(scopeCompanyId).all()
-    : await env.DB.prepare(sql).all();
+     ORDER BY d.active DESC, company_name COLLATE NOCASE ASC, d.name COLLATE NOCASE ASC`;
+  const result = await env.DB.prepare(sql).bind(...binds).all();
   return json({ departments: (result.results ?? []).map(departmentJson) });
 }
 
@@ -634,25 +660,71 @@ async function deleteDepartment(request, env, departmentId) {
   }
   const existing = await getDepartment(env, departmentId);
   if (!existing) return json({ error: 'Sekolah tidak ditemui.' }, 404);
-
-  const assigned = await env.DB.prepare(
-    'SELECT COUNT(*) AS total FROM users WHERE department_id = ? AND active = 1',
-  ).bind(departmentId).first();
-  if (Number(assigned?.total || 0) > 0) {
-    return json({
-      error: 'Pindahkan atau nyahaktifkan semua pengguna aktif sekolah ini sebelum memadam sekolah.',
-    }, 409);
+  if (Number(existing.active) !== 1) {
+    return json({ ok: true, archived: true, alreadyArchived: true });
   }
 
+  const [checkpoints, users] = await Promise.all([
+    env.DB.prepare('SELECT id, active FROM checkpoints WHERE department_id = ? ORDER BY id').bind(departmentId).all(),
+    env.DB.prepare('SELECT id, active FROM users WHERE department_id = ? ORDER BY id').bind(departmentId).all(),
+  ]);
+  const snapshot = JSON.stringify({
+    department: { id: departmentId, active: Number(existing.active) },
+    checkpoints: (checkpoints.results ?? []).map((row) => ({ id: Number(row.id), active: Number(row.active) })),
+    users: (users.results ?? []).map((row) => ({ id: Number(row.id), active: Number(row.active) })),
+  });
   await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO entity_archives (entity_type, entity_id, snapshot_json, archived_by)
+       VALUES ('department', ?, ?, ?)`,
+    ).bind(departmentId, snapshot, auth.user.id),
     env.DB.prepare(
       'UPDATE departments SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
     ).bind(departmentId),
     env.DB.prepare(
       'UPDATE checkpoints SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE department_id = ?',
     ).bind(departmentId),
+    env.DB.prepare(
+      'UPDATE users SET active = 0 WHERE department_id = ?',
+    ).bind(departmentId),
   ]);
-  return json({ ok: true, deleted: true });
+  return json({ ok: true, archived: true, undoAvailable: true });
+}
+
+async function restoreDepartment(request, env, departmentId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  const archive = await env.DB.prepare(
+    `SELECT id, snapshot_json
+       FROM entity_archives
+      WHERE entity_type = 'department' AND entity_id = ? AND restored_at IS NULL
+      ORDER BY id DESC LIMIT 1`,
+  ).bind(departmentId).first();
+  if (!archive) {
+    return json({ error: 'Tiada rekod arkib Sekolah yang boleh dipulihkan.' }, 409);
+  }
+  let snapshot;
+  try { snapshot = JSON.parse(archive.snapshot_json); } catch (_) {
+    return json({ error: 'Snapshot arkib Sekolah rosak.' }, 500);
+  }
+  const statements = [
+    env.DB.prepare('UPDATE departments SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .bind(Number(snapshot?.department?.active ?? 1), departmentId),
+  ];
+  for (const row of snapshot?.checkpoints ?? []) {
+    statements.push(env.DB.prepare('UPDATE checkpoints SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .bind(Number(row.active ?? 0), Number(row.id)));
+  }
+  for (const row of snapshot?.users ?? []) {
+    statements.push(env.DB.prepare('UPDATE users SET active = ? WHERE id = ?')
+      .bind(Number(row.active ?? 0), Number(row.id)));
+  }
+  statements.push(
+    env.DB.prepare('UPDATE entity_archives SET restored_at = CURRENT_TIMESTAMP, restored_by = ? WHERE id = ?')
+      .bind(auth.user.id, Number(archive.id)),
+  );
+  await env.DB.batch(statements);
+  return json({ ok: true, restored: true });
 }
 
 async function resolveCompany(env, rawName) {
