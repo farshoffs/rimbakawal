@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
+import 'admin_scope.dart';
 
 class UserMaintenanceScreen extends StatefulWidget {
   const UserMaintenanceScreen({required this.api, super.key});
@@ -17,8 +18,10 @@ class UserMaintenanceScreen extends StatefulWidget {
 
 class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
   late Future<_UserAdminData> _future;
-  int _companyFilterId = -1;
-  int _departmentFilterId = -1;
+  final AdminScopeState _scope = AdminScopeState.instance;
+  final TextEditingController _searchController = TextEditingController();
+  String _roleFilter = 'all';
+  String _statusFilter = 'all';
 
   @override
   void initState() {
@@ -30,10 +33,17 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
     setState(() => _future = _load());
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<_UserAdminData> _load() async {
-    final users = (await widget.api.getAdminUsers())
-        .where((user) => !user.isManagement)
-        .toList();
+    final users = (await widget.api.getAdminUsers(
+      companyId: _scope.companyId,
+      departmentId: _scope.departmentId,
+    )).where((user) => !user.isManagement).toList();
     final departments = await widget.api.getAdminDepartments();
     final companies = await widget.api.getAdminCompanies();
     return _UserAdminData(
@@ -127,78 +137,107 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
             for (final department in data.departments)
               department.id: department,
           };
-          final companyDepartments = _companyFilterId == -1
-              ? data.departments
-              : data.departments
-                    .where(
-                      (department) => department.companyId == _companyFilterId,
-                    )
-                    .toList();
+          final query = _searchController.text.trim().toLowerCase();
           final filteredUsers = data.users.where((user) {
-            final resolvedCompanyId =
-                user.companyId ?? departmentsById[user.departmentId]?.companyId;
-            final matchesCompany =
-                _companyFilterId == -1 || resolvedCompanyId == _companyFilterId;
-            final matchesDepartment =
-                _departmentFilterId == -1 ||
-                user.departmentId == _departmentFilterId;
-            return matchesCompany && matchesDepartment;
+            final role = user.jawatan.toLowerCase();
+            final matchesRole = _roleFilter == 'all' || role == _roleFilter;
+            final matchesStatus =
+                _statusFilter == 'all' ||
+                (_statusFilter == 'active' ? user.active : !user.active);
+            final department = departmentsById[user.departmentId];
+            final companyName = user.companyName.isNotEmpty
+                ? user.companyName
+                : (department?.companyName ?? '');
+            final haystack = [
+              user.nama,
+              user.noKadPengenalan,
+              user.noPk,
+              user.jabatan,
+              companyName,
+              user.jawatanPaparan,
+            ].join(' ').toLowerCase();
+            return matchesRole &&
+                matchesStatus &&
+                (query.isEmpty || haystack.contains(query));
           }).toList();
           return Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: DropdownButtonFormField<int>(
-                  initialValue: _companyFilterId,
-                  decoration: const InputDecoration(
-                    labelText: 'Filter Syarikat',
-                    prefixIcon: Icon(Icons.business_rounded),
-                  ),
-                  items: [
-                    const DropdownMenuItem<int>(
-                      value: -1,
-                      child: Text('Semua Syarikat'),
-                    ),
-                    ...data.companies.map(
-                      (company) => DropdownMenuItem<int>(
-                        value: company.id,
-                        child: Text(company.name),
-                      ),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      _companyFilterId = value ?? -1;
-                      _departmentFilterId = -1;
-                    });
-                  },
+                child: AdminScopeFilterBar(
+                  companies: data.companies,
+                  departments: data.departments,
+                  onChanged: _refresh,
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: DropdownButtonFormField<int>(
-                  key: ValueKey(
-                    'department-filter-$_companyFilterId-$_departmentFilterId',
-                  ),
-                  initialValue: _departmentFilterId,
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(
-                    labelText: 'Filter Sekolah',
-                    prefixIcon: Icon(Icons.account_tree_outlined),
+                    labelText: 'Cari Pengguna',
+                    hintText: 'Nama, No. IC, No. PK, sekolah atau syarikat',
+                    prefixIcon: Icon(Icons.search_rounded),
                   ),
-                  items: [
-                    const DropdownMenuItem<int>(
-                      value: -1,
-                      child: Text('Semua Sekolah'),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _roleFilter,
+                        decoration: const InputDecoration(labelText: 'Peranan'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'all',
+                            child: Text('Semua Peranan'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'administration',
+                            child: Text('Pentadbiran Syarikat'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'supervisor',
+                            child: Text('Penyelia'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'patrol',
+                            child: Text('Pengawal Rondaan'),
+                          ),
+                        ],
+                        onChanged: (value) =>
+                            setState(() => _roleFilter = value ?? 'all'),
+                      ),
                     ),
-                    ...companyDepartments.map(
-                      (department) => DropdownMenuItem<int>(
-                        value: department.id,
-                        child: Text(department.name),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _statusFilter,
+                        decoration: const InputDecoration(
+                          labelText: 'Status Akaun',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'all',
+                            child: Text('Semua Status'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'active',
+                            child: Text('Aktif'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'blocked',
+                            child: Text('Disekat'),
+                          ),
+                        ],
+                        onChanged: (value) =>
+                            setState(() => _statusFilter = value ?? 'all'),
                       ),
                     ),
                   ],
-                  onChanged: (value) =>
-                      setState(() => _departmentFilterId = value ?? -1),
                 ),
               ),
               Padding(
@@ -223,6 +262,14 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
                         separatorBuilder: (_, _) => const SizedBox(height: 8),
                         itemBuilder: (context, index) {
                           final user = filteredUsers[index];
+                          final department = departmentsById[user.departmentId];
+                          final companyLabel = user.companyName.isNotEmpty
+                              ? user.companyName
+                              : (department?.companyName ??
+                                    'Syarikat belum ditetapkan');
+                          final schoolLabel = user.isAdministration
+                              ? 'Semua sekolah syarikat'
+                              : user.jabatan;
                           return Card(
                             child: ListTile(
                               onTap: () => _editUser(
@@ -248,7 +295,10 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
                                 ),
                               ),
                               subtitle: Text(
-                                '${user.noKadPengenalan}${user.noPk.isEmpty ? '' : ' • No. PK ${user.noPk}'}\n${user.jawatanPaparan} • ${user.guardStatus} • ${user.jabatan}\nStatus Akaun: ${user.active ? 'AKTIF' : 'DISEKAT'}',
+                                '${user.noKadPengenalan}${user.noPk.isEmpty ? '' : ' • No. PK ${user.noPk}'}\n'
+                                '${user.jawatanPaparan} • ${user.guardStatus}\n'
+                                '$companyLabel • $schoolLabel\n'
+                                'Status Akaun: ${user.active ? 'AKTIF' : 'DISEKAT'}',
                               ),
                               isThreeLine: true,
                               trailing: Icon(
@@ -780,9 +830,10 @@ class _AddUserDialogState extends State<_AddUserDialog> {
         nama: name,
         noKadPengenalan: ic,
         jawatan: _jawatan,
-        departmentId: _departmentId!,
-        noPk: _noPkController.text.trim(),
-        guardStatus: _guardStatus,
+        departmentId: isAdministration ? null : _departmentId,
+        companyId: isAdministration ? _companyId : null,
+        noPk: isAdministration ? '' : _noPkController.text.trim(),
+        guardStatus: isAdministration ? 'Tetap' : _guardStatus,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);

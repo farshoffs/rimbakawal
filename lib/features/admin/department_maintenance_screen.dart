@@ -10,6 +10,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/nfc/nfc_service.dart';
+import 'admin_scope.dart';
 
 class DepartmentMaintenanceScreen extends StatefulWidget {
   const DepartmentMaintenanceScreen({
@@ -32,6 +33,8 @@ class _DepartmentMaintenanceScreenState
     extends State<DepartmentMaintenanceScreen> {
   late Future<List<DepartmentRecord>> _future;
   int _refreshKey = 0;
+  final AdminScopeState _scope = AdminScopeState.instance;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -44,6 +47,12 @@ class _DepartmentMaintenanceScreenState
       _refreshKey++;
       _future = widget.api.getAdminDepartments();
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _editDepartment([DepartmentRecord? department]) async {
@@ -99,15 +108,56 @@ class _DepartmentMaintenanceScreenState
             );
           }
           final departments = snapshot.data ?? const <DepartmentRecord>[];
+          final companies = companiesFromDepartments(departments);
+          final companyId = _scope.effectiveCompanyId(companies);
+          final companyDepartments = companyId == null
+              ? departments
+              : departments
+                    .where((item) => item.companyId == companyId)
+                    .toList();
+          final departmentId = _scope.effectiveDepartmentId(companyDepartments);
+          final query = _searchController.text.trim().toLowerCase();
+          final visibleDepartments = companyDepartments.where((item) {
+            final matchesSchool =
+                departmentId == null || item.id == departmentId;
+            final haystack = '${item.name} ${item.companyName} ${item.zone}'
+                .toLowerCase();
+            return matchesSchool && (query.isEmpty || haystack.contains(query));
+          }).toList();
           if (departments.isEmpty) {
             return const Center(child: Text('Belum ada Sekolah.'));
           }
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            itemCount: departments.length,
+            itemCount: visibleDepartments.length + 1,
             separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
-              final department = departments[index];
+              if (index == 0) {
+                return Column(
+                  children: [
+                    AdminScopeFilterBar(
+                      companies: companies,
+                      departments: departments,
+                      onChanged: () => setState(() {}),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _searchController,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        labelText: 'Cari Sekolah',
+                        hintText: 'Nama sekolah, syarikat atau zon',
+                        prefixIcon: Icon(Icons.search_rounded),
+                      ),
+                    ),
+                    if (visibleDepartments.isEmpty) ...[
+                      const SizedBox(height: 18),
+                      const Text('Tiada sekolah untuk skop atau carian ini.'),
+                    ],
+                  ],
+                );
+              }
+              final department = visibleDepartments[index - 1];
               return Card(
                 clipBehavior: Clip.antiAlias,
                 child: ExpansionTile(
@@ -525,9 +575,9 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Padam Sekolah?'),
+        title: const Text('Arkib Sekolah?'),
         content: Text(
-          'Padam ${existing.name} daripada tetapan ZPatrol? Rekod sejarah akan dikekalkan. Pengguna aktif perlu dipindahkan atau dinyahaktifkan terlebih dahulu.',
+          'Arkib ${existing.name}? Sekolah, checkpoint dan akaun berkaitan akan dinyahaktifkan sementara. Rekod sejarah kekal untuk audit dan boleh dipulihkan semula.',
         ),
         actions: [
           TextButton(
@@ -536,7 +586,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Padam Sekolah'),
+            child: const Text('Arkib Sekolah'),
           ),
         ],
       ),
@@ -587,7 +637,9 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                       .where((item) => item.active || item.id == _companyId)
                       .toList();
                   return DropdownButtonFormField<int>(
-                    initialValue: companies.any((item) => item.id == _companyId) ? _companyId : null,
+                    initialValue: companies.any((item) => item.id == _companyId)
+                        ? _companyId
+                        : null,
                     decoration: InputDecoration(
                       labelText: 'Syarikat',
                       prefixIcon: const Icon(Icons.business_rounded),
@@ -596,10 +648,12 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                           : 'Pilih syarikat induk yang mengendalikan Sekolah ini.',
                     ),
                     items: companies
-                        .map((company) => DropdownMenuItem<int>(
-                              value: company.id,
-                              child: Text(company.name),
-                            ))
+                        .map(
+                          (company) => DropdownMenuItem<int>(
+                            value: company.id,
+                            child: Text(company.name),
+                          ),
+                        )
                         .toList(),
                     onChanged: _saving || companies.isEmpty
                         ? null
@@ -883,11 +937,14 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
               ],
               if (widget.department != null) ...[
                 const SizedBox(height: 8),
-                SwitchListTile(
+                ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Sekolah aktif'),
-                  value: _active,
-                  onChanged: (value) => setState(() => _active = value),
+                  leading: const Icon(Icons.inventory_2_outlined),
+                  title: const Text('Status Sekolah'),
+                  subtitle: const Text(
+                    'Gunakan tindakan Arkib/Pulihkan supaya status pengguna dan checkpoint boleh dipulihkan dengan selamat.',
+                  ),
+                  trailing: Chip(label: Text(_active ? 'AKTIF' : 'DIARKIBKAN')),
                 ),
               ],
               if (_error != null) ...[

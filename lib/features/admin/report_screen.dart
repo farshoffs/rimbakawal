@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
+import 'admin_scope.dart';
 import 'pkk_pdf_generator.dart';
 
 class ReportScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class _ReportScreenState extends State<ReportScreen> {
   String? _error;
   List<DepartmentRecord> _departments = const [];
   int? _departmentId;
+  final AdminScopeState _scope = AdminScopeState.instance;
 
   @override
   void initState() {
@@ -40,7 +42,10 @@ class _ReportScreenState extends State<ReportScreen> {
       setState(() {
         _departments = active;
         _loadingDepartments = false;
-        if (_departmentId == null && active.length == 1) {
+        final scopedDepartment = _scope.effectiveDepartmentId(active);
+        if (widget.user?.isAdministration != true && scopedDepartment != null) {
+          _departmentId = scopedDepartment;
+        } else if (_departmentId == null && active.length == 1) {
           _departmentId = active.first.id;
         }
         if (active.isEmpty) {
@@ -109,7 +114,8 @@ class _ReportScreenState extends State<ReportScreen> {
       }
       await Printing.sharePdf(
         bytes: bytes,
-        filename: '${type.filePrefix}_${school ?? 'SEKOLAH'}_${_year}_$month.pdf',
+        filename:
+            '${type.filePrefix}_${school ?? 'SEKOLAH'}_${_year}_$month.pdf',
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -131,6 +137,15 @@ class _ReportScreenState extends State<ReportScreen> {
     ).reversed.toList();
     final isCompanyAdmin = widget.user?.isAdministration == true;
     final companyName = widget.user?.companyName ?? '';
+    final companies = companiesFromDepartments(_departments);
+    final scopedCompanyId = isCompanyAdmin
+        ? null
+        : _scope.effectiveCompanyId(companies);
+    final scopedDepartments = scopedCompanyId == null
+        ? _departments
+        : _departments
+              .where((item) => item.companyId == scopedCompanyId)
+              .toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Jana Laporan')),
@@ -156,6 +171,38 @@ class _ReportScreenState extends State<ReportScreen> {
                         : 'Jana PKK 2, PKK 3 dan PKK 4 sebagai PDF berdasarkan data sebenar ZPatrol.',
                   ),
                   const SizedBox(height: 18),
+                  if (!isCompanyAdmin) ...[
+                    DropdownButtonFormField<int>(
+                      key: ValueKey('report-company-${scopedCompanyId ?? -1}'),
+                      initialValue: scopedCompanyId ?? -1,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Syarikat',
+                        prefixIcon: Icon(Icons.business_rounded),
+                      ),
+                      items: [
+                        const DropdownMenuItem<int>(
+                          value: -1,
+                          child: Text('Semua Syarikat'),
+                        ),
+                        ...companies.map(
+                          (company) => DropdownMenuItem<int>(
+                            value: company.id,
+                            child: Text(company.name),
+                          ),
+                        ),
+                      ],
+                      onChanged: _loadingDepartments || _generating
+                          ? null
+                          : (value) {
+                              _scope.setCompany(
+                                value == null || value == -1 ? null : value,
+                              );
+                              setState(() => _departmentId = null);
+                            },
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                   DropdownButtonFormField<int?>(
                     initialValue: _departmentId,
                     decoration: InputDecoration(
@@ -169,7 +216,7 @@ class _ReportScreenState extends State<ReportScreen> {
                         value: null,
                         child: Text('Pilih Sekolah'),
                       ),
-                      ..._departments.map(
+                      ...scopedDepartments.map(
                         (department) => DropdownMenuItem<int?>(
                           value: department.id,
                           child: Text(department.name),
@@ -178,7 +225,10 @@ class _ReportScreenState extends State<ReportScreen> {
                     ],
                     onChanged: _loadingDepartments || _generating
                         ? null
-                        : (value) => setState(() => _departmentId = value),
+                        : (value) {
+                            if (!isCompanyAdmin) _scope.setDepartment(value);
+                            setState(() => _departmentId = value);
+                          },
                   ),
                   if (isCompanyAdmin && _departments.isNotEmpty) ...[
                     const SizedBox(height: 8),
@@ -206,7 +256,8 @@ class _ReportScreenState extends State<ReportScreen> {
                           ],
                           onChanged: _generating
                               ? null
-                              : (value) => setState(() => _month = value ?? _month),
+                              : (value) =>
+                                    setState(() => _month = value ?? _month),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -224,7 +275,8 @@ class _ReportScreenState extends State<ReportScreen> {
                               .toList(),
                           onChanged: _generating
                               ? null
-                              : (value) => setState(() => _year = value ?? _year),
+                              : (value) =>
+                                    setState(() => _year = value ?? _year),
                         ),
                       ),
                     ],
@@ -233,31 +285,45 @@ class _ReportScreenState extends State<ReportScreen> {
                     const SizedBox(height: 12),
                     Text(
                       _error!,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 20),
                   _ReportButton(
                     icon: Icons.library_books_rounded,
                     title: 'Jana Pakej PKK Lengkap (PDF)',
-                    subtitle: 'Muka hadapan + PKK 2 + PKK 3 + PKK 4 dalam satu dokumen',
-                    enabled: !_generating && !_loadingDepartments && _departmentId != null,
+                    subtitle:
+                        'Muka hadapan + PKK 2 + PKK 3 + PKK 4 dalam satu dokumen',
+                    enabled:
+                        !_generating &&
+                        !_loadingDepartments &&
+                        _departmentId != null,
                     onPressed: () => _generate(_PkkType.compiled),
                   ),
                   const SizedBox(height: 10),
                   _ReportButton(
                     icon: Icons.groups_rounded,
                     title: 'Jana PKK 2 (PDF)',
-                    subtitle: 'Pengesahan bilangan pengawal dan rekod kehadiran',
-                    enabled: !_generating && !_loadingDepartments && _departmentId != null,
+                    subtitle:
+                        'Pengesahan bilangan pengawal dan rekod kehadiran',
+                    enabled:
+                        !_generating &&
+                        !_loadingDepartments &&
+                        _departmentId != null,
                     onPressed: () => _generate(_PkkType.pkk2),
                   ),
                   const SizedBox(height: 10),
                   _ReportButton(
                     icon: Icons.badge_rounded,
                     title: 'Jana PKK 3 (PDF)',
-                    subtitle: 'Pengesahan kehadiran pengawal berdasarkan rekod kehadiran',
-                    enabled: !_generating && !_loadingDepartments && _departmentId != null,
+                    subtitle:
+                        'Pengesahan kehadiran pengawal berdasarkan rekod kehadiran',
+                    enabled:
+                        !_generating &&
+                        !_loadingDepartments &&
+                        _departmentId != null,
                     onPressed: () => _generate(_PkkType.pkk3),
                   ),
                   const SizedBox(height: 10),
@@ -265,7 +331,10 @@ class _ReportScreenState extends State<ReportScreen> {
                     icon: Icons.nfc_rounded,
                     title: 'Jana PKK 4 (PDF)',
                     subtitle: 'Pengesahan pelaksanaan rondaan dan clocking',
-                    enabled: !_generating && !_loadingDepartments && _departmentId != null,
+                    enabled:
+                        !_generating &&
+                        !_loadingDepartments &&
+                        _departmentId != null,
                     onPressed: () => _generate(_PkkType.pkk4),
                   ),
                   if (_generating) ...[
@@ -328,7 +397,10 @@ class _ReportButton extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
                 const SizedBox(height: 2),
                 Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
               ],

@@ -868,11 +868,18 @@ class ApiService {
     );
   }
 
-  Future<LiveMapData> getLiveMap() async => LiveMapData.fromJson(
-    _decode(
-      await _cachedGet(_uri('/api/monitor/live-map'), headers: _headers()),
-    ),
-  );
+  Future<LiveMapData> getLiveMap({int? companyId, int? departmentId}) async =>
+      LiveMapData.fromJson(
+        _decode(
+          await _cachedGet(
+            _uri('/api/monitor/live-map', {
+              if (companyId != null) 'companyId': companyId.toString(),
+              if (departmentId != null) 'departmentId': departmentId.toString(),
+            }),
+            headers: _headers(),
+          ),
+        ),
+      );
 
   Future<PatrolConfig> getPatrolConfig() async => PatrolConfig.fromJson(
     _decode(await _cachedGet(_uri('/api/patrol/config'), headers: _headers())),
@@ -970,6 +977,8 @@ class ApiService {
     DateTime? from,
     DateTime? to,
     String mode = 'day',
+    int? companyId,
+    int? departmentId,
   }) async {
     final start = from ?? DateTime.now();
     final end = to ?? start;
@@ -980,6 +989,8 @@ class ApiService {
             'from': _dateKey(start),
             'to': _dateKey(end),
             'mode': mode,
+            if (companyId != null) 'companyId': companyId.toString(),
+            if (departmentId != null) 'departmentId': departmentId.toString(),
           }),
           headers: _headers(),
         ),
@@ -1036,9 +1047,18 @@ class ApiService {
     return user;
   }
 
-  Future<List<AppUser>> getAdminUsers() async {
+  Future<List<AppUser>> getAdminUsers({
+    int? companyId,
+    int? departmentId,
+  }) async {
     final data = _decode(
-      await _cachedGet(_uri('/api/admin/users'), headers: _headers()),
+      await _cachedGet(
+        _uri('/api/admin/users', {
+          if (companyId != null) 'companyId': companyId.toString(),
+          if (departmentId != null) 'departmentId': departmentId.toString(),
+        }),
+        headers: _headers(),
+      ),
     );
     return (data['users'] as List<dynamic>? ?? const [])
         .map((item) => AppUser.fromJson(Map<String, dynamic>.from(item as Map)))
@@ -1098,28 +1118,41 @@ class ApiService {
   }
 
   Future<List<CompanyRecord>> getAdminCompanies() async {
-    final data = _decode(await _cachedGet(_uri('/api/admin/companies'), headers: _headers()));
+    final data = _decode(
+      await _cachedGet(_uri('/api/admin/companies'), headers: _headers()),
+    );
     return (data['companies'] as List<dynamic>? ?? const [])
-        .map((item) => CompanyRecord.fromJson(Map<String, dynamic>.from(item as Map)))
+        .map(
+          (item) =>
+              CompanyRecord.fromJson(Map<String, dynamic>.from(item as Map)),
+        )
         .toList();
   }
 
   Future<CompanyRecord> createCompany(String name) async {
-    final data = _decode(await http.post(
-      _uri('/api/admin/companies'),
-      headers: _headers(jsonBody: true),
-      body: jsonEncode({'name': name}),
-    ));
-    return CompanyRecord.fromJson(Map<String, dynamic>.from(data['company'] as Map));
+    final data = _decode(
+      await http.post(
+        _uri('/api/admin/companies'),
+        headers: _headers(jsonBody: true),
+        body: jsonEncode({'name': name}),
+      ),
+    );
+    return CompanyRecord.fromJson(
+      Map<String, dynamic>.from(data['company'] as Map),
+    );
   }
 
   Future<CompanyRecord> updateCompany(CompanyRecord company) async {
-    final data = _decode(await http.put(
-      _uri('/api/admin/companies/${company.id}'),
-      headers: _headers(jsonBody: true),
-      body: jsonEncode({'name': company.name, 'active': company.active}),
-    ));
-    return CompanyRecord.fromJson(Map<String, dynamic>.from(data['company'] as Map));
+    final data = _decode(
+      await http.put(
+        _uri('/api/admin/companies/${company.id}'),
+        headers: _headers(jsonBody: true),
+        body: jsonEncode({'name': company.name, 'active': company.active}),
+      ),
+    );
+    return CompanyRecord.fromJson(
+      Map<String, dynamic>.from(data['company'] as Map),
+    );
   }
 
   Future<void> deleteCompany(int companyId) async {
@@ -1315,9 +1348,7 @@ class ApiService {
         body: jsonEncode({'blocked': blocked}),
       ),
     );
-    return AppUser.fromJson(
-      Map<String, dynamic>.from(data['user'] as Map),
-    );
+    return AppUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
   }
 
   Future<AppUser> updateAdminUser({
@@ -1506,12 +1537,14 @@ class ApiService {
   Future<AttendanceAdminData> getAdminAttendance(
     DateTime date, {
     int? departmentId,
+    int? companyId,
   }) async => AttendanceAdminData.fromJson(
     _decode(
       await _cachedGet(
         _uri('/api/admin/attendance', {
           'date': _dateKey(date),
           if (departmentId != null) 'departmentId': departmentId.toString(),
+          if (companyId != null) 'companyId': companyId.toString(),
         }),
         headers: _headers(),
       ),

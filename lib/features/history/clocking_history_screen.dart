@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
+import '../admin/admin_scope.dart';
 
 class ClockingHistoryScreen extends StatefulWidget {
   const ClockingHistoryScreen({
@@ -32,6 +33,8 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
   int? _selectedDepartmentId;
   String _filter = 'all';
   List<DepartmentRecord> _departments = const [];
+  List<CompanyRecord> _companies = const [];
+  final AdminScopeState _scope = AdminScopeState.instance;
   late Future<HistoryDay> _future;
 
   @override
@@ -51,12 +54,25 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
 
   Future<HistoryDay> _loadManagementInitial() async {
     final departments = await widget.api.getAdminDepartments();
+    final companies = companiesFromDepartments(departments);
+    final companyId = _scope.effectiveCompanyId(companies);
+    final scopedDepartments = companyId == null
+        ? departments
+        : departments.where((item) => item.companyId == companyId).toList();
+    final scopeDepartment = _scope.effectiveDepartmentId(scopedDepartments);
     final selected =
-        _selectedDepartmentId ??
-        (departments.isEmpty ? null : departments.first.id);
+        scopeDepartment ??
+        (_selectedDepartmentId != null &&
+                scopedDepartments.any(
+                  (item) => item.id == _selectedDepartmentId,
+                )
+            ? _selectedDepartmentId
+            : (scopedDepartments.isEmpty ? null : scopedDepartments.first.id));
+    if (selected != null) _scope.setDepartment(selected);
     if (mounted) {
       setState(() {
         _departments = departments;
+        _companies = companies;
         _selectedDepartmentId = selected;
       });
     }
@@ -159,6 +175,10 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
   Widget build(BuildContext context) {
     final today = DateTime.now();
     final yesterday = today.subtract(const Duration(days: 1));
+    final companyId = _scope.effectiveCompanyId(_companies);
+    final managementDepartments = companyId == null
+        ? _departments
+        : _departments.where((item) => item.companyId == companyId).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -183,13 +203,38 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (widget.user.isManagement) ...[
+                        AdminScopeFilterBar(
+                          companies: _companies,
+                          departments: _departments,
+                          showSchool: false,
+                          onChanged: () {
+                            final companyId = _scope.effectiveCompanyId(
+                              _companies,
+                            );
+                            final schools = companyId == null
+                                ? _departments
+                                : _departments
+                                      .where(
+                                        (item) => item.companyId == companyId,
+                                      )
+                                      .toList();
+                            if (schools.isNotEmpty) {
+                              final next = schools.first.id;
+                              _scope.setDepartment(next);
+                              _load(_selectedDate, departmentId: next);
+                            } else {
+                              setState(() => _selectedDepartmentId = null);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 12),
                         DropdownButtonFormField<int>(
                           initialValue: _selectedDepartmentId,
                           decoration: const InputDecoration(
                             labelText: 'Sekolah',
                             prefixIcon: Icon(Icons.apartment_rounded),
                           ),
-                          items: _departments
+                          items: managementDepartments
                               .map(
                                 (department) => DropdownMenuItem<int>(
                                   value: department.id,
@@ -203,6 +248,7 @@ class _ClockingHistoryScreenState extends State<ClockingHistoryScreen> {
                               .toList(),
                           onChanged: (value) {
                             if (value != null) {
+                              _scope.setDepartment(value);
                               _load(_selectedDate, departmentId: value);
                             }
                           },

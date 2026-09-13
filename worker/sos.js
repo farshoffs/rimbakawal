@@ -30,7 +30,7 @@ export default {
         return getSosAlerts(request, env);
       }
       if (url.pathname === '/api/sos/manage' && request.method === 'GET') {
-        return getManagedSos(request, env);
+        return getManagedSos(request, env, url);
       }
 
       const acknowledgeMatch = url.pathname.match(/^\/api\/sos\/(\d+)\/ack$/);
@@ -111,28 +111,46 @@ async function acknowledgeSos(request, env, sosId) {
   return json({ ok: true, acknowledgedAt });
 }
 
-async function getManagedSos(request, env) {
+async function getManagedSos(request, env, url) {
   const auth = await requireMonitor(request, env);
   if (auth.response) return auth.response;
-  if (!auth.user.department_id) {
+  const role = String(auth.user.jawatan || '').trim().toLowerCase();
+  const requestedDepartment = Number(url.searchParams.get('departmentId') || 0) || null;
+  const requestedCompany = Number(url.searchParams.get('companyId') || 0) || null;
+  const scopeDepartment = role === 'management'
+    ? requestedDepartment
+    : Number(auth.user.department_id || 0) || null;
+  const scopeCompany = role === 'management' && !scopeDepartment ? requestedCompany : null;
+  if (role !== 'management' && !scopeDepartment) {
     return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
+  }
+  const where = [];
+  const binds = [];
+  if (scopeDepartment) {
+    where.push('s.department_id = ?');
+    binds.push(scopeDepartment);
+  } else if (scopeCompany) {
+    where.push('d.company_id = ?');
+    binds.push(scopeCompany);
   }
 
   const result = await env.DB.prepare(
-    `SELECT s.id, s.user_id, s.triggered_at, s.note, s.status,
+    `SELECT s.id, s.user_id, s.department_id, s.triggered_at, s.note, s.status,
             s.resolved_at, s.resolution_note,
             u.nama, u.jawatan, u.profile_picture,
             COALESCE(d.name, u.jabatan) AS jabatan,
+            d.company_id, COALESCE(co.name, d.company_name, '') AS company_name,
             ru.nama AS resolved_by_name
      FROM sos_events s
      JOIN users u ON u.id = s.user_id
      LEFT JOIN users ru ON ru.id = s.resolved_by_user_id
      LEFT JOIN departments d ON d.id = s.department_id
-     WHERE s.department_id = ?
+     LEFT JOIN companies co ON co.id = d.company_id
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
      ORDER BY CASE WHEN s.status = 'active' THEN 0 ELSE 1 END,
               s.triggered_at DESC, s.id DESC
-     LIMIT 50`,
-  ).bind(auth.user.department_id).all();
+     LIMIT 100`,
+  ).bind(...binds).all();
 
   return json({
     generatedAt: new Date().toISOString(),
@@ -143,7 +161,8 @@ async function getManagedSos(request, env) {
 async function resolveSos(request, env, sosId) {
   const auth = await requireMonitor(request, env);
   if (auth.response) return auth.response;
-  if (!auth.user.department_id) {
+  const role = String(auth.user.jawatan || '').trim().toLowerCase();
+  if (role !== 'management' && !auth.user.department_id) {
     return json({ error: 'Pengguna belum dipautkan kepada Sekolah.' }, 409);
   }
 
@@ -153,12 +172,15 @@ async function resolveSos(request, env, sosId) {
     return json({ error: 'Catatan penyelesaian SOS diperlukan.' }, 400);
   }
 
-  const current = await env.DB.prepare(
-    `SELECT id, user_id, status, resolved_at, resolution_note
-     FROM sos_events
-     WHERE id = ? AND department_id = ?
-     LIMIT 1`,
-  ).bind(sosId, auth.user.department_id).first();
+  const current = role === 'management'
+    ? await env.DB.prepare(
+        `SELECT id, user_id, department_id, status, resolved_at, resolution_note
+         FROM sos_events WHERE id = ? LIMIT 1`,
+      ).bind(sosId).first()
+    : await env.DB.prepare(
+        `SELECT id, user_id, department_id, status, resolved_at, resolution_note
+         FROM sos_events WHERE id = ? AND department_id = ? LIMIT 1`,
+      ).bind(sosId, auth.user.department_id).first();
   if (!current) return json({ error: 'SOS tidak ditemui dalam Sekolah anda.' }, 404);
 
   if (current.status === 'resolved') {
@@ -178,14 +200,8 @@ async function resolveSos(request, env, sosId) {
   await env.DB.prepare(
     `UPDATE sos_events
      SET status = 'resolved', resolved_at = ?, resolved_by_user_id = ?, resolution_note = ?
-     WHERE id = ? AND department_id = ? AND status = 'active'`,
-  ).bind(
-    resolvedAt,
-    auth.user.id,
-    resolutionNote,
-    sosId,
-    auth.user.department_id,
-  ).run();
+     WHERE id = ? AND status = 'active'`,
+  ).bind(resolvedAt, auth.user.id, resolutionNote, sosId).run();
 
   await env.DB.prepare(
     `INSERT INTO sos_alert_receipts (sos_event_id, user_id, acknowledged_at)

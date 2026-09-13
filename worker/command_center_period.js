@@ -48,9 +48,18 @@ async function commandCenterRange(request, env, url) {
   }
 
   const role = String(auth.user.jawatan || '').trim().toLowerCase();
+  const requestedDepartment = Number(url.searchParams.get('departmentId') || 0) || null;
+  const requestedCompany = Number(url.searchParams.get('companyId') || 0) || null;
   const scopeDepartment = role === 'management'
-    ? null
+    ? requestedDepartment
     : Number(auth.user.department_id || 0) || null;
+  const scopeCompany = role === 'management' && !scopeDepartment ? requestedCompany : null;
+  const scopeValue = scopeDepartment || scopeCompany || null;
+  const scopeSql = (column) => scopeDepartment
+    ? `AND ${column} = ?`
+    : scopeCompany
+      ? `AND ${column} IN (SELECT id FROM departments WHERE company_id = ?)`
+      : '';
   const includesToday = from <= todayKey && to >= todayKey;
   const rangeStartIso = fromBounds.startIso;
   const rangeEndIso = toBounds.endIso;
@@ -75,28 +84,28 @@ async function commandCenterRange(request, env, url) {
        LEFT JOIN departments d ON d.id = u.department_id
        WHERE u.active = 1
          AND LOWER(u.jawatan) IN ('patrol', 'supervisor')
-         ${scopeDepartment ? 'AND u.department_id = ?' : ''}
+         ${scopeSql('u.department_id')}
        ORDER BY jabatan ASC, u.nama ASC`,
-    ).bind(...(scopeDepartment ? [scopeDepartment] : [])).all(),
+    ).bind(...(scopeValue ? [scopeValue] : [])).all(),
     env.DB.prepare(
       `SELECT c.id, c.department_id, c.name, c.position,
               COALESCE(d.name, 'Sekolah') AS department_name
        FROM checkpoints c
        LEFT JOIN departments d ON d.id = c.department_id
        WHERE c.active = 1
-         ${scopeDepartment ? 'AND c.department_id = ?' : ''}
+         ${scopeSql('c.department_id')}
        ORDER BY c.department_id ASC, c.position ASC, c.id ASC`,
-    ).bind(...(scopeDepartment ? [scopeDepartment] : [])).all(),
+    ).bind(...(scopeValue ? [scopeValue] : [])).all(),
     env.DB.prepare(
       `SELECT s.id, s.user_id, s.checkpoint_id, s.session_index,
               s.client_session_id, s.scanned_at
        FROM nfc_scans s
        JOIN users u ON u.id = s.user_id
        WHERE s.scanned_at >= ? AND s.scanned_at < ?
-         ${scopeDepartment ? 'AND u.department_id = ?' : ''}
+         ${scopeSql('u.department_id')}
        ORDER BY s.scanned_at ASC, s.id ASC`,
-    ).bind(...(scopeDepartment
-      ? [rangeStartIso, rangeEndIso, scopeDepartment]
+    ).bind(...(scopeValue
+      ? [rangeStartIso, rangeEndIso, scopeValue]
       : [rangeStartIso, rangeEndIso])).all(),
     env.DB.prepare(
       `SELECT a.id, a.user_id, a.department_id, a.work_date,
@@ -109,9 +118,9 @@ async function commandCenterRange(request, env, url) {
        WHERE a.work_date >= ? AND a.work_date <= ?
          AND u.active = 1
          AND LOWER(u.jawatan) IN ('patrol', 'supervisor')
-         ${scopeDepartment ? 'AND a.department_id = ?' : ''}
+         ${scopeSql('a.department_id')}
        ORDER BY a.punched_at ASC, a.id ASC`,
-    ).bind(...(scopeDepartment ? [from, to, scopeDepartment] : [from, to])).all(),
+    ).bind(...(scopeValue ? [from, to, scopeValue] : [from, to])).all(),
     env.DB.prepare(
       `SELECT i.id, i.department_id, i.category, i.severity, i.note,
               i.status, i.created_at, u.nama,
@@ -123,11 +132,11 @@ async function commandCenterRange(request, env, url) {
        LEFT JOIN departments d ON d.id = i.department_id
        LEFT JOIN checkpoints c ON c.id = i.checkpoint_id
        WHERE i.created_at >= ? AND i.created_at < ?
-         ${scopeDepartment ? 'AND i.department_id = ?' : ''}
+         ${scopeSql('i.department_id')}
        ORDER BY i.created_at DESC
        LIMIT 100`,
-    ).bind(...(scopeDepartment
-      ? [rangeStartIso, rangeEndIso, scopeDepartment]
+    ).bind(...(scopeValue
+      ? [rangeStartIso, rangeEndIso, scopeValue]
       : [rangeStartIso, rangeEndIso])).all(),
     env.DB.prepare(
       `SELECT e.id, e.department_id, e.triggered_at, e.note,
@@ -136,11 +145,11 @@ async function commandCenterRange(request, env, url) {
        JOIN users u ON u.id = e.user_id
        LEFT JOIN departments d ON d.id = e.department_id
        WHERE e.triggered_at >= ? AND e.triggered_at < ?
-         ${scopeDepartment ? 'AND e.department_id = ?' : ''}
+         ${scopeSql('e.department_id')}
        ORDER BY e.triggered_at DESC
        LIMIT 100`,
-    ).bind(...(scopeDepartment
-      ? [rangeStartIso, rangeEndIso, scopeDepartment]
+    ).bind(...(scopeValue
+      ? [rangeStartIso, rangeEndIso, scopeValue]
       : [rangeStartIso, rangeEndIso])).all(),
     includesToday
       ? env.DB.prepare(
@@ -157,7 +166,7 @@ async function commandCenterRange(request, env, url) {
              GROUP BY user_id
            ) latest ON latest.latest_id = ps.id
            ${scopeDepartment ? 'WHERE u.department_id = ?' : ''}`,
-        ).bind(...(scopeDepartment ? [liveSince, scopeDepartment] : [liveSince])).all()
+        ).bind(...(scopeValue ? [liveSince, scopeValue] : [liveSince])).all()
       : Promise.resolve({ results: [] }),
   ]);
 

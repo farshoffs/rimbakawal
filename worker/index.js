@@ -34,7 +34,7 @@ export default {
         return createScan(request, env);
       }
       if (url.pathname === '/api/admin/users' && request.method === 'GET') {
-        return adminUsers(request, env);
+        return adminUsers(request, env, url);
       }
       if (url.pathname === '/api/admin/departments' && request.method === 'GET') {
         return adminDepartments(request, env);
@@ -532,14 +532,26 @@ async function createScan(request, env) {
   }, 201);
 }
 
-async function adminUsers(request, env) {
+async function adminUsers(request, env, url) {
   const auth = await requireManagement(request, env);
   if (auth.response) return auth.response;
 
+  const departmentId = Number(url.searchParams.get('departmentId') || 0) || null;
+  const companyId = Number(url.searchParams.get('companyId') || 0) || null;
+  const where = [];
+  const binds = [];
+  if (departmentId) {
+    where.push('u.department_id = ?');
+    binds.push(departmentId);
+  } else if (companyId) {
+    where.push('COALESCE(u.company_id, d.company_id) = ?');
+    binds.push(companyId);
+  }
   const result = await env.DB.prepare(
     `${userSelect()}
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
      ORDER BY u.nama ASC`,
-  ).all();
+  ).bind(...binds).all();
   return json({ users: (result.results ?? []).map(publicUser) });
 }
 

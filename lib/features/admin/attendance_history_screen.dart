@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_service.dart';
+import 'admin_scope.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
   const AttendanceHistoryScreen({
@@ -23,20 +24,29 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   late DateTime _date;
   late Future<AttendanceAdminData> _future;
   late Future<List<DepartmentRecord>> _departmentsFuture;
+  int _companyFilterId = -1;
   int _departmentFilterId = -1;
+  final AdminScopeState _scope = AdminScopeState.instance;
 
   @override
   void initState() {
     super.initState();
     final initial = widget.initialDate ?? DateTime.now();
     _date = DateTime(initial.year, initial.month, initial.day);
+    _companyFilterId = _scope.companyId ?? -1;
+    _departmentFilterId = _scope.departmentId ?? -1;
     _departmentsFuture = widget.api.getAdminDepartments();
-    _future = widget.api.getAdminAttendance(_date);
+    _future = widget.api.getAdminAttendance(
+      _date,
+      companyId: _scope.companyId,
+      departmentId: _scope.departmentId,
+    );
   }
 
   void _refresh() => setState(
     () => _future = widget.api.getAdminAttendance(
       _date,
+      companyId: _companyFilterId == -1 ? null : _companyFilterId,
       departmentId: _departmentFilterId == -1 ? null : _departmentFilterId,
     ),
   );
@@ -267,32 +277,15 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                         (departmentSnapshot.data ?? const <DepartmentRecord>[])
                             .where((department) => department.active)
                             .toList();
-                    return DropdownButtonFormField<int>(
-                      initialValue: _departmentFilterId,
-                      decoration: const InputDecoration(
-                        labelText: 'Filter Sekolah',
-                        prefixIcon: Icon(Icons.school_rounded),
-                      ),
-                      items: [
-                        const DropdownMenuItem<int>(
-                          value: -1,
-                          child: Text('Semua Sekolah'),
-                        ),
-                        ...departments.map(
-                          (department) => DropdownMenuItem<int>(
-                            value: department.id,
-                            child: Text(department.name),
-                          ),
-                        ),
-                      ],
-                      onChanged:
-                          departmentSnapshot.connectionState ==
-                              ConnectionState.waiting
-                          ? null
-                          : (value) {
-                              _departmentFilterId = value ?? -1;
-                              _refresh();
-                            },
+                    final companies = companiesFromDepartments(departments);
+                    return AdminScopeFilterBar(
+                      companies: companies,
+                      departments: departments,
+                      onChanged: () {
+                        _companyFilterId = _scope.companyId ?? -1;
+                        _departmentFilterId = _scope.departmentId ?? -1;
+                        _refresh();
+                      },
                     );
                   },
                 ),

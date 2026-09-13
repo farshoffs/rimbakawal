@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_service.dart';
+import 'admin_scope.dart';
 import '../history/clocking_history_screen.dart';
 import 'attendance_history_screen.dart';
 import 'live_patrol_map_screen.dart';
@@ -31,11 +32,16 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
   late DateTime _to;
   final _incidentsKey = GlobalKey();
   final _attendanceKey = GlobalKey();
+  final AdminScopeState _scope = AdminScopeState.instance;
+  List<CompanyRecord> _companies = const [];
+  List<DepartmentRecord> _departments = const [];
+  bool _isManagement = false;
 
   @override
   void initState() {
     super.initState();
     _recalculateRange();
+    unawaited(_loadScopeData());
     unawaited(_refresh());
     _timer = Timer.periodic(const Duration(seconds: 8), (_) {
       if (_rangeContainsToday) unawaited(_refresh(silent: true));
@@ -46,6 +52,22 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
   void dispose() {
     _timer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadScopeData() async {
+    try {
+      final user = await widget.api.getSession();
+      if (user?.isManagement != true) return;
+      final companies = await widget.api.getAdminCompanies();
+      final departments = await widget.api.getAdminDepartments();
+      if (!mounted) return;
+      setState(() {
+        _isManagement = true;
+        _companies = companies;
+        _departments = departments;
+      });
+      await _refresh(silent: true);
+    } catch (_) {}
   }
 
   DateTime _dateOnly(DateTime value) =>
@@ -81,6 +103,8 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
         from: _from,
         to: _to,
         mode: _mode.name,
+        companyId: _isManagement ? _scope.companyId : null,
+        departmentId: _isManagement ? _scope.departmentId : null,
       );
       if (!mounted) return;
       setState(() {
@@ -523,6 +547,29 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
                   children: [
+                    if (_isManagement && _departments.isNotEmpty) ...[
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Text(
+                                'Skop Pemantauan',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                              const SizedBox(height: 10),
+                              AdminScopeFilterBar(
+                                companies: _companies,
+                                departments: _departments,
+                                onChanged: _refresh,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     _PeriodFilter(
                       mode: _mode,
                       periodLabel: _periodLabel(),

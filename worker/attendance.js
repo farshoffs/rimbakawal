@@ -385,12 +385,16 @@ async function adminAttendance(request, env, url) {
   const date = url.searchParams.get('date') || malaysiaDateKey(new Date());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: 'Tarikh tidak sah.' }, 400);
   const departmentId = Number(url.searchParams.get('departmentId') || 0);
+  const companyId = Number(url.searchParams.get('companyId') || 0);
 
   const where = ['a.work_date = ?'];
   const binds = [date];
   if (departmentId > 0) {
     where.push('a.department_id = ?');
     binds.push(departmentId);
+  } else if (companyId > 0) {
+    where.push('d.company_id = ?');
+    binds.push(companyId);
   }
   const result = await env.DB.prepare(
     `SELECT a.*, u.nama, u.jawatan, u.profile_picture,
@@ -405,7 +409,12 @@ async function adminAttendance(request, env, url) {
      LIMIT 500`,
   ).bind(...binds).all();
 
-  const summary = await attendanceSummary(env, date, departmentId || null);
+  const summary = await attendanceSummary(
+    env,
+    date,
+    departmentId || null,
+    departmentId > 0 ? null : companyId || null,
+  );
   return json({
     date,
     summary,
@@ -500,14 +509,26 @@ async function commandCenterWithAttendance(request, env, ctx) {
   return json(payload);
 }
 
-async function attendanceSummary(env, date, departmentId = null) {
+async function attendanceSummary(env, date, departmentId = null, companyId = null) {
   const usersSql = departmentId
     ? `SELECT COUNT(*) AS total FROM users WHERE active = 1 AND department_id = ?`
-    : `SELECT COUNT(*) AS total FROM users WHERE active = 1`;
-  const users = await env.DB.prepare(usersSql).bind(...(departmentId ? [departmentId] : [])).first();
+    : companyId
+      ? `SELECT COUNT(*) AS total FROM users WHERE active = 1 AND department_id IN (SELECT id FROM departments WHERE company_id = ?)`
+      : `SELECT COUNT(*) AS total FROM users WHERE active = 1`;
+  const users = await env.DB.prepare(usersSql)
+    .bind(...(departmentId ? [departmentId] : companyId ? [companyId] : []))
+    .first();
 
-  const scope = departmentId ? 'AND department_id = ?' : '';
-  const bindings = departmentId ? [date, departmentId] : [date];
+  const scope = departmentId
+    ? 'AND department_id = ?'
+    : companyId
+      ? 'AND department_id IN (SELECT id FROM departments WHERE company_id = ?)'
+      : '';
+  const bindings = departmentId
+    ? [date, departmentId]
+    : companyId
+      ? [date, companyId]
+      : [date];
   const present = await env.DB.prepare(
     `SELECT COUNT(DISTINCT user_id) AS total FROM attendance_records
      WHERE work_date = ? ${scope} AND punch_type = 'IN'`,

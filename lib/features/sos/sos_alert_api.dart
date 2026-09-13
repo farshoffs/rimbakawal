@@ -47,11 +47,17 @@ class SosAlertApi {
     );
   }
 
-  Future<List<Map<String, dynamic>>> fetchManagedEvents() async {
-    final response = await http.get(
-      Uri.parse('$apiBaseUrl/api/sos/manage'),
-      headers: await _headers(),
+  Future<List<Map<String, dynamic>>> fetchManagedEvents({
+    int? companyId,
+    int? departmentId,
+  }) async {
+    final uri = Uri.parse('$apiBaseUrl/api/sos/manage').replace(
+      queryParameters: {
+        if (companyId != null) 'companyId': companyId.toString(),
+        if (departmentId != null) 'departmentId': departmentId.toString(),
+      },
     );
+    final response = await http.get(uri, headers: await _headers());
     final data = _decode(response);
     return (data['events'] as List<dynamic>? ?? const [])
         .map((item) => Map<String, dynamic>.from(item as Map))

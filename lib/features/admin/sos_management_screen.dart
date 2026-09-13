@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_service.dart';
 import '../../core/api/app_user.dart';
+import 'admin_scope.dart';
 
 import '../sos/sos_alert_api.dart';
 
@@ -15,6 +17,11 @@ class SosManagementScreen extends StatefulWidget {
 
 class _SosManagementScreenState extends State<SosManagementScreen> {
   final SosAlertApi _api = SosAlertApi.instance;
+  final ApiService _coreApi = ApiService.instance;
+  final AdminScopeState _scope = AdminScopeState.instance;
+  List<CompanyRecord> _companies = const [];
+  List<DepartmentRecord> _departments = const [];
+  bool _isManagement = false;
   Timer? _timer;
   List<Map<String, dynamic>> _events = const [];
   bool _loading = true;
@@ -23,6 +30,7 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_loadScopeData());
     unawaited(_refresh());
     _timer = Timer.periodic(
       const Duration(seconds: 8),
@@ -36,10 +44,29 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
     super.dispose();
   }
 
+  Future<void> _loadScopeData() async {
+    try {
+      final user = await _coreApi.getSession();
+      if (user?.isManagement != true) return;
+      final companies = await _coreApi.getAdminCompanies();
+      final departments = await _coreApi.getAdminDepartments();
+      if (!mounted) return;
+      setState(() {
+        _isManagement = true;
+        _companies = companies;
+        _departments = departments;
+      });
+      await _refresh(silent: true);
+    } catch (_) {}
+  }
+
   Future<void> _refresh({bool silent = false}) async {
     if (!silent && mounted) setState(() => _loading = true);
     try {
-      final events = await _api.fetchManagedEvents();
+      final events = await _api.fetchManagedEvents(
+        companyId: _isManagement ? _scope.companyId : null,
+        departmentId: _isManagement ? _scope.departmentId : null,
+      );
       if (!mounted) return;
       setState(() {
         _events = events;
@@ -190,6 +217,19 @@ class _SosManagementScreenState extends State<SosManagementScreen> {
                       ],
                     ),
                   ),
+                  if (_isManagement && _departments.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: AdminScopeFilterBar(
+                          companies: _companies,
+                          departments: _departments,
+                          onChanged: _refresh,
+                        ),
+                      ),
+                    ),
+                  ],
                   if (_error != null) ...[
                     const SizedBox(height: 12),
                     Card(

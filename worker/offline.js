@@ -28,7 +28,7 @@ export default {
         return liveEnd(request, env);
       }
       if (url.pathname === '/api/monitor/live-map' && request.method === 'GET') {
-        return liveMap(request, env);
+        return liveMap(request, env, url);
       }
     } catch (error) {
       console.error(JSON.stringify({
@@ -830,23 +830,41 @@ async function liveEnd(request, env) {
   return json({ ok: true, endedAt });
 }
 
-async function liveMap(request, env) {
+async function liveMap(request, env, url) {
   const auth = await requireMonitor(request, env);
   if (auth.response) return auth.response;
   const now = new Date();
   const trailSince = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+  const role = String(auth.user.jawatan || '').trim().toLowerCase();
+  const requestedDepartment = Number(url.searchParams.get('departmentId') || 0) || null;
+  const requestedCompany = Number(url.searchParams.get('companyId') || 0) || null;
+  const scopeDepartment = role === 'management'
+    ? requestedDepartment
+    : Number(auth.user.department_id || 0) || null;
+  const scopeCompany = role === 'management' && !scopeDepartment ? requestedCompany : null;
+  const where = ['p.active = 1', 'u.active = 1'];
+  const binds = [];
+  if (scopeDepartment) {
+    where.push('p.department_id = ?');
+    binds.push(scopeDepartment);
+  } else if (scopeCompany) {
+    where.push('d.company_id = ?');
+    binds.push(scopeCompany);
+  }
 
   const [presenceResult, trailResult] = await Promise.all([
     env.DB.prepare(
       `SELECT p.user_id, p.department_id, p.client_session_id, p.started_at,
               p.last_latitude, p.last_longitude, p.last_accuracy, p.last_location_at,
-              u.nama, u.profile_picture, COALESCE(d.name, u.jabatan) AS jabatan
+              u.nama, u.profile_picture, COALESCE(d.name, u.jabatan) AS jabatan,
+              d.company_id, COALESCE(co.name, d.company_name, '') AS company_name
        FROM live_patrol_presence p
        JOIN users u ON u.id = p.user_id
        LEFT JOIN departments d ON d.id = p.department_id
-       WHERE p.active = 1 AND u.active = 1
+       LEFT JOIN companies co ON co.id = d.company_id
+       WHERE ${where.join(' AND ')}
        ORDER BY p.updated_at DESC`,
-    ).all(),
+    ).bind(...binds).all(),
     env.DB.prepare(
       `SELECT user_id, client_session_id, latitude, longitude, accuracy, recorded_at
        FROM live_patrol_trail
@@ -876,6 +894,9 @@ async function liveMap(request, env) {
       userId: Number(row.user_id),
       nama: row.nama,
       jabatan: row.jabatan,
+      departmentId: row.department_id == null ? null : Number(row.department_id),
+      companyId: row.company_id == null ? null : Number(row.company_id),
+      companyName: row.company_name || '',
       profilePicture: row.profile_picture,
       clientSessionId: row.client_session_id,
       startedAt: row.started_at,

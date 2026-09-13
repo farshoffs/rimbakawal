@@ -161,9 +161,9 @@ class _AdminSectionTitle extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
               ),
               Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
             ],

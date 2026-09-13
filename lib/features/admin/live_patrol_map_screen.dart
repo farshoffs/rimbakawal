@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_service.dart';
+import 'admin_scope.dart';
 
 class LivePatrolMapScreen extends StatefulWidget {
   const LivePatrolMapScreen({required this.api, super.key});
@@ -25,10 +26,15 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
   bool _loading = true;
   bool _didFit = false;
   int? _selectedUserId;
+  final AdminScopeState _scope = AdminScopeState.instance;
+  List<CompanyRecord> _companies = const [];
+  List<DepartmentRecord> _departments = const [];
+  bool _isManagement = false;
 
   @override
   void initState() {
     super.initState();
+    unawaited(_loadScopeData());
     unawaited(_refresh());
     _timer = Timer.periodic(
       const Duration(seconds: 5),
@@ -43,10 +49,30 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
     super.dispose();
   }
 
+  Future<void> _loadScopeData() async {
+    try {
+      final user = await widget.api.getSession();
+      if (user?.isManagement != true) return;
+      final companies = await widget.api.getAdminCompanies();
+      final departments = await widget.api.getAdminDepartments();
+      if (!mounted) return;
+      setState(() {
+        _isManagement = true;
+        _companies = companies;
+        _departments = departments;
+      });
+      _didFit = false;
+      await _refresh(silent: true);
+    } catch (_) {}
+  }
+
   Future<void> _refresh({bool silent = false}) async {
     if (!silent && mounted) setState(() => _loading = true);
     try {
-      final data = await widget.api.getLiveMap();
+      final data = await widget.api.getLiveMap(
+        companyId: _isManagement ? _scope.companyId : null,
+        departmentId: _isManagement ? _scope.departmentId : null,
+      );
       if (!mounted) return;
       setState(() {
         _data = data;
@@ -424,8 +450,27 @@ class _LivePatrolMapScreenState extends State<LivePatrolMapScreen> {
                     ],
                   ),
                 ),
+                if (_isManagement && _departments.isNotEmpty)
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    right: 12,
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: AdminScopeFilterBar(
+                          companies: _companies,
+                          departments: _departments,
+                          onChanged: () {
+                            _didFit = false;
+                            _refresh();
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(
-                  top: 12,
+                  top: _isManagement && _departments.isNotEmpty ? 150 : 12,
                   left: 12,
                   right: 12,
                   child: _MapHeader(

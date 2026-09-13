@@ -70,9 +70,7 @@ class AdminScopeFilterBar extends StatelessWidget {
         final companyId = scope.effectiveCompanyId(companies);
         final companyDepartments = companyId == null
             ? departments
-            : departments
-                  .where((item) => item.companyId == companyId)
-                  .toList();
+            : departments.where((item) => item.companyId == companyId).toList();
         final departmentId = scope.effectiveDepartmentId(companyDepartments);
 
         Widget companyField() => DropdownButtonFormField<int>(
@@ -88,12 +86,14 @@ class AdminScopeFilterBar extends StatelessWidget {
               value: -1,
               child: Text('Semua Syarikat'),
             ),
-            ...companies.where((item) => item.active).map(
-              (company) => DropdownMenuItem<int>(
-                value: company.id,
-                child: Text(company.name, overflow: TextOverflow.ellipsis),
-              ),
-            ),
+            ...companies
+                .where((item) => item.active)
+                .map(
+                  (company) => DropdownMenuItem<int>(
+                    value: company.id,
+                    child: Text(company.name, overflow: TextOverflow.ellipsis),
+                  ),
+                ),
           ],
           onChanged: (value) {
             scope.setCompany(value == null || value == -1 ? null : value);
@@ -116,12 +116,17 @@ class AdminScopeFilterBar extends StatelessWidget {
               value: -1,
               child: Text('Semua Sekolah'),
             ),
-            ...companyDepartments.where((item) => item.active).map(
-              (department) => DropdownMenuItem<int>(
-                value: department.id,
-                child: Text(department.name, overflow: TextOverflow.ellipsis),
-              ),
-            ),
+            ...companyDepartments
+                .where((item) => item.active)
+                .map(
+                  (department) => DropdownMenuItem<int>(
+                    value: department.id,
+                    child: Text(
+                      department.name,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
           ],
           onChanged: (value) {
             scope.setDepartment(value == null || value == -1 ? null : value);
