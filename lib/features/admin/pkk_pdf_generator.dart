@@ -32,13 +32,11 @@ class PkkPdfGenerator {
       data['attendance'] as List<dynamic>? ?? const [],
     );
     final guards = _guards(data, attendanceSessions);
-    final guardPages = guards.isEmpty
-        ? const <List<_GuardMeta>>[<_GuardMeta>[]]
-        : <List<_GuardMeta>>[
-            for (var start = 0; start < guards.length; start += 4)
-              guards.skip(start).take(4).toList(),
-          ];
-    final requiredByShift = _requiredGuardsByShift(attendanceSessions, month, year);
+    final requiredByShift = _requiredGuardsByShift(
+      attendanceSessions,
+      month,
+      year,
+    );
 
     final scans = <Map<String, dynamic>>[];
     for (final item in data['scans'] as List<dynamic>? ?? const []) {
@@ -52,14 +50,18 @@ class PkkPdfGenerator {
     var checkpoints = <Map<String, dynamic>>[];
     for (final item in data['checkpoints'] as List<dynamic>? ?? const []) {
       final row = Map<String, dynamic>.from(item as Map);
-      if (row['active'] == false || row['active'] == 0) continue;
+      if (row['active'] == false || row['active'] == 0) {
+        continue;
+      }
       checkpoints.add(row);
     }
     if (checkpoints.isEmpty) {
       final derived = <int, Map<String, dynamic>>{};
       for (final row in scans) {
         final id = (row['checkpoint_id'] as num?)?.toInt() ?? 0;
-        if (id <= 0) continue;
+        if (id <= 0) {
+          continue;
+        }
         derived[id] = {
           'id': id,
           'name': row['checkpoint_name'] ?? 'Checkpoint',
@@ -71,7 +73,9 @@ class PkkPdfGenerator {
     checkpoints.sort((a, b) {
       final pa = (a['position'] as num?)?.toInt() ?? 9999;
       final pb = (b['position'] as num?)?.toInt() ?? 9999;
-      if (pa != pb) return pa.compareTo(pb);
+      if (pa != pb) {
+        return pa.compareTo(pb);
+      }
       return '${a['name']}'.compareTo('${b['name']}');
     });
 
@@ -80,21 +84,31 @@ class PkkPdfGenerator {
         scans.map((row) => (row['_local'] as DateTime).day).toSet().toList()
           ..sort();
     for (final day in activeDays) {
-      for (var checkpointIndex = 0;
-          checkpointIndex < checkpoints.length;
-          checkpointIndex++) {
+      for (
+        var checkpointIndex = 0;
+        checkpointIndex < checkpoints.length;
+        checkpointIndex++
+      ) {
         final checkpoint = checkpoints[checkpointIndex];
         final checkpointId = (checkpoint['id'] as num?)?.toInt() ?? 0;
         final slots = List<String>.filled(12, '');
         for (var slot = 0; slot < 12; slot++) {
           DateTime? earliest;
           for (final scan in scans) {
-            if ((scan['checkpoint_id'] as num?)?.toInt() != checkpointId) continue;
+            if ((scan['checkpoint_id'] as num?)?.toInt() != checkpointId) {
+              continue;
+            }
             final at = scan['_local'] as DateTime;
-            if (at.day != day || (at.hour ~/ 2) != slot) continue;
-            if (earliest == null || at.isBefore(earliest)) earliest = at;
+            if (at.day != day || (at.hour ~/ 2) != slot) {
+              continue;
+            }
+            if (earliest == null || at.isBefore(earliest)) {
+              earliest = at;
+            }
           }
-          if (earliest != null) slots[slot] = _hhmm(earliest);
+          if (earliest != null) {
+            slots[slot] = _hhmm(earliest);
+          }
         }
         pkk4Rows.add(
           _Pkk4Row(
@@ -121,7 +135,10 @@ class PkkPdfGenerator {
               child: pw.Text(
                 '${department['companyName'] ?? ''}'.toUpperCase(),
                 textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+                style: pw.TextStyle(
+                  fontSize: 20,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
             ),
             pw.SizedBox(height: 42),
@@ -129,14 +146,20 @@ class PkkPdfGenerator {
               child: pw.Text(
                 'LAPORAN PERKHIDMATAN\nKAWALAN KESELAMATAN',
                 textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
+                style: pw.TextStyle(
+                  fontSize: 22,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
             ),
             pw.SizedBox(height: 24),
             pw.Center(
               child: pw.Text(
                 'BULAN ${months[month - 1]} $year',
-                style: pw.TextStyle(fontSize: 17, fontWeight: pw.FontWeight.bold),
+                style: pw.TextStyle(
+                  fontSize: 17,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
             ),
             pw.SizedBox(height: 42),
@@ -144,7 +167,10 @@ class PkkPdfGenerator {
               child: pw.Text(
                 '${department['name'] ?? ''}',
                 textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+                style: pw.TextStyle(
+                  fontSize: 16,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
             ),
             if ('${department['zone'] ?? ''}'.trim().isNotEmpty) ...[
@@ -154,9 +180,7 @@ class PkkPdfGenerator {
             pw.Spacer(),
             pw.Container(
               padding: const pw.EdgeInsets.all(12),
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(width: 0.7),
-              ),
+              decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.7)),
               child: pw.Text(
                 'Dokumen ini dijana daripada rekod sebenar ZPatrol. Kandungan pakej: PKK 2, PKK 3 dan PKK 4.',
                 textAlign: pw.TextAlign.center,
@@ -168,39 +192,46 @@ class PkkPdfGenerator {
       ),
     );
 
-    for (final pageGuards in guardPages) {
-      doc.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.fromLTRB(9, 7, 9, 7),
-          build: (_) => _pkk2Page(
-            department: department,
-            month: month,
-            year: year,
-            guards: pageGuards,
-            sessions: attendanceSessions,
-            requiredShift1: requiredByShift[1] ?? 0,
-            requiredShift2: requiredByShift[2] ?? 0,
-          ),
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.fromLTRB(9, 7, 9, 7),
+        build: (_) => _pkk2Page(
+          department: department,
+          month: month,
+          year: year,
+          guards: guards,
+          sessions: attendanceSessions,
+          requiredShift1: requiredByShift[1] ?? 0,
+          requiredShift2: requiredByShift[2] ?? 0,
         ),
-      );
-    }
+      ),
+    );
 
     final effectiveGuards = guards.isEmpty
         ? const <_GuardMeta>[_GuardMeta(id: 0, name: '-', noPk: '')]
         : guards;
     for (final guard in effectiveGuards) {
-      final guardSessions = attendanceSessions
-          .where((item) =>
-              item.userId == guard.id &&
-              item.start.year == year &&
-              item.start.month == month)
-          .toList()
-        ..sort((a, b) => a.start.compareTo(b.start));
+      final guardSessions =
+          attendanceSessions
+              .where(
+                (item) =>
+                    item.userId == guard.id &&
+                    item.start.year == year &&
+                    item.start.month == month,
+              )
+              .toList()
+            ..sort((a, b) => a.start.compareTo(b.start));
       const rowsPerPage = 20;
-      final pageCount = math.max(1, (guardSessions.length / rowsPerPage).ceil());
+      final pageCount = math.max(
+        1,
+        (guardSessions.length / rowsPerPage).ceil(),
+      );
       for (var page = 0; page < pageCount; page++) {
-        final pageRows = guardSessions.skip(page * rowsPerPage).take(rowsPerPage).toList();
+        final pageRows = guardSessions
+            .skip(page * rowsPerPage)
+            .take(rowsPerPage)
+            .toList();
         doc.addPage(
           pw.Page(
             pageFormat: PdfPageFormat.a4,
@@ -250,32 +281,24 @@ class PkkPdfGenerator {
       data['attendance'] as List<dynamic>? ?? const [],
     );
     final guards = _guards(data, sessions);
-    final guardPages = guards.isEmpty
-        ? const <List<_GuardMeta>>[<_GuardMeta>[]]
-        : <List<_GuardMeta>>[
-            for (var start = 0; start < guards.length; start += 4)
-              guards.skip(start).take(4).toList(),
-          ];
 
     final requiredByShift = _requiredGuardsByShift(sessions, month, year);
     final doc = pw.Document();
-    for (final pageGuards in guardPages) {
-      doc.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.fromLTRB(9, 7, 9, 7),
-          build: (_) => _pkk2Page(
-            department: department,
-            month: month,
-            year: year,
-            guards: pageGuards,
-            sessions: sessions,
-            requiredShift1: requiredByShift[1] ?? 0,
-            requiredShift2: requiredByShift[2] ?? 0,
-          ),
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.fromLTRB(9, 7, 9, 7),
+        build: (_) => _pkk2Page(
+          department: department,
+          month: month,
+          year: year,
+          guards: guards,
+          sessions: sessions,
+          requiredShift1: requiredByShift[1] ?? 0,
+          requiredShift2: requiredByShift[2] ?? 0,
         ),
-      );
-    }
+      ),
+    );
     return doc.save();
   }
 
@@ -353,14 +376,18 @@ class PkkPdfGenerator {
     var checkpoints = <Map<String, dynamic>>[];
     for (final item in data['checkpoints'] as List<dynamic>? ?? const []) {
       final row = Map<String, dynamic>.from(item as Map);
-      if (row['active'] == false || row['active'] == 0) continue;
+      if (row['active'] == false || row['active'] == 0) {
+        continue;
+      }
       checkpoints.add(row);
     }
     if (checkpoints.isEmpty) {
       final derived = <int, Map<String, dynamic>>{};
       for (final row in scans) {
         final id = (row['checkpoint_id'] as num?)?.toInt() ?? 0;
-        if (id <= 0) continue;
+        if (id <= 0) {
+          continue;
+        }
         derived[id] = {
           'id': id,
           'name': row['checkpoint_name'] ?? 'Checkpoint',
@@ -372,7 +399,9 @@ class PkkPdfGenerator {
     checkpoints.sort((a, b) {
       final pa = (a['position'] as num?)?.toInt() ?? 9999;
       final pb = (b['position'] as num?)?.toInt() ?? 9999;
-      if (pa != pb) return pa.compareTo(pb);
+      if (pa != pb) {
+        return pa.compareTo(pb);
+      }
       return '${a['name']}'.compareTo('${b['name']}');
     });
 
@@ -396,10 +425,16 @@ class PkkPdfGenerator {
               continue;
             }
             final at = scan['_local'] as DateTime;
-            if (at.day != day || (at.hour ~/ 2) != slot) continue;
-            if (earliest == null || at.isBefore(earliest)) earliest = at;
+            if (at.day != day || (at.hour ~/ 2) != slot) {
+              continue;
+            }
+            if (earliest == null || at.isBefore(earliest)) {
+              earliest = at;
+            }
           }
-          if (earliest != null) slots[slot] = _hhmm(earliest);
+          if (earliest != null) {
+            slots[slot] = _hhmm(earliest);
+          }
         }
         rows.add(
           _Pkk4Row(
@@ -622,6 +657,16 @@ class PkkPdfGenerator {
       ...days,
       ...List<int?>.filled(10 - days.length, null),
     ];
+    // PKK 2 is one monthly roster. Keep every guard in the same form instead
+    // of splitting guard 5+ onto a separate PKK 2 page. For larger teams,
+    // compact only the guard rows so the official header/notes stay intact.
+    final guardRowCount = math.max(4, guards.length);
+    final guardRowHeight = guards.length <= 4
+        ? 9.0
+        : math.max(4.0, 45.0 / guards.length);
+    final guardFontSize = guards.length <= 5
+        ? 3.7
+        : math.max(2.4, guardRowHeight * 0.42);
 
     pw.Widget sideCell(
       String text, {
@@ -629,6 +674,7 @@ class PkkPdfGenerator {
       bool bold = false,
       PdfColor? fill,
       pw.Alignment alignment = pw.Alignment.center,
+      double fontSize = 3.9,
     }) {
       return pw.Container(
         height: height,
@@ -642,7 +688,7 @@ class PkkPdfGenerator {
           text,
           textAlign: pw.TextAlign.center,
           style: pw.TextStyle(
-            fontSize: 3.9,
+            fontSize: fontSize,
             fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
           ),
         ),
@@ -722,8 +768,8 @@ class PkkPdfGenerator {
                                 day,
                                 shift,
                               ),
-                        height: 9,
-                        fontSize: 3.7,
+                        height: guardRowHeight,
+                        fontSize: guardFontSize,
                       ),
                     ),
                 ],
@@ -812,22 +858,24 @@ class PkkPdfGenerator {
             pw.Expanded(child: dailyHeader()),
           ],
         ),
-        for (var index = 0; index < 4; index++)
+        for (var index = 0; index < guardRowCount; index++)
           pw.Row(
             children: [
               pw.SizedBox(
                 width: 22,
                 child: sideCell(
                   index < guards.length ? '${index + 1}' : '',
-                  height: 9,
+                  height: guardRowHeight,
+                  fontSize: guardFontSize,
                 ),
               ),
               pw.SizedBox(
                 width: 155,
                 child: sideCell(
                   index < guards.length ? guards[index].name : '',
-                  height: 9,
+                  height: guardRowHeight,
                   alignment: pw.Alignment.centerLeft,
+                  fontSize: guardFontSize,
                 ),
               ),
               pw.SizedBox(
@@ -839,7 +887,8 @@ class PkkPdfGenerator {
                         index < guards.length && !guards[index].isReplacement
                             ? 'X'
                             : '',
-                        height: 9,
+                        height: guardRowHeight,
+                        fontSize: guardFontSize,
                       ),
                     ),
                     pw.Expanded(
@@ -847,7 +896,8 @@ class PkkPdfGenerator {
                         index < guards.length && guards[index].isReplacement
                             ? 'X'
                             : '',
-                        height: 9,
+                        height: guardRowHeight,
+                        fontSize: guardFontSize,
                       ),
                     ),
                   ],
@@ -860,7 +910,11 @@ class PkkPdfGenerator {
                         children: [
                           for (var i = 0; i < 30; i++)
                             pw.Expanded(
-                              child: _boxText('', height: 9, fontSize: 3.7),
+                              child: _boxText(
+                                '',
+                                height: guardRowHeight,
+                                fontSize: guardFontSize,
+                              ),
                             ),
                         ],
                       ),
@@ -1209,8 +1263,12 @@ class PkkPdfGenerator {
   }
 
   static List<List<_Pkk4Row>> _splitPkk4Rows(List<_Pkk4Row> rows) {
-    if (rows.isEmpty) return const <List<_Pkk4Row>>[<_Pkk4Row>[]];
-    if (rows.length <= 34) return <List<_Pkk4Row>>[rows];
+    if (rows.isEmpty) {
+      return const <List<_Pkk4Row>>[<_Pkk4Row>[]];
+    }
+    if (rows.length <= 34) {
+      return <List<_Pkk4Row>>[rows];
+    }
 
     final pages = <List<_Pkk4Row>>[];
     var offset = 0;
@@ -1418,12 +1476,18 @@ class PkkPdfGenerator {
   ) {
     final result = <int, _GuardMeta>{};
     for (final item in data['guards'] as List<dynamic>? ?? const []) {
-      if (item is! Map) continue;
+      if (item is! Map) {
+        continue;
+      }
       final row = Map<String, dynamic>.from(item);
       final jawatan = (row['jawatan'] ?? '').toString().toLowerCase();
-      if (jawatan != 'patrol' && jawatan != 'supervisor') continue;
+      if (jawatan != 'patrol' && jawatan != 'supervisor') {
+        continue;
+      }
       final id = (row['id'] as num?)?.toInt() ?? 0;
-      if (id <= 0) continue;
+      if (id <= 0) {
+        continue;
+      }
       result[id] = _GuardMeta(
         id: id,
         name: (row['nama'] ?? '-').toString(),
@@ -1457,14 +1521,22 @@ class PkkPdfGenerator {
   static List<_GuardSession> _attendanceSessions(List<dynamic> raw) {
     final byUser = <int, List<Map<String, dynamic>>>{};
     for (final item in raw) {
-      if (item is! Map) continue;
+      if (item is! Map) {
+        continue;
+      }
       final row = Map<String, dynamic>.from(item);
       final jawatan = (row['jawatan'] ?? '').toString().toLowerCase();
-      if (jawatan != 'patrol' && jawatan != 'supervisor') continue;
+      if (jawatan != 'patrol' && jawatan != 'supervisor') {
+        continue;
+      }
       final at = _malaysiaDateTime(row['punched_at']?.toString());
-      if (at == null) continue;
+      if (at == null) {
+        continue;
+      }
       final userId = (row['user_id'] as num?)?.toInt() ?? 0;
-      if (userId <= 0) continue;
+      if (userId <= 0) {
+        continue;
+      }
       byUser.putIfAbsent(userId, () => <Map<String, dynamic>>[]).add({
         ...row,
         '_local': at,
@@ -1497,7 +1569,9 @@ class PkkPdfGenerator {
           }
         }
       }
-      if (pendingIn != null) result.add(_sessionFromPunch(pendingIn, null));
+      if (pendingIn != null) {
+        result.add(_sessionFromPunch(pendingIn, null));
+      }
     }
     result.sort((a, b) => a.start.compareTo(b.start));
     return result;
@@ -1529,7 +1603,9 @@ class PkkPdfGenerator {
     final counts = <int, int>{1: 0, 2: 0};
     final byDay = <String, Set<int>>{};
     for (final session in sessions) {
-      if (session.start.year != year || session.start.month != month) continue;
+      if (session.start.year != year || session.start.month != month) {
+        continue;
+      }
       final key = '${session.start.day}|${session.shift}';
       byDay.putIfAbsent(key, () => <int>{}).add(session.userId);
     }
@@ -1560,16 +1636,22 @@ class PkkPdfGenerator {
       }
       minutes += session.end!.difference(session.start).inMinutes;
     }
-    if (minutes <= 0) return '';
+    if (minutes <= 0) {
+      return '';
+    }
     final hours = minutes / 60;
     if ((hours - hours.round()).abs() < 0.05) return '${hours.round()}';
     return hours.toStringAsFixed(1);
   }
 
   static DateTime? _malaysiaDateTime(String? value) {
-    if (value == null) return null;
+    if (value == null) {
+      return null;
+    }
     final parsed = DateTime.tryParse(value);
-    if (parsed == null) return null;
+    if (parsed == null) {
+      return null;
+    }
     return parsed.toUtc().add(const Duration(hours: 8));
   }
 
