@@ -1,0 +1,2 @@
+Deploy configurable school shifts and dynamic PKK2 shift columns.
+Source commit: 012a684ab551057d3816f6175545683d736d98da
