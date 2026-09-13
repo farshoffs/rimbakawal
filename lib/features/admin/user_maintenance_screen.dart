@@ -296,9 +296,8 @@ class _UserMaintenanceScreenState extends State<UserMaintenanceScreen> {
                               ),
                               subtitle: Text(
                                 '${user.noKadPengenalan}${user.noPk.isEmpty ? '' : ' • No. PK ${user.noPk}'}\n'
-                                '${user.jawatanPaparan} • ${user.guardStatus}\n'
-                                '$companyLabel • $schoolLabel\n'
-                                'Status Akaun: ${user.active ? 'AKTIF' : 'DISEKAT'}',
+                                '${user.jawatanPaparan} • ${user.guardStatus} • ${user.active ? 'AKTIF' : 'DISEKAT'}\n'
+                                '$companyLabel • $schoolLabel',
                               ),
                               isThreeLine: true,
                               trailing: Icon(
@@ -509,6 +508,9 @@ class _EditUserDialogState extends State<_EditUserDialog> {
     final activeCompanies = widget.companies
         .where((item) => item.active || item.id == _companyId)
         .toList();
+    final companySchools = _companyId == null
+        ? active
+        : active.where((item) => item.companyId == _companyId).toList();
     final isAdministration = _jawatan == 'Administration';
     final preview = _previewImage();
     return AlertDialog(
@@ -623,10 +625,22 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                                 activeCompanies.isNotEmpty) {
                               _companyId = activeCompanies.first.id;
                             }
-                            if (value != 'Administration' &&
-                                _departmentId == null &&
-                                active.isNotEmpty) {
-                              _departmentId = active.first.id;
+                            if (value != 'Administration') {
+                              final schools = _companyId == null
+                                  ? active
+                                  : active
+                                        .where(
+                                          (item) =>
+                                              item.companyId == _companyId,
+                                        )
+                                        .toList();
+                              if (!schools.any(
+                                (item) => item.id == _departmentId,
+                              )) {
+                                _departmentId = schools.isEmpty
+                                    ? null
+                                    : schools.first.id;
+                              }
                             }
                           });
                         }
@@ -679,23 +693,74 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                       : (value) => setState(() => _companyId = value),
                 )
               else
-                DropdownButtonFormField<int>(
-                  initialValue: _departmentId,
-                  decoration: const InputDecoration(
-                    labelText: 'Sekolah',
-                    prefixIcon: Icon(Icons.account_tree_outlined),
-                  ),
-                  items: active
-                      .map(
-                        (department) => DropdownMenuItem<int>(
-                          value: department.id,
-                          child: Text(department.name),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: _saving
-                      ? null
-                      : (value) => setState(() => _departmentId = value),
+                Column(
+                  children: [
+                    DropdownButtonFormField<int>(
+                      key: ValueKey('edit-user-company-${_companyId ?? -1}'),
+                      initialValue:
+                          activeCompanies.any((item) => item.id == _companyId)
+                          ? _companyId
+                          : null,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Syarikat',
+                        prefixIcon: Icon(Icons.business_rounded),
+                        helperText:
+                            'Menukar syarikat akan meminta pemilihan sekolah di bawah syarikat tersebut.',
+                      ),
+                      items: activeCompanies
+                          .map(
+                            (company) => DropdownMenuItem<int>(
+                              value: company.id,
+                              child: Text(company.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _saving
+                          ? null
+                          : (value) {
+                              setState(() {
+                                _companyId = value;
+                                final schools = value == null
+                                    ? active
+                                    : active
+                                          .where(
+                                            (item) => item.companyId == value,
+                                          )
+                                          .toList();
+                                _departmentId = schools.isEmpty
+                                    ? null
+                                    : schools.first.id;
+                              });
+                            },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      key: ValueKey(
+                        'edit-user-school-${_companyId ?? -1}-${_departmentId ?? -1}',
+                      ),
+                      initialValue:
+                          companySchools.any((item) => item.id == _departmentId)
+                          ? _departmentId
+                          : null,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Sekolah',
+                        prefixIcon: Icon(Icons.school_rounded),
+                      ),
+                      items: companySchools
+                          .map(
+                            (department) => DropdownMenuItem<int>(
+                              value: department.id,
+                              child: Text(department.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _saving
+                          ? null
+                          : (value) => setState(() => _departmentId = value),
+                    ),
+                  ],
                 ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
@@ -794,9 +859,17 @@ class _AddUserDialogState extends State<_AddUserDialog> {
   void initState() {
     super.initState();
     final active = widget.departments.where((item) => item.active).toList();
-    if (active.isNotEmpty) _departmentId = active.first.id;
     final companies = widget.companies.where((item) => item.active).toList();
-    if (companies.isNotEmpty) _companyId = companies.first.id;
+    final scope = AdminScopeState.instance;
+    _companyId = companies.any((item) => item.id == scope.companyId)
+        ? scope.companyId
+        : (companies.isEmpty ? null : companies.first.id);
+    final companySchools = _companyId == null
+        ? active
+        : active.where((item) => item.companyId == _companyId).toList();
+    _departmentId = companySchools.any((item) => item.id == scope.departmentId)
+        ? scope.departmentId
+        : (companySchools.isEmpty ? null : companySchools.first.id);
   }
 
   @override
@@ -851,6 +924,9 @@ class _AddUserDialogState extends State<_AddUserDialog> {
     final activeCompanies = widget.companies
         .where((item) => item.active)
         .toList();
+    final companySchools = _companyId == null
+        ? active
+        : active.where((item) => item.companyId == _companyId).toList();
     final isAdministration = _jawatan == 'Administration';
     return AlertDialog(
       title: const Text('Tambah Pengguna'),
@@ -917,10 +993,17 @@ class _AddUserDialogState extends State<_AddUserDialog> {
                           activeCompanies.isNotEmpty) {
                         _companyId = activeCompanies.first.id;
                       }
-                      if (value != 'Administration' &&
-                          _departmentId == null &&
-                          active.isNotEmpty) {
-                        _departmentId = active.first.id;
+                      if (value != 'Administration') {
+                        final schools = _companyId == null
+                            ? active
+                            : active
+                                  .where((item) => item.companyId == _companyId)
+                                  .toList();
+                        if (!schools.any((item) => item.id == _departmentId)) {
+                          _departmentId = schools.isEmpty
+                              ? null
+                              : schools.first.id;
+                        }
                       }
                     });
                   }
@@ -971,21 +1054,69 @@ class _AddUserDialogState extends State<_AddUserDialog> {
                   onChanged: (value) => setState(() => _companyId = value),
                 )
               else
-                DropdownButtonFormField<int>(
-                  initialValue: _departmentId,
-                  decoration: const InputDecoration(
-                    labelText: 'Sekolah',
-                    prefixIcon: Icon(Icons.account_tree_outlined),
-                  ),
-                  items: active
-                      .map(
-                        (department) => DropdownMenuItem<int>(
-                          value: department.id,
-                          child: Text(department.name),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) => setState(() => _departmentId = value),
+                Column(
+                  children: [
+                    DropdownButtonFormField<int>(
+                      key: ValueKey('add-user-company-${_companyId ?? -1}'),
+                      initialValue:
+                          activeCompanies.any((item) => item.id == _companyId)
+                          ? _companyId
+                          : null,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Syarikat',
+                        prefixIcon: Icon(Icons.business_rounded),
+                        helperText:
+                            'Pilih syarikat dahulu untuk mengecilkan senarai sekolah.',
+                      ),
+                      items: activeCompanies
+                          .map(
+                            (company) => DropdownMenuItem<int>(
+                              value: company.id,
+                              child: Text(company.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _companyId = value;
+                          final schools = value == null
+                              ? active
+                              : active
+                                    .where((item) => item.companyId == value)
+                                    .toList();
+                          _departmentId = schools.isEmpty
+                              ? null
+                              : schools.first.id;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      key: ValueKey(
+                        'add-user-school-${_companyId ?? -1}-${_departmentId ?? -1}',
+                      ),
+                      initialValue:
+                          companySchools.any((item) => item.id == _departmentId)
+                          ? _departmentId
+                          : null,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Sekolah',
+                        prefixIcon: Icon(Icons.school_rounded),
+                      ),
+                      items: companySchools
+                          .map(
+                            (department) => DropdownMenuItem<int>(
+                              value: department.id,
+                              child: Text(department.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) =>
+                          setState(() => _departmentId = value),
+                    ),
+                  ],
                 ),
               if (_error != null) ...[
                 const SizedBox(height: 10),

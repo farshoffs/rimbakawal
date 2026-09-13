@@ -7,12 +7,15 @@ class CompanyMaintenanceScreen extends StatefulWidget {
   final ApiService api;
 
   @override
-  State<CompanyMaintenanceScreen> createState() => _CompanyMaintenanceScreenState();
+  State<CompanyMaintenanceScreen> createState() =>
+      _CompanyMaintenanceScreenState();
 }
 
 class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
   late Future<List<CompanyRecord>> _future;
   int _refreshKey = 0;
+  final TextEditingController _searchController = TextEditingController();
+  String _statusFilter = 'active';
 
   @override
   void initState() {
@@ -25,6 +28,12 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
       _refreshKey++;
       _future = widget.api.getAdminCompanies();
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _open([CompanyRecord? company]) async {
@@ -60,7 +69,9 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
                   const SizedBox(height: 10),
                   Text(
                     error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ],
               ],
@@ -75,7 +86,9 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
               onPressed: () async {
                 final name = controller.text.trim();
                 if (name.length < 2) {
-                  setDialogState(() => error = 'Masukkan nama Syarikat yang sah.');
+                  setDialogState(
+                    () => error = 'Masukkan nama Syarikat yang sah.',
+                  );
                   return;
                 }
                 try {
@@ -92,7 +105,9 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
                       ),
                     );
                   }
-                  if (dialogContext.mounted) Navigator.of(dialogContext).pop(true);
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop(true);
+                  }
                 } catch (e) {
                   setDialogState(() => error = e.toString());
                 }
@@ -158,9 +173,9 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -174,9 +189,9 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -206,9 +221,9 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -222,9 +237,9 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -247,15 +262,58 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
             return Center(child: Text(snapshot.error.toString()));
           }
           final companies = snapshot.data ?? const <CompanyRecord>[];
+          final query = _searchController.text.trim().toLowerCase();
+          final visibleCompanies = companies.where((company) {
+            final matchesStatus =
+                _statusFilter == 'all' ||
+                (_statusFilter == 'active' ? company.active : !company.active);
+            final matchesQuery =
+                query.isEmpty || company.name.toLowerCase().contains(query);
+            return matchesStatus && matchesQuery;
+          }).toList();
           if (companies.isEmpty) {
             return const Center(child: Text('Belum ada Syarikat.'));
           }
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            itemCount: companies.length,
+            itemCount: visibleCompanies.length + 1,
             separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (_, index) {
-              final company = companies[index];
+              if (index == 0) {
+                return Column(
+                  children: [
+                    TextField(
+                      controller: _searchController,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        labelText: 'Cari Syarikat',
+                        prefixIcon: Icon(Icons.search_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'active', label: Text('Aktif')),
+                        ButtonSegment(value: 'archived', label: Text('Arkib')),
+                        ButtonSegment(value: 'all', label: Text('Semua')),
+                      ],
+                      selected: {_statusFilter},
+                      onSelectionChanged: (value) {
+                        if (value.isNotEmpty) {
+                          setState(() => _statusFilter = value.first);
+                        }
+                      },
+                    ),
+                    if (visibleCompanies.isEmpty) ...[
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Tiada syarikat untuk penapis atau carian ini.',
+                      ),
+                    ],
+                  ],
+                );
+              }
+              final company = visibleCompanies[index - 1];
               return Card(
                 clipBehavior: Clip.antiAlias,
                 child: ExpansionTile(
@@ -333,12 +391,14 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
                           if (schoolSnapshot.hasError) {
                             return Text(schoolSnapshot.error.toString());
                           }
-                          final schools = schoolSnapshot.data ??
-                              const <DepartmentRecord>[];
+                          final schools =
+                              schoolSnapshot.data ?? const <DepartmentRecord>[];
                           if (schools.isEmpty) {
                             return const ListTile(
                               leading: Icon(Icons.school_outlined),
-                              title: Text('Belum ada sekolah di bawah syarikat ini.'),
+                              title: Text(
+                                'Belum ada sekolah di bawah syarikat ini.',
+                              ),
                             );
                           }
                           return Column(
@@ -346,7 +406,9 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
                             children: [
                               Text(
                                 'Sekolah di bawah ${company.name}',
-                                style: const TextStyle(fontWeight: FontWeight.w900),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
                               const SizedBox(height: 8),
                               for (final school in schools)
@@ -374,8 +436,8 @@ class _CompanyMaintenanceScreenState extends State<CompanyMaintenanceScreen> {
                                         : 'Pulihkan Sekolah',
                                     onPressed: company.active
                                         ? () => school.active
-                                            ? _archiveSchool(school)
-                                            : _restoreSchool(school)
+                                              ? _archiveSchool(school)
+                                              : _restoreSchool(school)
                                         : null,
                                     icon: Icon(
                                       school.active

@@ -165,7 +165,11 @@ async function commandCenterRange(request, env, url) {
                AND COALESCE(last_location_at, started_at) >= ?
              GROUP BY user_id
            ) latest ON latest.latest_id = ps.id
-           ${scopeDepartment ? 'WHERE u.department_id = ?' : ''}`,
+           ${scopeDepartment
+             ? 'WHERE u.department_id = ?'
+             : scopeCompany
+               ? 'WHERE u.department_id IN (SELECT id FROM departments WHERE company_id = ?)'
+               : ''}`,
         ).bind(...(scopeValue ? [liveSince, scopeValue] : [liveSince])).all()
       : Promise.resolve({ results: [] }),
   ]);
