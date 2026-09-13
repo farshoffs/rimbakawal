@@ -79,4 +79,8 @@ one("""            itemCount: companies.length,
                 );
               }
               final company = visibleCompanies[index - 1];""",'list header')
+# Normalize an existing single-line mounted guard so flutter analyze stays clean.
+one("""                  if (dialogContext.mounted) Navigator.of(dialogContext).pop(true);""","""                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop(true);
+                  }""",'mounted guard')
 p.write_text(t,encoding='utf-8')
