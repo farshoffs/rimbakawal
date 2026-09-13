@@ -1,0 +1,179 @@
+name: Capture Production Mobile Screenshots
+
+on:
+  push:
+    branches:
+      - chore/mobile-screen-snapshots
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  SNAPSHOT_IC_B64: 'OTkxMjMxOTk5OTk5'
+  PRODUCTION_URL: 'https://rimbakawal.fscapitalmanagement.workers.dev'
+
+jobs:
+  capture:
+    if: ${{ !contains(github.event.head_commit.message, 'Capture production mobile screenshots v2') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/mobile-screen-snapshots
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install screenshot runtime
+        run: |
+          npm ci
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Create temporary production demo user
+        shell: bash
+        run: |
+          set -euo pipefail
+          SNAPSHOT_IC="$(printf '%s' "$SNAPSHOT_IC_B64" | base64 -d)"
+          npx wrangler d1 execute rimbakawal-db --remote --config wrangler.jsonc --command "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE no_kad_pengenalan='${SNAPSHOT_IC}'); DELETE FROM users WHERE no_kad_pengenalan='${SNAPSHOT_IC}'; INSERT INTO users (nama, no_kad_pengenalan, jawatan, profile_picture, jabatan, active, department_id, no_pk) SELECT 'DEMO SNAPSHOT RIMBAKAWAL', '${SNAPSHOT_IC}', 'Management', NULL, d.name, 1, d.id, 'DEMO-001' FROM departments d WHERE d.active = 1 ORDER BY CASE WHEN LOWER(d.name) = 'pentadbiran' THEN 0 ELSE 1 END, d.id LIMIT 1;"
+
+      - name: Capture mobile screens from production
+        shell: bash
+        run: |
+          rm -rf docs/screenshots/mobile
+          mkdir -p docs/screenshots/mobile
+          cat > capture-rimbakawal.mjs <<'NODE'
+          import { chromium } from 'playwright';
+          import fs from 'node:fs';
+
+          const baseUrl = process.env.PRODUCTION_URL;
+          const identity = Buffer.from(process.env.SNAPSHOT_IC_B64, 'base64').toString('utf8');
+          const output = 'docs/screenshots/mobile';
+          fs.mkdirSync(output, { recursive: true });
+
+          const browser = await chromium.launch({ headless: true });
+          const context = await browser.newContext({
+            viewport: { width: 430, height: 932 },
+            deviceScaleFactor: 1,
+            isMobile: true,
+            hasTouch: true,
+            locale: 'ms-MY',
+            timezoneId: 'Asia/Kuala_Lumpur',
+            geolocation: { latitude: 5.6958204, longitude: 100.5371980 },
+            permissions: ['geolocation'],
+          });
+          const page = await context.newPage();
+          page.setDefaultTimeout(5000);
+
+          const wait = (ms = 1400) => page.waitForTimeout(ms);
+          const tap = async (x, y, delay = 1500) => {
+            await page.mouse.click(x, y);
+            await wait(delay);
+          };
+          const back = async () => tap(28, 28, 1800);
+          const snap = async (name, delay = 700) => {
+            await wait(delay);
+            await page.screenshot({ path: `${output}/${name}.png`, fullPage: false });
+            console.log(`Captured ${name}`);
+          };
+
+          async function enableSemantics() {
+            try {
+              const placeholder = page.locator('flt-semantics-placeholder');
+              if (await placeholder.count()) {
+                await placeholder.first().click({ timeout: 1200 });
+                await wait(300);
+              }
+            } catch (_) {}
+          }
+
+          async function waitForDashboard() {
+            for (let i = 0; i < 24; i++) {
+              await enableSemantics();
+              try {
+                if (await page.getByText('Operasi', { exact: true }).count()) return true;
+                if (await page.getByText('Mula Rondaan', { exact: true }).count()) return true;
+              } catch (_) {}
+              await wait(800);
+            }
+            return false;
+          }
+
+          async function dashboardScreen(name, x, y, delay = 1800) {
+            await tap(x, y, delay);
+            await snap(name, 500);
+            await back();
+          }
+
+          async function adminScreen(name, y, delay = 2200) {
+            await tap(215, y, delay);
+            await snap(name, 500);
+            await back();
+          }
+
+          try {
+            await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await wait(6500);
+            await snap('01-log-masuk', 400);
+
+            const input = page.locator('input').first();
+            if (await input.count()) {
+              await input.fill(identity);
+            } else {
+              await tap(215, 570, 200);
+              await page.keyboard.type(identity);
+            }
+
+            await tap(215, 650, 1200);
+            await waitForDashboard();
+            await wait(2200);
+            await snap('02-dashboard');
+
+            await dashboardScreen('03-mula-rondaan', 112, 455, 2200);
+            await dashboardScreen('04-kehadiran', 318, 455, 2200);
+            await dashboardScreen('05-sejarah-rondaan', 112, 638, 2800);
+            await dashboardScreen('06-profil', 318, 638, 1800);
+            await dashboardScreen('07-pusat-pemantauan', 318, 817, 3400);
+
+            await tap(112, 817, 1900);
+            await snap('08-pentadbiran');
+
+            await adminScreen('09-peta-rondaan-langsung', 122, 3400);
+            await adminScreen('10-pusat-pemantauan-admin', 220, 3400);
+            await adminScreen('11-sejarah-kehadiran', 318, 2800);
+            await adminScreen('12-pengurusan-sos', 416, 2400);
+            await adminScreen('13-senarai-pengguna', 568, 2400);
+            await adminScreen('14-jabatan-checkpoint', 675, 3000);
+            await adminScreen('15-laporan', 786, 2400);
+          } finally {
+            await browser.close();
+          }
+          NODE
+          node capture-rimbakawal.mjs
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rimbakawal-mobile-screenshots-v2
+          path: docs/screenshots/mobile/*.png
+          if-no-files-found: error
+
+      - name: Commit captured screenshots
+        shell: bash
+        run: |
+          git config user.name farshoffs
+          git config user.email farshoffs@gmail.com
+          git add docs/screenshots/mobile
+          git commit -m 'Capture production mobile screenshots v2'
+          git push
+
+      - name: Remove temporary production demo user
+        if: always()
+        shell: bash
+        run: |
+          SNAPSHOT_IC="$(printf '%s' "$SNAPSHOT_IC_B64" | base64 -d)"
+          npx wrangler d1 execute rimbakawal-db --remote --config wrangler.jsonc --command "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE no_kad_pengenalan='${SNAPSHOT_IC}'); DELETE FROM users WHERE no_kad_pengenalan='${SNAPSHOT_IC}';" || true

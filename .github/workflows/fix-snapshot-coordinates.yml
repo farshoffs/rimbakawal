@@ -1,0 +1,34 @@
+name: Correct Mobile Screenshot Coordinates
+
+on:
+  push:
+    branches:
+      - chore/mobile-screen-snapshots
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, 'Correct mobile screenshot card coordinates') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/mobile-screen-snapshots
+      - name: Correct lower administration card centres
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/capture-mobile-snapshots.yml')
+          text = path.read_text()
+          text = text.replace("adminScreen('13-senarai-pengguna', 514, 2400)", "adminScreen('13-senarai-pengguna', 568, 2400)")
+          text = text.replace("adminScreen('14-jabatan-checkpoint', 612, 3000)", "adminScreen('14-jabatan-checkpoint', 675, 3000)")
+          text = text.replace("adminScreen('15-laporan', 710, 2400)", "adminScreen('15-laporan', 786, 2400)")
+          path.write_text(text)
+          PY
+          git config user.name farshoffs
+          git config user.email farshoffs@gmail.com
+          git add .github/workflows/capture-mobile-snapshots.yml
+          git commit -m 'Correct mobile screenshot card coordinates'
+          git push
