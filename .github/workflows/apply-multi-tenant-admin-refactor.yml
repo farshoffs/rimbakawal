@@ -1,0 +1,123 @@
+name: Apply Multi Tenant Admin Refactor
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/fix_company_admin_create.py'
+      - 'scripts/patch_api_scopes.py'
+      - 'scripts/patch_user_scope_logic.py'
+      - 'scripts/patch_user_scope_widgets.py'
+      - 'scripts/patch_department_scope_a.py'
+      - 'scripts/patch_department_scope_b.py'
+      - 'scripts/patch_department_archive_ux.py'
+      - 'scripts/patch_report_scope_a.py'
+      - 'scripts/patch_report_scope_b.py'
+      - 'scripts/patch_attendance_scope_ui.py'
+      - 'scripts/patch_attendance_scope_worker.py'
+      - 'scripts/patch_user_scope_worker.py'
+      - 'scripts/patch_history_scope.py'
+      - 'scripts/patch_live_map_scope_ui.py'
+      - 'scripts/patch_live_map_scope_worker.py'
+      - 'scripts/patch_command_scope_ui.py'
+      - 'scripts/patch_command_scope_worker_a.py'
+      - 'scripts/patch_command_scope_worker_b.py'
+      - 'scripts/patch_sos_scope_api.py'
+      - 'scripts/patch_sos_scope_ui.py'
+      - 'scripts/patch_sos_scope_worker_a.py'
+      - 'scripts/patch_sos_resolve_guard.py'
+      - 'scripts/patch_sos_resolve_lookup.py'
+      - 'scripts/patch_sos_resolve_update.py'
+      - '.github/workflows/apply-multi-tenant-admin-refactor.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply multi-tenant patches
+        run: |
+          python scripts/fix_company_admin_create.py
+          python scripts/patch_api_scopes.py
+          python scripts/patch_user_scope_logic.py
+          python scripts/patch_user_scope_widgets.py
+          python scripts/patch_department_scope_a.py
+          python scripts/patch_department_scope_b.py
+          python scripts/patch_department_archive_ux.py
+          python scripts/patch_report_scope_a.py
+          python scripts/patch_report_scope_b.py
+          python scripts/patch_attendance_scope_ui.py
+          python scripts/patch_attendance_scope_worker.py
+          python scripts/patch_user_scope_worker.py
+          python scripts/patch_history_scope.py
+          python scripts/patch_live_map_scope_ui.py
+          python scripts/patch_live_map_scope_worker.py
+          python scripts/patch_command_scope_ui.py
+          python scripts/patch_command_scope_worker_a.py
+          python scripts/patch_command_scope_worker_b.py
+          python scripts/patch_sos_scope_api.py
+          python scripts/patch_sos_scope_ui.py
+          python scripts/patch_sos_scope_worker_a.py
+          python scripts/patch_sos_resolve_guard.py
+          python scripts/patch_sos_resolve_lookup.py
+          python scripts/patch_sos_resolve_update.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Format Dart files
+        run: |
+          dart format \
+            lib/core/api/api_service.dart \
+            lib/features/admin/admin_scope.dart \
+            lib/features/admin/user_maintenance_screen.dart \
+            lib/features/admin/department_maintenance_screen.dart \
+            lib/features/admin/report_screen.dart \
+            lib/features/admin/attendance_history_screen.dart \
+            lib/features/history/clocking_history_screen.dart \
+            lib/features/admin/live_patrol_map_screen.dart \
+            lib/features/admin/command_center_screen.dart \
+            lib/features/sos/sos_alert_api.dart \
+            lib/features/admin/sos_management_screen.dart \
+            lib/features/admin/admin_screen.dart
+
+      - name: Check Worker syntax
+        run: |
+          node --check worker/index.js
+          node --check worker/attendance.js
+          node --check worker/offline.js
+          node --check worker/command_center_period.js
+          node --check worker/sos.js
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit refactor
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib worker
+          git commit -m 'Refactor multi-company multi-school admin scope'
+          git pull --rebase origin main
+          git push origin HEAD:main
