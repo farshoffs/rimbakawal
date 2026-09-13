@@ -76,6 +76,11 @@ class _ReportScreenState extends State<ReportScreen> {
     try {
       final data = await _reportData();
       final Uint8List bytes = switch (type) {
+        _PkkType.compiled => await PkkPdfGenerator.generateCompiled(
+          data: data,
+          month: _month,
+          year: _year,
+        ),
         _PkkType.pkk2 => await PkkPdfGenerator.generatePkk2(
           data: data,
           month: _month,
@@ -233,6 +238,14 @@ class _ReportScreenState extends State<ReportScreen> {
                   ],
                   const SizedBox(height: 20),
                   _ReportButton(
+                    icon: Icons.library_books_rounded,
+                    title: 'Jana Pakej PKK Lengkap (PDF)',
+                    subtitle: 'Muka hadapan + PKK 2 + PKK 3 + PKK 4 dalam satu dokumen',
+                    enabled: !_generating && !_loadingDepartments && _departmentId != null,
+                    onPressed: () => _generate(_PkkType.compiled),
+                  ),
+                  const SizedBox(height: 10),
+                  _ReportButton(
                     icon: Icons.groups_rounded,
                     title: 'Jana PKK 2 (PDF)',
                     subtitle: 'Pengesahan bilangan pengawal dan rekod kehadiran',
@@ -275,6 +288,7 @@ class _ReportScreenState extends State<ReportScreen> {
 }
 
 enum _PkkType {
+  compiled('Pakej PKK Lengkap', 'PKK_LENGKAP'),
   pkk2('PKK 2', 'PKK_2'),
   pkk3('PKK 3', 'PKK_3'),
   pkk4('PKK 4', 'PKK_4');

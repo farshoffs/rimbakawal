@@ -18,6 +18,13 @@ export default {
       if (companyMatch && request.method === 'PUT') {
         return updateCompany(request, env, Number(companyMatch[1]));
       }
+      if (companyMatch && request.method === 'DELETE') {
+        return archiveCompany(request, env, Number(companyMatch[1]));
+      }
+      const companyRestoreMatch = url.pathname.match(/^\/api\/admin\/companies\/(\d+)\/restore$/);
+      if (companyRestoreMatch && request.method === 'POST') {
+        return restoreCompany(request, env, Number(companyRestoreMatch[1]));
+      }
 
       if (url.pathname === '/api/admin/users' && request.method === 'POST') {
         const body = await readJson(request);
@@ -152,6 +159,96 @@ async function updateCompany(request, env, companyId) {
   ]);
   const company = await getCompany(env, companyId);
   return json({ company: companyJson(company) });
+}
+
+async function archiveCompany(request, env, companyId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  if (!Number.isInteger(companyId) || companyId <= 0) {
+    return json({ error: 'Syarikat tidak sah.' }, 400);
+  }
+  const company = await getCompany(env, companyId);
+  if (!company) return json({ error: 'Syarikat tidak ditemui.' }, 404);
+  if (Number(company.active) !== 1) {
+    return json({ ok: true, archived: true, alreadyArchived: true });
+  }
+
+  const [departments, checkpoints, users] = await Promise.all([
+    env.DB.prepare('SELECT id, active FROM departments WHERE company_id = ? ORDER BY id').bind(companyId).all(),
+    env.DB.prepare(`SELECT c.id, c.active
+                      FROM checkpoints c
+                      JOIN departments d ON d.id = c.department_id
+                     WHERE d.company_id = ? ORDER BY c.id`).bind(companyId).all(),
+    env.DB.prepare(`SELECT u.id, u.active
+                      FROM users u
+                      LEFT JOIN departments d ON d.id = u.department_id
+                     WHERE u.company_id = ? OR d.company_id = ?
+                     ORDER BY u.id`).bind(companyId, companyId).all(),
+  ]);
+  const snapshot = JSON.stringify({
+    company: { id: companyId, active: Number(company.active) },
+    departments: (departments.results ?? []).map((row) => ({ id: Number(row.id), active: Number(row.active) })),
+    checkpoints: (checkpoints.results ?? []).map((row) => ({ id: Number(row.id), active: Number(row.active) })),
+    users: (users.results ?? []).map((row) => ({ id: Number(row.id), active: Number(row.active) })),
+  });
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO entity_archives (entity_type, entity_id, snapshot_json, archived_by)
+       VALUES ('company', ?, ?, ?)`,
+    ).bind(companyId, snapshot, auth.user.id),
+    env.DB.prepare('UPDATE companies SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(companyId),
+    env.DB.prepare('UPDATE departments SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE company_id = ?').bind(companyId),
+    env.DB.prepare(`UPDATE checkpoints
+                       SET active = 0, updated_at = CURRENT_TIMESTAMP
+                     WHERE department_id IN (SELECT id FROM departments WHERE company_id = ?)`).bind(companyId),
+    env.DB.prepare(`UPDATE users
+                         SET active = 0
+                       WHERE company_id = ?
+                          OR department_id IN (SELECT id FROM departments WHERE company_id = ?)`)
+      .bind(companyId, companyId),
+  ]);
+  return json({ ok: true, archived: true, undoAvailable: true });
+}
+
+async function restoreCompany(request, env, companyId) {
+  const auth = await requireManagement(request, env);
+  if (auth.response) return auth.response;
+  const archive = await env.DB.prepare(
+    `SELECT id, snapshot_json
+       FROM entity_archives
+      WHERE entity_type = 'company' AND entity_id = ? AND restored_at IS NULL
+      ORDER BY id DESC LIMIT 1`,
+  ).bind(companyId).first();
+  if (!archive) {
+    return json({ error: 'Tiada rekod arkib Syarikat yang boleh dipulihkan.' }, 409);
+  }
+  let snapshot;
+  try { snapshot = JSON.parse(archive.snapshot_json); } catch (_) {
+    return json({ error: 'Snapshot arkib Syarikat rosak.' }, 500);
+  }
+  const statements = [
+    env.DB.prepare('UPDATE companies SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .bind(Number(snapshot?.company?.active ?? 1), companyId),
+  ];
+  for (const row of snapshot?.departments ?? []) {
+    statements.push(env.DB.prepare('UPDATE departments SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .bind(Number(row.active ?? 0), Number(row.id)));
+  }
+  for (const row of snapshot?.checkpoints ?? []) {
+    statements.push(env.DB.prepare('UPDATE checkpoints SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .bind(Number(row.active ?? 0), Number(row.id)));
+  }
+  for (const row of snapshot?.users ?? []) {
+    statements.push(env.DB.prepare('UPDATE users SET active = ? WHERE id = ?')
+      .bind(Number(row.active ?? 0), Number(row.id)));
+  }
+  statements.push(
+    env.DB.prepare('UPDATE entity_archives SET restored_at = CURRENT_TIMESTAMP, restored_by = ? WHERE id = ?')
+      .bind(auth.user.id, Number(archive.id)),
+  );
+  await env.DB.batch(statements);
+  return json({ ok: true, restored: true });
 }
 
 async function resolveCompanyPayload(env, original) {

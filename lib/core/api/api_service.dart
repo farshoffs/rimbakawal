@@ -1122,9 +1122,36 @@ class ApiService {
     return CompanyRecord.fromJson(Map<String, dynamic>.from(data['company'] as Map));
   }
 
-  Future<List<DepartmentRecord>> getAdminDepartments() async {
+  Future<void> deleteCompany(int companyId) async {
+    _decode(
+      await http.delete(
+        _uri('/api/admin/companies/$companyId'),
+        headers: _headers(),
+      ),
+    );
+  }
+
+  Future<void> restoreCompany(int companyId) async {
+    _decode(
+      await http.post(
+        _uri('/api/admin/companies/$companyId/restore'),
+        headers: _headers(),
+      ),
+    );
+  }
+
+  Future<List<DepartmentRecord>> getAdminDepartments({
+    int? companyId,
+    bool includeArchived = false,
+  }) async {
     final data = _decode(
-      await _cachedGet(_uri('/api/admin/departments'), headers: _headers()),
+      await _cachedGet(
+        _uri('/api/admin/departments', {
+          if (companyId != null) 'companyId': companyId.toString(),
+          if (includeArchived) 'includeArchived': '1',
+        }),
+        headers: _headers(),
+      ),
     );
     return (data['departments'] as List<dynamic>? ?? const [])
         .map(
@@ -1195,6 +1222,15 @@ class ApiService {
     _decode(
       await http.delete(
         _uri('/api/admin/departments/$departmentId'),
+        headers: _headers(),
+      ),
+    );
+  }
+
+  Future<void> restoreDepartment(int departmentId) async {
+    _decode(
+      await http.post(
+        _uri('/api/admin/departments/$departmentId/restore'),
         headers: _headers(),
       ),
     );

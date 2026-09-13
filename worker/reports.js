@@ -17,7 +17,7 @@ export default {
       if (denied) return denied;
     }
     if (url.pathname === '/api/admin/reports' && request.method === 'GET') {
-      return monthlyReport(request, env, ctx, url);
+      return monthlyReport(request, env, url);
     }
     return commandCenterWorker.fetch(request, env, ctx);
   },
@@ -28,33 +28,43 @@ export default {
   },
 };
 
-async function monthlyReport(request, env, ctx, url) {
-  const downstream = await commandCenterWorker.fetch(request, env, ctx);
-  if (!downstream.ok) return downstream;
+async function monthlyReport(request, env, url) {
+  const auth = await requireReportAccess(request, env);
+  if (auth.response) return auth.response;
 
-  const payload = await downstream.json();
-  const from = String(payload.from || '');
-  const to = String(payload.to || '');
+  const from = String(url.searchParams.get('from') || '');
+  const to = String(url.searchParams.get('to') || '');
+  const departmentId = Number(url.searchParams.get('departmentId') || 0);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
+    return json({ error: 'Tarikh laporan tidak sah.' }, 400);
+  }
+  if (!Number.isInteger(departmentId) || departmentId <= 0) {
+    return json({ error: 'Pilih satu Sekolah untuk laporan PKK.' }, 400);
+  }
+
+  const departmentMeta = await env.DB.prepare(
+    `SELECT d.id, d.name, d.active, d.company_id,
+            COALESCE(c.name, d.company_name, '') AS company_name, d.zone
+       FROM departments d
+       LEFT JOIN companies c ON c.id = d.company_id
+      WHERE d.id = ? LIMIT 1`,
+  ).bind(departmentId).first();
+  if (!departmentMeta) return json({ error: 'Sekolah tidak ditemui.' }, 404);
+
+  const role = String(auth.user.jawatan || '').trim().toLowerCase();
+  if (role === 'administration') {
+    const ownCompanyId = Number(auth.user.company_id || 0);
+    if (!ownCompanyId || Number(departmentMeta.company_id || 0) !== ownCompanyId) {
+      return json({ error: 'Sekolah ini bukan di bawah Syarikat akaun anda.' }, 403);
+    }
+  }
+
   const fromStart = malaysiaStartIso(from);
   const toEnd = malaysiaEndIso(to);
   const attendanceToEnd = addUtcDays(toEnd, 1);
   if (!fromStart || !toEnd || !attendanceToEnd) {
     return json({ error: 'Tarikh laporan tidak sah.' }, 400);
   }
-
-  const rawDepartmentId = url.searchParams.get('departmentId');
-  const downstreamDepartmentId = payload.department?.id == null
-    ? null
-    : Number(payload.department.id);
-  const departmentId = rawDepartmentId == null
-    ? downstreamDepartmentId
-    : Number(rawDepartmentId);
-  const scanBindings = departmentId == null
-    ? [fromStart, toEnd]
-    : [fromStart, toEnd, departmentId];
-  const attendanceBindings = departmentId == null
-    ? [fromStart, attendanceToEnd]
-    : [fromStart, attendanceToEnd, departmentId];
 
   const scanSql = `SELECT s.id, s.user_id, s.checkpoint_id, s.scanned_at, s.nfc_uid, s.session_index,
               u.nama, u.no_kad_pengenalan, u.no_pk, u.guard_status, u.jawatan,
@@ -66,94 +76,105 @@ async function monthlyReport(request, env, ctx, url) {
        LEFT JOIN departments d ON d.id = u.department_id
        LEFT JOIN checkpoints c ON c.id = s.checkpoint_id
        WHERE s.scanned_at >= ? AND s.scanned_at < ?
-       ${departmentId == null ? '' : 'AND u.department_id = ?'}
+         AND u.department_id = ?
        ORDER BY s.scanned_at ASC, s.session_index ASC, c.position ASC, s.id ASC`;
 
   // Include one extra Malaysian calendar day so a night-shift IN on the
-  // last day of the selected month can be paired with its OUT the next day.
-  // The PDF generator still includes a session only when its IN belongs to
-  // the selected report month.
+  // last report date can be paired with its OUT on the following morning.
   const attendanceSql = `SELECT a.id, a.user_id, a.department_id, a.work_date,
-              a.punch_type, a.punched_at,
+              a.punch_type, a.punched_at, a.latitude, a.longitude, a.distance_m,
+              a.face_status, a.face_score,
               u.nama, u.no_kad_pengenalan, u.no_pk, u.guard_status, u.jawatan,
               COALESCE(d.name, u.jabatan) AS jabatan
        FROM attendance_records a
        JOIN users u ON u.id = a.user_id
        LEFT JOIN departments d ON d.id = a.department_id
        WHERE a.punched_at >= ? AND a.punched_at < ?
-       ${departmentId == null ? '' : 'AND a.department_id = ?'}
+         AND a.department_id = ?
        ORDER BY a.user_id ASC, a.punched_at ASC, a.id ASC`;
 
-  const departmentMeta = departmentId == null ? null : await env.DB.prepare(
-    `SELECT d.id, d.name, COALESCE(c.name, d.company_name, '') AS company_name, d.zone
-     FROM departments d
-     LEFT JOIN companies c ON c.id = d.company_id
-     WHERE d.id = ? LIMIT 1`,
-  ).bind(departmentId).first();
-
-  const checkpointPromise = departmentId == null
-    ? Promise.resolve({ results: [] })
-    : env.DB.prepare(
-      `SELECT id, name, position, nfc_uid
-       FROM checkpoints
-       WHERE department_id = ? AND active = 1
-       ORDER BY position ASC, id ASC`,
-    ).bind(departmentId).all();
-
-  const guardPromise = departmentId == null
-    ? Promise.resolve({ results: [] })
-    : env.DB.prepare(
-      `SELECT id, nama, no_kad_pengenalan, no_pk, guard_status, jawatan
-       FROM users
-       WHERE department_id = ?
-         AND active = 1
-         AND LOWER(jawatan) IN ('patrol', 'supervisor')
-       ORDER BY CASE WHEN no_pk IS NULL OR no_pk = '' THEN 1 ELSE 0 END,
-                CAST(no_pk AS INTEGER) ASC,
-                nama ASC,
-                id ASC`,
-    ).bind(departmentId).all();
-
   const [scanResult, attendanceResult, checkpointResult, guardResult] = await Promise.all([
-    env.DB.prepare(scanSql).bind(...scanBindings).all(),
-    env.DB.prepare(attendanceSql).bind(...attendanceBindings).all(),
-    checkpointPromise,
-    guardPromise,
+    env.DB.prepare(scanSql).bind(fromStart, toEnd, departmentId).all(),
+    env.DB.prepare(attendanceSql).bind(fromStart, attendanceToEnd, departmentId).all(),
+    env.DB.prepare(
+      `SELECT id, name, position, nfc_uid, active
+         FROM checkpoints
+        WHERE department_id = ? AND active = 1
+        ORDER BY position ASC, id ASC`,
+    ).bind(departmentId).all(),
+    env.DB.prepare(
+      `SELECT id, nama, no_kad_pengenalan, no_pk, guard_status, jawatan, active
+         FROM users
+        WHERE department_id = ?
+          AND active = 1
+          AND LOWER(jawatan) IN ('patrol', 'supervisor')
+        ORDER BY CASE WHEN no_pk IS NULL OR no_pk = '' THEN 1 ELSE 0 END,
+                 CAST(no_pk AS INTEGER) ASC, nama ASC, id ASC`,
+    ).bind(departmentId).all(),
   ]);
 
-  if (departmentMeta) {
-    payload.department = {
-      id: Number(departmentMeta.id),
-      name: departmentMeta.name,
-      companyName: departmentMeta.company_name || '',
-      zone: departmentMeta.zone || '',
-      state: 'KEDAH',
-    };
-  }
-  payload.scans = scanResult.results ?? [];
-  payload.attendance = attendanceResult.results ?? [];
-  payload.checkpoints = (checkpointResult.results ?? []).map((row) => ({
+  const scans = scanResult.results ?? [];
+  const attendance = attendanceResult.results ?? [];
+  const checkpoints = (checkpointResult.results ?? []).map((row) => ({
     id: Number(row.id),
     name: row.name,
     position: Number(row.position || 0),
     nfcUid: row.nfc_uid || '',
+    active: Number(row.active) === 1,
   }));
-  payload.guards = (guardResult.results ?? []).map((row) => ({
+  const guards = (guardResult.results ?? []).map((row) => ({
     id: Number(row.id),
     nama: row.nama,
     no_kad_pengenalan: row.no_kad_pengenalan || '',
     no_pk: row.no_pk || '',
     guard_status: row.guard_status || 'Tetap',
     jawatan: row.jawatan || 'patrol',
+    active: Number(row.active) === 1,
   }));
-  payload.summary = {
-    ...(payload.summary ?? {}),
-    totalScans: payload.scans.length,
-    attendancePunches: payload.attendance.length,
-    activeCheckpoints: payload.checkpoints.length,
-    activeGuards: payload.guards.length,
-  };
-  return json(payload);
+
+  return json({
+    from,
+    to,
+    department: {
+      id: Number(departmentMeta.id),
+      name: departmentMeta.name,
+      companyId: departmentMeta.company_id == null ? null : Number(departmentMeta.company_id),
+      companyName: departmentMeta.company_name || '',
+      zone: departmentMeta.zone || '',
+      state: 'KEDAH',
+    },
+    scans,
+    attendance,
+    checkpoints,
+    guards,
+    summary: {
+      totalScans: scans.length,
+      attendancePunches: attendance.length,
+      activeCheckpoints: checkpoints.length,
+      activeGuards: guards.length,
+    },
+  });
+}
+
+async function requireReportAccess(request, env) {
+  const token = getSessionToken(request);
+  if (!token) return { response: json({ error: 'Sesi tidak sah. Sila log masuk.' }, 401) };
+  const user = await env.DB.prepare(
+    `SELECT u.id, u.jawatan, u.company_id
+       FROM sessions s
+       JOIN users u ON u.id = s.user_id
+      WHERE s.token_hash = ? AND s.expires_at_ms > ? AND u.active = 1
+      LIMIT 1`,
+  ).bind(await sha256(token), Date.now()).first();
+  if (!user) return { response: json({ error: 'Sesi telah tamat. Sila log masuk semula.' }, 401) };
+  const role = String(user.jawatan || '').trim().toLowerCase();
+  if (role !== 'management' && role !== 'administration') {
+    return { response: json({ error: 'Akses laporan hanya untuk Admin Sistem atau Pentadbiran Syarikat.' }, 403) };
+  }
+  if (role === 'administration' && !Number(user.company_id || 0)) {
+    return { response: json({ error: 'Pentadbiran Syarikat belum dipautkan kepada Syarikat.' }, 409) };
+  }
+  return { user };
 }
 
 function malaysiaStartIso(dateKey) {
@@ -183,10 +204,10 @@ async function denyAdministrationOperationalAccess(request, env) {
   if (!token) return null;
   const user = await env.DB.prepare(
     `SELECT u.jawatan
-     FROM sessions s
-     JOIN users u ON u.id = s.user_id
-     WHERE s.token_hash = ? AND s.expires_at_ms > ? AND u.active = 1
-     LIMIT 1`,
+       FROM sessions s
+       JOIN users u ON u.id = s.user_id
+      WHERE s.token_hash = ? AND s.expires_at_ms > ? AND u.active = 1
+      LIMIT 1`,
   ).bind(await sha256(token), Date.now()).first();
   if (String(user?.jawatan || '').trim().toLowerCase() !== 'administration') {
     return null;
@@ -219,6 +240,6 @@ async function sha256(value) {
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
   });
 }
