@@ -1,0 +1,68 @@
+name: Apply School Shift Structure
+
+on:
+  push:
+    paths:
+      - 'scripts/apply_school_shift_structure.py'
+      - 'migrations/0022_department_shifts.sql'
+      - '.github/workflows/apply-school-shift-structure.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply school shift patches
+        run: python scripts/apply_school_shift_structure.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Format Dart files
+        run: |
+          dart format \
+            lib/core/api/api_service.dart \
+            lib/features/admin/department_maintenance_screen.dart \
+            lib/features/admin/pkk_pdf_generator.dart
+
+      - name: Check Worker syntax
+        run: |
+          node --check worker/attendance.js
+          node --check worker/reports.js
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit shift structure
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            lib/core/api/api_service.dart \
+            lib/features/admin/department_maintenance_screen.dart \
+            lib/features/admin/pkk_pdf_generator.dart \
+            worker/attendance.js \
+            worker/reports.js
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+          else
+            git commit -m "Add configurable school shifts to PKK2"
+            git push origin HEAD:main
+          fi
