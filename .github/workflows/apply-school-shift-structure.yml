@@ -20,6 +20,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Normalize patch runner
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/apply_school_shift_structure.py')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          lines = [line for line in lines if 'pkk session dangling replacement 1' not in line]
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+
       - name: Apply school shift patches
         run: python scripts/apply_school_shift_structure.py
 
