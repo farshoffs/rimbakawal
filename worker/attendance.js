@@ -592,8 +592,26 @@ async function adminDepartments(request, env, url) {
      WHERE ${where.join(' AND ')}
      GROUP BY d.id
      ORDER BY d.active DESC, company_name COLLATE NOCASE ASC, d.name COLLATE NOCASE ASC`;
-  const result = await env.DB.prepare(sql).bind(...binds).all();
-  return json({ departments: (result.results ?? []).map(departmentJson) });
+  const [result, shiftResult] = await Promise.all([
+    env.DB.prepare(sql).bind(...binds).all(),
+    env.DB.prepare(
+      `SELECT department_id, shift_number, start_minutes, end_minutes, required_guards
+         FROM department_shifts
+        WHERE active = 1
+        ORDER BY department_id ASC, shift_number ASC`,
+    ).all(),
+  ]);
+  const shiftsByDepartment = new Map();
+  for (const shift of shiftResult.results ?? []) {
+    const departmentId = Number(shift.department_id);
+    const list = shiftsByDepartment.get(departmentId) ?? [];
+    list.push(shift);
+    shiftsByDepartment.set(departmentId, list);
+  }
+  return json({
+    departments: (result.results ?? []).map((row) =>
+      departmentJson(row, shiftsByDepartment.get(Number(row.id)) ?? [])),
+  });
 }
 
 async function createDepartment(request, env) {
@@ -625,7 +643,9 @@ async function createDepartment(request, env) {
     (company?.name ?? parsed.companyName) || null,
     parsed.zone || null,
   ).run();
-  return json({ department: departmentJson(await getDepartment(env, result.meta?.last_row_id)) }, 201);
+  const departmentId = Number(result.meta?.last_row_id || 0);
+  await replaceDepartmentShifts(env, departmentId, parsed.shifts ?? defaultDepartmentShifts());
+  return json({ department: departmentJson(await getDepartment(env, departmentId)) }, 201);
 }
 
 async function updateDepartment(request, env, departmentId) {
@@ -674,6 +694,9 @@ async function updateDepartment(request, env, departmentId) {
       departmentId,
     ),
   ]);
+  if (parsed.shifts != null) {
+    await replaceDepartmentShifts(env, departmentId, parsed.shifts);
+  }
   return json({ department: departmentJson(await getDepartment(env, departmentId)) });
 }
 
@@ -782,6 +805,8 @@ function validateDepartmentBody(body) {
   const locationLabel = String(body.attendanceLocationLabel ?? '').trim().slice(0, 160);
   const companyName = String(body.companyName ?? '').trim().slice(0, 180);
   const zone = String(body.zone ?? '').trim().slice(0, 100);
+  const shiftResult = normalizeDepartmentShifts(body.shifts);
+  if (shiftResult.error) return { error: shiftResult.error };
   if (name.length < 2) return { error: 'Nama Sekolah terlalu pendek.' };
   if (!Number.isInteger(interval) || interval < 15 || interval > 1440) {
     return { error: 'Tempoh sesi mesti antara 15 hingga 1440 minit.' };
@@ -805,26 +830,39 @@ function validateDepartmentBody(body) {
     locationLabel,
     companyName,
     zone,
+    shifts: shiftResult.shifts,
   };
 }
 
 async function getDepartment(env, id) {
   if (!Number.isInteger(Number(id)) || Number(id) <= 0) return null;
-  return env.DB.prepare(
-    `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
-            d.attendance_latitude, d.attendance_longitude, d.attendance_radius_m,
-            d.attendance_location_label, d.company_id,
-            COALESCE(co.name, d.company_name, '') AS company_name, d.zone,
-            COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
-     FROM departments d
-     LEFT JOIN companies co ON co.id = d.company_id
-     LEFT JOIN checkpoints c ON c.department_id = d.id
-     WHERE d.id = ?
-     GROUP BY d.id LIMIT 1`,
-  ).bind(Number(id)).first();
+  const departmentId = Number(id);
+  const [row, shifts] = await Promise.all([
+    env.DB.prepare(
+      `SELECT d.id, d.name, d.session_interval_minutes, d.session_start_minutes, d.active,
+              d.attendance_latitude, d.attendance_longitude, d.attendance_radius_m,
+              d.attendance_location_label, d.company_id,
+              COALESCE(co.name, d.company_name, '') AS company_name, d.zone,
+              COUNT(CASE WHEN c.active = 1 THEN 1 END) AS checkpoint_count
+       FROM departments d
+       LEFT JOIN companies co ON co.id = d.company_id
+       LEFT JOIN checkpoints c ON c.department_id = d.id
+       WHERE d.id = ?
+       GROUP BY d.id LIMIT 1`,
+    ).bind(departmentId).first(),
+    env.DB.prepare(
+      `SELECT department_id, shift_number, start_minutes, end_minutes, required_guards
+         FROM department_shifts
+        WHERE department_id = ? AND active = 1
+        ORDER BY shift_number ASC`,
+    ).bind(departmentId).all(),
+  ]);
+  if (!row) return null;
+  row._shifts = shifts.results ?? [];
+  return row;
 }
 
-function departmentJson(row) {
+function departmentJson(row, shifts = row?._shifts ?? []) {
   return {
     id: Number(row.id),
     name: row.name,
@@ -839,6 +877,80 @@ function departmentJson(row) {
     companyId: row.company_id == null ? null : Number(row.company_id),
     companyName: row.company_name || '',
     zone: row.zone || '',
+    shifts: shifts.map(shiftJson),
+  };
+}
+
+function defaultDepartmentShifts() {
+  return [
+    { shiftNumber: 1, startMinutes: 480, endMinutes: 1200, requiredGuards: 0 },
+    { shiftNumber: 2, startMinutes: 1200, endMinutes: 480, requiredGuards: 0 },
+  ];
+}
+
+function normalizeDepartmentShifts(raw) {
+  if (raw == null) return { shifts: null };
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 3) {
+    return { error: 'Bilangan syif mesti antara 1 hingga 3.' };
+  }
+  const shifts = [];
+  const seen = new Set();
+  for (const item of raw) {
+    const shiftNumber = Number(item?.shiftNumber);
+    const startMinutes = Number(item?.startMinutes);
+    const endMinutes = Number(item?.endMinutes);
+    const requiredGuards = Number(item?.requiredGuards ?? 0);
+    if (!Number.isInteger(shiftNumber) || shiftNumber < 1 || shiftNumber > 3 || seen.has(shiftNumber)) {
+      return { error: 'Nombor syif tidak sah.' };
+    }
+    if (!Number.isInteger(startMinutes) || startMinutes < 0 || startMinutes > 1439 ||
+        !Number.isInteger(endMinutes) || endMinutes < 0 || endMinutes > 1439 ||
+        startMinutes === endMinutes) {
+      return { error: `Masa Syif ${shiftNumber} tidak sah.` };
+    }
+    if (!Number.isInteger(requiredGuards) || requiredGuards < 0 || requiredGuards > 99) {
+      return { error: `Bilangan pengawal Syif ${shiftNumber} mesti antara 0 hingga 99.` };
+    }
+    seen.add(shiftNumber);
+    shifts.push({ shiftNumber, startMinutes, endMinutes, requiredGuards });
+  }
+  shifts.sort((a, b) => a.shiftNumber - b.shiftNumber);
+  for (let index = 0; index < shifts.length; index++) {
+    if (shifts[index].shiftNumber !== index + 1) {
+      return { error: 'Syif mesti disusun berturutan bermula dari Syif 1.' };
+    }
+  }
+  return { shifts };
+}
+
+async function replaceDepartmentShifts(env, departmentId, shifts) {
+  const statements = [
+    env.DB.prepare('DELETE FROM department_shifts WHERE department_id = ?').bind(departmentId),
+  ];
+  for (const shift of shifts) {
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO department_shifts (
+           department_id, shift_number, start_minutes, end_minutes, required_guards, active, updated_at
+         ) VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+      ).bind(
+        departmentId,
+        shift.shiftNumber,
+        shift.startMinutes,
+        shift.endMinutes,
+        shift.requiredGuards,
+      ),
+    );
+  }
+  await env.DB.batch(statements);
+}
+
+function shiftJson(row) {
+  return {
+    shiftNumber: Number(row.shift_number),
+    startMinutes: Number(row.start_minutes),
+    endMinutes: Number(row.end_minutes),
+    requiredGuards: Number(row.required_guards || 0),
   };
 }
 

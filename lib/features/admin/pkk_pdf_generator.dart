@@ -30,14 +30,9 @@ class PkkPdfGenerator {
     final department = _department(data);
     final attendanceSessions = _attendanceSessions(
       data['attendance'] as List<dynamic>? ?? const [],
+      department,
     );
     final guards = _guards(data, attendanceSessions);
-    final requiredByShift = _requiredGuardsByShift(
-      attendanceSessions,
-      month,
-      year,
-    );
-
     final scans = <Map<String, dynamic>>[];
     for (final item in data['scans'] as List<dynamic>? ?? const []) {
       final row = Map<String, dynamic>.from(item as Map);
@@ -202,8 +197,7 @@ class PkkPdfGenerator {
           year: year,
           guards: guards,
           sessions: attendanceSessions,
-          requiredShift1: requiredByShift[1] ?? 0,
-          requiredShift2: requiredByShift[2] ?? 0,
+          shifts: _departmentShifts(department),
         ),
       ),
     );
@@ -279,10 +273,10 @@ class PkkPdfGenerator {
     final department = _department(data);
     final sessions = _attendanceSessions(
       data['attendance'] as List<dynamic>? ?? const [],
+      department,
     );
     final guards = _guards(data, sessions);
 
-    final requiredByShift = _requiredGuardsByShift(sessions, month, year);
     final doc = pw.Document();
     doc.addPage(
       pw.Page(
@@ -294,8 +288,7 @@ class PkkPdfGenerator {
           year: year,
           guards: guards,
           sessions: sessions,
-          requiredShift1: requiredByShift[1] ?? 0,
-          requiredShift2: requiredByShift[2] ?? 0,
+          shifts: _departmentShifts(department),
         ),
       ),
     );
@@ -310,6 +303,7 @@ class PkkPdfGenerator {
     final department = _department(data);
     final sessions = _attendanceSessions(
       data['attendance'] as List<dynamic>? ?? const [],
+      department,
     );
     final guards = _guards(data, sessions);
     final effectiveGuards = guards.isEmpty
@@ -477,8 +471,7 @@ class PkkPdfGenerator {
     required int year,
     required List<_GuardMeta> guards,
     required List<_GuardSession> sessions,
-    required int requiredShift1,
-    required int requiredShift2,
+    required List<_ShiftMeta> shifts,
   }) {
     final days = DateTime(year, month + 1, 0).day;
     final blocks = <List<int>>[
@@ -518,7 +511,7 @@ class PkkPdfGenerator {
         pw.SizedBox(height: 2),
         _pkk2Meta(department),
         pw.SizedBox(height: 2),
-        _pkk2ContractSummary(requiredShift1, requiredShift2),
+        _pkk2ContractSummary(shifts),
         pw.SizedBox(height: 2),
         pw.Text(
           '3   SENARAI NAMA PENGAWAL KESELAMATAN YANG BERTUGAS MENGIKUT SYIF',
@@ -530,6 +523,7 @@ class PkkPdfGenerator {
             days: blocks[i],
             guards: guards,
             sessions: sessions,
+            shifts: shifts,
             month: month,
             year: year,
           ),
@@ -574,10 +568,21 @@ class PkkPdfGenerator {
     );
   }
 
-  static pw.Widget _pkk2ContractSummary(
-    int requiredShift1,
-    int requiredShift2,
-  ) {
+  static pw.Widget _pkk2ContractSummary(List<_ShiftMeta> shifts) {
+    final byNumber = {for (final shift in shifts) shift.number: shift};
+
+    String countValue(int number) {
+      final shift = byNumber[number];
+      if (shift == null || shift.requiredGuards <= 0) return '';
+      return '${shift.requiredGuards}';
+    }
+
+    String timeValue(int number) {
+      final shift = byNumber[number];
+      if (shift == null) return '';
+      return 'Jam ${_dotTime(shift.startMinutes)} hingga\njam ${_dotTime(shift.endMinutes)}';
+    }
+
     pw.Widget shiftCount() => pw.Expanded(
       child: pw.Column(
         children: [
@@ -590,16 +595,14 @@ class PkkPdfGenerator {
           ),
           pw.Row(
             children: [
-              pw.Expanded(child: _boxText('SYIF 1', height: 9)),
-              pw.Expanded(child: _boxText('SYIF 2', height: 9)),
-              pw.Expanded(child: _boxText('SYIF 3', height: 9)),
+              for (var shift = 1; shift <= 3; shift++)
+                pw.Expanded(child: _boxText('SYIF $shift', height: 9)),
             ],
           ),
           pw.Row(
             children: [
-              pw.Expanded(child: _boxText('$requiredShift1', height: 9)),
-              pw.Expanded(child: _boxText('$requiredShift2', height: 9)),
-              pw.Expanded(child: _boxText('', height: 9)),
+              for (var shift = 1; shift <= 3; shift++)
+                pw.Expanded(child: _boxText(countValue(shift), height: 9)),
             ],
           ),
         ],
@@ -618,22 +621,14 @@ class PkkPdfGenerator {
           ),
           pw.Row(
             children: [
-              pw.Expanded(child: _boxText('SYIF 1', height: 9)),
-              pw.Expanded(child: _boxText('SYIF 2', height: 9)),
-              pw.Expanded(child: _boxText('SYIF 3', height: 9)),
+              for (var shift = 1; shift <= 3; shift++)
+                pw.Expanded(child: _boxText('SYIF $shift', height: 9)),
             ],
           ),
           pw.Row(
             children: [
-              pw.Expanded(
-                child: _boxText('Jam 08.00 hingga\njam 20.00', height: 13),
-              ),
-              pw.Expanded(
-                child: _boxText('Jam 20.00 hingga\njam 08.00', height: 13),
-              ),
-              pw.Expanded(
-                child: _boxText('Jam ______ hingga\njam ______', height: 13),
-              ),
+              for (var shift = 1; shift <= 3; shift++)
+                pw.Expanded(child: _boxText(timeValue(shift), height: 13)),
             ],
           ),
         ],
@@ -650,6 +645,7 @@ class PkkPdfGenerator {
     required List<int> days,
     required List<_GuardMeta> guards,
     required List<_GuardSession> sessions,
+    required List<_ShiftMeta> shifts,
     required int month,
     required int year,
   }) {
@@ -716,30 +712,15 @@ class PkkPdfGenerator {
               pw.Expanded(
                 child: pw.Row(
                   children: [
-                    pw.Expanded(
-                      child: _boxText(
-                        day == null ? '' : 'SYIF 1',
-                        height: 11,
-                        fontSize: 3.6,
-                        fill: PdfColors.grey200,
+                    for (final shift in shifts)
+                      pw.Expanded(
+                        child: _boxText(
+                          day == null ? '' : 'SYIF ${shift.number}',
+                          height: 11,
+                          fontSize: 3.6,
+                          fill: PdfColors.grey200,
+                        ),
                       ),
-                    ),
-                    pw.Expanded(
-                      child: _boxText(
-                        day == null ? '' : 'SYIF 2',
-                        height: 11,
-                        fontSize: 3.6,
-                        fill: PdfColors.grey200,
-                      ),
-                    ),
-                    pw.Expanded(
-                      child: _boxText(
-                        day == null ? '' : 'SYIF 3',
-                        height: 11,
-                        fontSize: 3.6,
-                        fill: PdfColors.grey200,
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -755,7 +736,7 @@ class PkkPdfGenerator {
             pw.Expanded(
               child: pw.Row(
                 children: [
-                  for (var shift = 1; shift <= 3; shift++)
+                  for (final shift in shifts)
                     pw.Expanded(
                       child: _boxText(
                         day == null
@@ -766,7 +747,7 @@ class PkkPdfGenerator {
                                 year,
                                 month,
                                 day,
-                                shift,
+                                shift.number,
                               ),
                         height: guardRowHeight,
                         fontSize: guardFontSize,
@@ -1518,7 +1499,11 @@ class PkkPdfGenerator {
     return guards;
   }
 
-  static List<_GuardSession> _attendanceSessions(List<dynamic> raw) {
+  static List<_GuardSession> _attendanceSessions(
+    List<dynamic> raw,
+    Map<String, dynamic> department,
+  ) {
+    final shifts = _departmentShifts(department);
     final byUser = <int, List<Map<String, dynamic>>>{};
     for (final item in raw) {
       if (item is! Map) {
@@ -1555,7 +1540,7 @@ class PkkPdfGenerator {
         final type = (row['punch_type'] ?? '').toString().toUpperCase();
         if (type == 'IN') {
           if (pendingIn != null) {
-            result.add(_sessionFromPunch(pendingIn, null));
+            result.add(_sessionFromPunch(pendingIn, null, shifts));
           }
           pendingIn = row;
           continue;
@@ -1564,13 +1549,13 @@ class PkkPdfGenerator {
           final outAt = row['_local'] as DateTime;
           final inAt = pendingIn['_local'] as DateTime;
           if (outAt.isAfter(inAt)) {
-            result.add(_sessionFromPunch(pendingIn, row));
+            result.add(_sessionFromPunch(pendingIn, row, shifts));
             pendingIn = null;
           }
         }
       }
       if (pendingIn != null) {
-        result.add(_sessionFromPunch(pendingIn, null));
+        result.add(_sessionFromPunch(pendingIn, null, shifts));
       }
     }
     result.sort((a, b) => a.start.compareTo(b.start));
@@ -1580,10 +1565,11 @@ class PkkPdfGenerator {
   static _GuardSession _sessionFromPunch(
     Map<String, dynamic> input,
     Map<String, dynamic>? output,
+    List<_ShiftMeta> shifts,
   ) {
     final start = input['_local'] as DateTime;
     final end = output?['_local'] as DateTime?;
-    final shift = start.hour >= 6 && start.hour < 18 ? 1 : 2;
+    final shift = _shiftFor(start, shifts);
     return _GuardSession(
       userId: (input['user_id'] as num?)?.toInt() ?? 0,
       name: (input['nama'] ?? '-').toString(),
@@ -1595,26 +1581,65 @@ class PkkPdfGenerator {
     );
   }
 
-  static Map<int, int> _requiredGuardsByShift(
-    List<_GuardSession> sessions,
-    int month,
-    int year,
-  ) {
-    final counts = <int, int>{1: 0, 2: 0};
-    final byDay = <String, Set<int>>{};
-    for (final session in sessions) {
-      if (session.start.year != year || session.start.month != month) {
+  static List<_ShiftMeta> _departmentShifts(Map<String, dynamic> department) {
+    final raw = department['shifts'] as List<dynamic>? ?? const [];
+    final shifts = <_ShiftMeta>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final row = Map<String, dynamic>.from(item);
+      final number = (row['shiftNumber'] as num?)?.toInt() ?? 0;
+      final startMinutes = (row['startMinutes'] as num?)?.toInt() ?? -1;
+      final endMinutes = (row['endMinutes'] as num?)?.toInt() ?? -1;
+      final requiredGuards = (row['requiredGuards'] as num?)?.toInt() ?? 0;
+      if (number < 1 ||
+          number > 3 ||
+          startMinutes < 0 ||
+          startMinutes > 1439 ||
+          endMinutes < 0 ||
+          endMinutes > 1439 ||
+          startMinutes == endMinutes) {
         continue;
       }
-      final key = '${session.start.day}|${session.shift}';
-      byDay.putIfAbsent(key, () => <int>{}).add(session.userId);
+      shifts.add(
+        _ShiftMeta(
+          number: number,
+          startMinutes: startMinutes,
+          endMinutes: endMinutes,
+          requiredGuards: requiredGuards,
+        ),
+      );
     }
-    for (final entry in byDay.entries) {
-      final shift = int.tryParse(entry.key.split('|').last) ?? 1;
-      counts[shift] = math.max(counts[shift] ?? 0, entry.value.length);
-    }
-    return counts;
+    shifts.sort((a, b) => a.number.compareTo(b.number));
+    if (shifts.isNotEmpty) return shifts;
+    return const <_ShiftMeta>[
+      _ShiftMeta(
+        number: 1,
+        startMinutes: 480,
+        endMinutes: 1200,
+        requiredGuards: 0,
+      ),
+      _ShiftMeta(
+        number: 2,
+        startMinutes: 1200,
+        endMinutes: 480,
+        requiredGuards: 0,
+      ),
+    ];
   }
+
+  static int _shiftFor(DateTime start, List<_ShiftMeta> shifts) {
+    final minutes = start.hour * 60 + start.minute;
+    for (final shift in shifts) {
+      final inShift = shift.startMinutes < shift.endMinutes
+          ? minutes >= shift.startMinutes && minutes < shift.endMinutes
+          : minutes >= shift.startMinutes || minutes < shift.endMinutes;
+      if (inShift) return shift.number;
+    }
+    return shifts.isEmpty ? 1 : shifts.first.number;
+  }
+
+  static String _dotTime(int minutes) =>
+      '${(minutes ~/ 60).toString().padLeft(2, '0')}.${(minutes % 60).toString().padLeft(2, '0')}';
 
   static String _hoursFor(
     List<_GuardSession> sessions,
@@ -1666,6 +1691,20 @@ class PkkPdfGenerator {
 
   static String _dmy(DateTime value) =>
       '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}/${value.year.toString().padLeft(4, '0')}';
+}
+
+class _ShiftMeta {
+  const _ShiftMeta({
+    required this.number,
+    required this.startMinutes,
+    required this.endMinutes,
+    required this.requiredGuards,
+  });
+
+  final int number;
+  final int startMinutes;
+  final int endMinutes;
+  final int requiredGuards;
 }
 
 class _GuardMeta {

@@ -176,6 +176,7 @@ class _DepartmentMaintenanceScreenState
                   subtitle: Text(
                     '${department.companyName.isEmpty ? '' : '${department.companyName} • '}${department.zone.isEmpty ? '' : 'Zon ${department.zone} • '}'
                     'Mula ${TimeOfDay(hour: department.sessionStartMinutes ~/ 60, minute: department.sessionStartMinutes % 60).format(context)} • '
+                    '${department.shiftCount} syif • '
                     'Sesi setiap ${department.sessionIntervalMinutes} minit • '
                     '${department.checkpointCount} checkpoint aktif • '
                     '${department.attendanceLatitude == null ? 'Kawasan kehadiran belum ditetapkan' : 'Kehadiran ${department.attendanceRadiusMeters}m'}'
@@ -295,6 +296,9 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
   late final TextEditingController _locationSearchController;
   final MapController _mapController = MapController();
   late TimeOfDay _startTime;
+  late List<int> _shiftStartMinutes;
+  late List<int> _shiftEndMinutes;
+  late List<int> _shiftRequiredGuards;
   late bool _active;
   double? _latitude;
   double? _longitude;
@@ -327,6 +331,31 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     _locationSearchController = TextEditingController();
     final startMinutes = widget.department?.sessionStartMinutes ?? 420;
     _startTime = TimeOfDay(hour: startMinutes ~/ 60, minute: startMinutes % 60);
+    final configuredShifts =
+        widget.department?.shifts ?? const <DepartmentShiftRecord>[];
+    final initialShifts = configuredShifts.isEmpty
+        ? const <DepartmentShiftRecord>[
+            DepartmentShiftRecord(
+              shiftNumber: 1,
+              startMinutes: 480,
+              endMinutes: 1200,
+              requiredGuards: 0,
+            ),
+            DepartmentShiftRecord(
+              shiftNumber: 2,
+              startMinutes: 1200,
+              endMinutes: 480,
+              requiredGuards: 0,
+            ),
+          ]
+        : configuredShifts;
+    _shiftStartMinutes = initialShifts
+        .map((item) => item.startMinutes)
+        .toList();
+    _shiftEndMinutes = initialShifts.map((item) => item.endMinutes).toList();
+    _shiftRequiredGuards = initialShifts
+        .map((item) => item.requiredGuards)
+        .toList();
     _active = widget.department?.active ?? true;
     _latitude = widget.department?.attendanceLatitude;
     _longitude = widget.department?.attendanceLongitude;
@@ -363,6 +392,56 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
     );
     if (selected != null && mounted) setState(() => _startTime = selected);
   }
+
+  String _minutesLabel(int minutes) =>
+      '${(minutes ~/ 60).toString().padLeft(2, '0')}:${(minutes % 60).toString().padLeft(2, '0')}';
+
+  Future<void> _pickShiftTime(int index, {required bool start}) async {
+    final value = start ? _shiftStartMinutes[index] : _shiftEndMinutes[index];
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: value ~/ 60, minute: value % 60),
+      helpText: start
+          ? 'Masa mula Syif ${index + 1}'
+          : 'Masa tamat Syif ${index + 1}',
+    );
+    if (selected == null || !mounted) return;
+    final minutes = selected.hour * 60 + selected.minute;
+    setState(() {
+      if (start) {
+        _shiftStartMinutes[index] = minutes;
+      } else {
+        _shiftEndMinutes[index] = minutes;
+      }
+    });
+  }
+
+  void _setShiftCount(int count) {
+    setState(() {
+      while (_shiftStartMinutes.length < count) {
+        final index = _shiftStartMinutes.length;
+        final defaults = index == 2 ? <int>[0, 480] : <int>[480, 1200];
+        _shiftStartMinutes.add(defaults[0]);
+        _shiftEndMinutes.add(defaults[1]);
+        _shiftRequiredGuards.add(0);
+      }
+      if (_shiftStartMinutes.length > count) {
+        _shiftStartMinutes = _shiftStartMinutes.take(count).toList();
+        _shiftEndMinutes = _shiftEndMinutes.take(count).toList();
+        _shiftRequiredGuards = _shiftRequiredGuards.take(count).toList();
+      }
+    });
+  }
+
+  List<DepartmentShiftRecord> _shiftRecords() => [
+    for (var index = 0; index < _shiftStartMinutes.length; index++)
+      DepartmentShiftRecord(
+        shiftNumber: index + 1,
+        startMinutes: _shiftStartMinutes[index],
+        endMinutes: _shiftEndMinutes[index],
+        requiredGuards: _shiftRequiredGuards[index],
+      ),
+  ];
 
   void _moveMap(double latitude, double longitude, {double zoom = 17}) {
     try {
@@ -522,6 +601,22 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
       );
       return;
     }
+    for (var index = 0; index < _shiftStartMinutes.length; index++) {
+      if (_shiftStartMinutes[index] == _shiftEndMinutes[index]) {
+        setState(
+          () => _error =
+              'Masa mula dan tamat Syif ${index + 1} tidak boleh sama.',
+        );
+        return;
+      }
+      if (_shiftRequiredGuards[index] < 0 || _shiftRequiredGuards[index] > 99) {
+        setState(
+          () => _error =
+              'Bilangan pengawal Syif ${index + 1} mesti antara 0 hingga 99.',
+        );
+        return;
+      }
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -539,6 +634,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
           attendanceLocationLabel: _locationLabelController.text.trim(),
           companyId: _companyId,
           zone: _zoneController.text.trim(),
+          shifts: _shiftRecords(),
         );
       } else {
         await widget.api.updateDepartment(
@@ -556,6 +652,7 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
             companyId: _companyId,
             companyName: existing.companyName,
             zone: _zoneController.text.trim(),
+            shifts: _shiftRecords(),
           ),
         );
       }
@@ -722,6 +819,105 @@ class _DepartmentDialogState extends State<_DepartmentDialog> {
                 ],
               ),
               const SizedBox(height: 16),
+              Text(
+                'Tetapan Syif PKK',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Tetapkan bilangan syif, masa bertugas dan bilangan pengawal kontrak secara manual. Tetapan ini digunakan terus dalam PKK 2.',
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<int>(
+                initialValue: _shiftStartMinutes.length,
+                decoration: const InputDecoration(
+                  labelText: 'Bilangan Syif',
+                  prefixIcon: Icon(Icons.work_history_outlined),
+                  helperText:
+                      'PKK 2 akan memaparkan hanya syif yang aktif pada jadual kehadiran.',
+                ),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('1 Syif')),
+                  DropdownMenuItem(value: 2, child: Text('2 Syif')),
+                  DropdownMenuItem(value: 3, child: Text('3 Syif')),
+                ],
+                onChanged: _saving
+                    ? null
+                    : (value) {
+                        if (value != null) _setShiftCount(value);
+                      },
+              ),
+              const SizedBox(height: 10),
+              for (
+                var index = 0;
+                index < _shiftStartMinutes.length;
+                index++
+              ) ...[
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Syif ${index + 1}',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _saving
+                                    ? null
+                                    : () => _pickShiftTime(index, start: true),
+                                icon: const Icon(Icons.login_rounded),
+                                label: Text(
+                                  'Mula ${_minutesLabel(_shiftStartMinutes[index])}',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _saving
+                                    ? null
+                                    : () => _pickShiftTime(index, start: false),
+                                icon: const Icon(Icons.logout_rounded),
+                                label: Text(
+                                  'Tamat ${_minutesLabel(_shiftEndMinutes[index])}',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          key: ValueKey(
+                            'required-guards-$index-${_shiftRequiredGuards[index]}',
+                          ),
+                          initialValue: '${_shiftRequiredGuards[index]}',
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Bilangan Pengawal Dalam Kontrak',
+                            prefixIcon: Icon(Icons.groups_2_outlined),
+                            helperText:
+                                'Tidak dikira daripada kehadiran. Masukkan nilai kontrak secara manual.',
+                          ),
+                          onChanged: (value) {
+                            _shiftRequiredGuards[index] =
+                                int.tryParse(value) ?? 0;
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              const SizedBox(height: 8),
               Text(
                 'Kawasan Kehadiran',
                 style: Theme.of(

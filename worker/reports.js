@@ -93,7 +93,7 @@ async function monthlyReport(request, env, url) {
          AND a.department_id = ?
        ORDER BY a.user_id ASC, a.punched_at ASC, a.id ASC`;
 
-  const [scanResult, attendanceResult, checkpointResult, guardResult] = await Promise.all([
+  const [scanResult, attendanceResult, checkpointResult, guardResult, shiftResult] = await Promise.all([
     env.DB.prepare(scanSql).bind(fromStart, toEnd, departmentId).all(),
     env.DB.prepare(attendanceSql).bind(fromStart, attendanceToEnd, departmentId).all(),
     env.DB.prepare(
@@ -110,6 +110,12 @@ async function monthlyReport(request, env, url) {
           AND LOWER(jawatan) IN ('patrol', 'supervisor')
         ORDER BY CASE WHEN no_pk IS NULL OR no_pk = '' THEN 1 ELSE 0 END,
                  CAST(no_pk AS INTEGER) ASC, nama ASC, id ASC`,
+    ).bind(departmentId).all(),
+    env.DB.prepare(
+      `SELECT shift_number, start_minutes, end_minutes, required_guards
+         FROM department_shifts
+        WHERE department_id = ? AND active = 1
+        ORDER BY shift_number ASC`,
     ).bind(departmentId).all(),
   ]);
 
@@ -142,6 +148,12 @@ async function monthlyReport(request, env, url) {
       companyName: departmentMeta.company_name || '',
       zone: departmentMeta.zone || '',
       state: 'KEDAH',
+      shifts: (shiftResult.results ?? []).map((row) => ({
+        shiftNumber: Number(row.shift_number),
+        startMinutes: Number(row.start_minutes),
+        endMinutes: Number(row.end_minutes),
+        requiredGuards: Number(row.required_guards || 0),
+      })),
     },
     scans,
     attendance,

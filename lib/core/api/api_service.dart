@@ -361,6 +361,35 @@ class CompanyRecord {
   );
 }
 
+class DepartmentShiftRecord {
+  const DepartmentShiftRecord({
+    required this.shiftNumber,
+    required this.startMinutes,
+    required this.endMinutes,
+    required this.requiredGuards,
+  });
+
+  final int shiftNumber;
+  final int startMinutes;
+  final int endMinutes;
+  final int requiredGuards;
+
+  factory DepartmentShiftRecord.fromJson(Map<String, dynamic> json) =>
+      DepartmentShiftRecord(
+        shiftNumber: (json['shiftNumber'] as num?)?.toInt() ?? 1,
+        startMinutes: (json['startMinutes'] as num?)?.toInt() ?? 480,
+        endMinutes: (json['endMinutes'] as num?)?.toInt() ?? 1200,
+        requiredGuards: (json['requiredGuards'] as num?)?.toInt() ?? 0,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'shiftNumber': shiftNumber,
+    'startMinutes': startMinutes,
+    'endMinutes': endMinutes,
+    'requiredGuards': requiredGuards,
+  };
+}
+
 class DepartmentRecord {
   const DepartmentRecord({
     required this.id,
@@ -376,6 +405,7 @@ class DepartmentRecord {
     this.companyId,
     this.companyName = '',
     this.zone = '',
+    this.shifts = const [],
   });
   final int id;
   final String name;
@@ -390,6 +420,9 @@ class DepartmentRecord {
   final int? companyId;
   final String companyName;
   final String zone;
+  final List<DepartmentShiftRecord> shifts;
+
+  int get shiftCount => shifts.length;
 
   factory DepartmentRecord.fromJson(
     Map<String, dynamic> json,
@@ -409,6 +442,13 @@ class DepartmentRecord {
     companyId: (json['companyId'] as num?)?.toInt(),
     companyName: json['companyName'] as String? ?? '',
     zone: json['zone'] as String? ?? '',
+    shifts: (json['shifts'] as List<dynamic>? ?? const [])
+        .map(
+          (item) => DepartmentShiftRecord.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList(),
   );
 }
 
@@ -1204,6 +1244,7 @@ class ApiService {
     String attendanceLocationLabel = '',
     int? companyId,
     String zone = '',
+    List<DepartmentShiftRecord> shifts = const [],
   }) async {
     final data = _decode(
       await http.post(
@@ -1219,6 +1260,7 @@ class ApiService {
           'attendanceLocationLabel': attendanceLocationLabel,
           'companyId': companyId,
           'zone': zone,
+          'shifts': shifts.map((item) => item.toJson()).toList(),
         }),
       ),
     );
@@ -1243,6 +1285,7 @@ class ApiService {
           'attendanceLocationLabel': department.attendanceLocationLabel,
           'companyId': department.companyId,
           'zone': department.zone,
+          'shifts': department.shifts.map((item) => item.toJson()).toList(),
         }),
       ),
     );
