@@ -179,7 +179,11 @@ async function archiveCompany(request, env, companyId) {
                       FROM checkpoints c
                       JOIN departments d ON d.id = c.department_id
                      WHERE d.company_id = ? ORDER BY c.id`).bind(companyId).all(),
-    env.DB.prepare('SELECT id, active FROM users WHERE company_id = ? ORDER BY id').bind(companyId).all(),
+    env.DB.prepare(`SELECT u.id, u.active
+                      FROM users u
+                      LEFT JOIN departments d ON d.id = u.department_id
+                     WHERE u.company_id = ? OR d.company_id = ?
+                     ORDER BY u.id`).bind(companyId, companyId).all(),
   ]);
   const snapshot = JSON.stringify({
     company: { id: companyId, active: Number(company.active) },
@@ -198,7 +202,11 @@ async function archiveCompany(request, env, companyId) {
     env.DB.prepare(`UPDATE checkpoints
                        SET active = 0, updated_at = CURRENT_TIMESTAMP
                      WHERE department_id IN (SELECT id FROM departments WHERE company_id = ?)`).bind(companyId),
-    env.DB.prepare('UPDATE users SET active = 0 WHERE company_id = ?').bind(companyId),
+    env.DB.prepare(`UPDATE users
+                         SET active = 0
+                       WHERE company_id = ?
+                          OR department_id IN (SELECT id FROM departments WHERE company_id = ?)`)
+      .bind(companyId, companyId),
   ]);
   return json({ ok: true, archived: true, undoAvailable: true });
 }

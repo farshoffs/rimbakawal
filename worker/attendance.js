@@ -5,6 +5,7 @@ const SESSION_COOKIE = 'rk_session';
 const MALAYSIA_OFFSET_MS = 8 * 60 * 60 * 1000;
 const MAX_SELFIE_CHARS = 650000;
 const DEFAULT_RADIUS_M = 150;
+const MAX_OPEN_SHIFT_MS = 24 * 60 * 60 * 1000;
 
 export default {
   async fetch(request, env, ctx) {
@@ -79,7 +80,8 @@ async function attendanceStatus(request, env) {
       ORDER BY punched_at DESC, id DESC
       LIMIT 1`,
   ).bind(auth.user.id).first();
-  const hasOpenShift = latestGlobal?.punch_type === 'IN';
+  const hasOpenShift = latestGlobal?.punch_type === 'IN'
+    && Date.now() - Date.parse(latestGlobal.punched_at) <= MAX_OPEN_SHIFT_MS;
   const workDate = hasOpenShift ? String(latestGlobal.work_date) : todayWorkDate;
   const result = await env.DB.prepare(
     `SELECT id, punch_type, punched_at, latitude, longitude, accuracy_m, distance_m,
@@ -164,7 +166,9 @@ async function punchAttendance(request, env) {
   if (latest && Date.now() - Date.parse(latest.punched_at) < 60000) {
     return json({ error: 'Punch terlalu rapat. Tunggu sekurang-kurangnya 1 minit.' }, 429);
   }
-  const punchType = latest?.punch_type === 'IN' ? 'OUT' : 'IN';
+  const hasOpenShift = latest?.punch_type === 'IN'
+    && Date.now() - Date.parse(latest.punched_at) <= MAX_OPEN_SHIFT_MS;
+  const punchType = hasOpenShift ? 'OUT' : 'IN';
   // OUT belongs to the same work/shift date as its preceding IN even when the
   // calendar has crossed midnight (for example 20:00 -> 08:00).
   const workDate = punchType === 'OUT' && latest?.work_date
