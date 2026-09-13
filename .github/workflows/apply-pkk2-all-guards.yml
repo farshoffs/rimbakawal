@@ -23,6 +23,22 @@ jobs:
       - name: Apply PKK2 all-guards patch
         run: python scripts/apply_pkk2_all_guards.py
 
+      - name: Normalize PKK guard clauses
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('lib/features/admin/pkk_pdf_generator.dart')
+          text = path.read_text(encoding='utf-8')
+          old = "          if (earliest != null) slots[slot] = _hhmm(earliest);"
+          new = """          if (earliest != null) {
+            slots[slot] = _hhmm(earliest);
+          }"""
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'Expected 2 compact earliest clauses, found {count}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
